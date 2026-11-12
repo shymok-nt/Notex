@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Notex",
+    "slug": "notex",
+    "scheme": "notex",
+    "version": "1.0.0",
+    "icon": "./assets/images/icon.png",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-sharing"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "icon": "./assets/images/icon.png"
+    },
+    "android": {
+      "icon": "./assets/images/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#FFDA44"
+      },
+      "package": "com.notex.app"
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "3ced07ff-dad0-4774-8729-3ec72fb14df2"
+      }
+    }
+  }
+}
