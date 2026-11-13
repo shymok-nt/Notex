@@ -1,5 +1,6 @@
 import React,{memo,useMemo,useRef,useState} from 'react';
 import {View,Text,Pressable,ScrollView} from 'react-native';
+import type {ScrollViewInstance} from 'react-native';
 import {Plus,Check} from 'lucide-react-native';
 import Animated,{useAnimatedStyle,useSharedValue,withSpring,runOnJS} from 'react-native-reanimated';
 import {Gesture,GestureDetector} from 'react-native-gesture-handler';
@@ -30,7 +31,7 @@ const PageItem=memo(function PageItem({page,index,count,tablet,colors,selected,c
  </View>;
 });
 export const CanvasPageStrip=memo(function CanvasPageStrip({pages,selectedId,tablet,pdfMode=false,colors,onSelect,onAdd,onMove,onActions,multiSelect=false,selectedPageIds=[],onToggle,onEnterSelection}:Props){
- const scrollRef=useRef<ScrollView>(null);
+ const scrollRef=useRef<ScrollViewInstance>(null);
  const [viewportHeight,setViewportHeight]=useState(0);
  const [contentHeight,setContentHeight]=useState(0);
  const [scrollY,setScrollY]=useState(0);
