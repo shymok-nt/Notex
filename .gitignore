@@ -36,3 +36,8 @@ reanimated-error.txt
 
 *.keystore
 *.jks
+
+# Local PaddleOCR prototype environment and downloaded model files
+.venv-ocr/
+__pycache__/
+*.pyc
