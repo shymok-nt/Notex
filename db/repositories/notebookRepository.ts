@@ -28,7 +28,7 @@ export const notebookRepository={
   if(!pages.length)throw new Error('PDF içinde sayfa bulunamadı.');
   const db=await getDatabase(),id=Crypto.randomUUID(),date=now();
   await withSafeTransaction(db,async tx=>{
-   await tx.runAsync(`INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,NULL,'color',?,NULL,NULL,1,?,?,0,?,?,NULL)`,id,title,defaultCoverColor,'boş','beyaz',date,date);
+   await tx.runAsync(`INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,NULL,'image',?,?,'pdf-import',0,?,?,0,?,?,NULL)`,id,title,defaultCoverColor,pages[0].thumbnailPath,'boş','beyaz',date,date);
    for(let index=0;index<pages.length;index++){
     const page=pages[index];
     await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',page.id,id,index,'boş','beyaz',page.content,page.thumbnailPath,date,date);
