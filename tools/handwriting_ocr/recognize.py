@@ -31,6 +31,7 @@ def main() -> int:
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
+            enable_mkldnn=False,  # Avoid Windows CPU oneDNN/PIR attribute conversion failure.
         )
         results = engine.predict(str(args.image))
         lines = []
