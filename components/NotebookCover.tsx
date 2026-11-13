@@ -7,18 +7,19 @@ import { PremiumCoverArt } from '@/components/PremiumCoverArt';
 import { PremiumCoverFace } from '@/components/PremiumCoverFace';
 import { SpecialCoverImage } from '@/components/SpecialCoverImage';
 import { DefaultLinenCover } from '@/components/DefaultLinenCover';
-import { resolveCoverRenderUri } from '@/utils/tauriFiles';
+import { resolveCoverRenderUri,storedFileAssetUri } from '@/utils/tauriFiles';
 import type { Notebook, NotebookDraft } from '@/types/notebook';
-type CoverData=Pick<NotebookDraft,'title'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'> & {favorite?:boolean};
+type CoverData=Pick<NotebookDraft,'title'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'> & {favorite?:boolean;coverImagePath?:string|null};
 export function NotebookCover({notebook,width=160,showTitle=notebook.showTitleOnCover,colorsOverride}:{notebook:CoverData;width?:number;showTitle?:boolean;colorsOverride?:ThemeColors}){
  const {colors:themeColors}=useTheme();const colors=colorsOverride??themeColors;const styles=makeStyles(colors);
  const preset=notebook.coverType==='preset'?getPremiumCover(notebook.coverPresetId):null;
  const special=notebook.coverType==='preset'?getSpecialCover(notebook.coverPresetId):null;
  const height=width*4/3,coverColor=/^#[0-9a-f]{6}$/i.test(notebook.coverColor)?notebook.coverColor:(preset?.color??special?.color??defaultCoverColor);
  const legacyPreset=preset?.style==='linen'||preset?.style==='leather';
+ const pdfCoverUri=notebook.coverPresetId==='pdf-import'?storedFileAssetUri(notebook.coverImagePath):null;
  return <View style={[styles.shadow,{width,height}]}>
   <View style={[styles.cover,{backgroundColor:coverColor}]}>
-   {notebook.coverType==='image'&&notebook.coverImageUri&&<Image source={{uri:resolveCoverRenderUri(notebook.coverImageUri)??notebook.coverImageUri}} resizeMode="contain" style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors/>}
+   {notebook.coverType==='image'&&(pdfCoverUri||notebook.coverImageUri)&&<Image source={{uri:pdfCoverUri??resolveCoverRenderUri(notebook.coverImageUri)??notebook.coverImageUri!}} resizeMode="contain" style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors/>}
    {notebook.coverType==='color'&&<DefaultLinenCover color={coverColor} width={width} height={height}/>}
    {special&&<SpecialCoverImage id={special.id} width={width} height={height} backgroundColor={coverColor}/>}
    {preset&&(legacyPreset?<PremiumCoverArt style={preset.style} ink={preset.ink} width={width}/>:<PremiumCoverFace style={preset.style as PremiumCoverStyle} color={coverColor} ink={preset.ink} width={width} title={notebook.title} showTitle={false}/>)}
