@@ -3,6 +3,7 @@ import {AppState} from 'react-native';
 import {pageRepository} from '@/db/repositories/pageRepository';
 import {serializeContent} from '@/features/canvas/engine/content';
 import {autosaveDelay,AUTOSAVE_RETRY_DELAY_MS,canResetDirtyWindow} from '@/features/canvas/engine/autosavePolicy';
+import {perfNow} from '@/features/canvas/engine/performance';
 import type {PageContent} from '@/features/canvas/types';
 
 const queues=new Map<string,Promise<void>>();
@@ -12,6 +13,7 @@ export function useAutosave(pageId:string|null,content:PageContent){
  const initialized=useRef(false),dirty=useRef(false),active=useRef(false);
  const version=useRef(0),savedVersion=useRef(0),firstDirty=useRef(0);
  const lastSerialized=useRef<string|null>(null);
+ const lastCompareMs=useRef(0);
  const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const statusTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const mounted=useRef(true);
@@ -23,13 +25,17 @@ export function useAutosave(pageId:string|null,content:PageContent){
   const snapshot=version.current;
   if(snapshot===savedVersion.current)return queues.get(id)??Promise.resolve();
   dirty.current=false;
+  const serializeStarted=__DEV__?perfNow():0;
   const data=serializeContent(value);
+  const serializeMs=__DEV__?perfNow()-serializeStarted:0;
   const previous=queues.get(id)??Promise.resolve();
   const task=previous.catch(()=>{}).then(async()=>{
    if(statusTimer.current)clearTimeout(statusTimer.current);
    statusTimer.current=setTimeout(()=>{if(mounted.current)setSaving(true)},400);
    try{
+    const writeStarted=__DEV__?perfNow():0;
     await pageRepository.updateContent(id,data);
+    if(__DEV__)console.log('[Notex perf] autosave_flush',{compare_ms:Math.round(lastCompareMs.current*10)/10,serialize_ms:Math.round(serializeMs*10)/10,sqlite_write_ms:Math.round((perfNow()-writeStarted)*10)/10,content_characters:data.length});
     savedVersion.current=Math.max(savedVersion.current,snapshot);
     if(canResetDirtyWindow(version.current,snapshot,dirty.current))firstDirty.current=0;
     if(mounted.current)setError(false);
@@ -54,7 +60,9 @@ export function useAutosave(pageId:string|null,content:PageContent){
  },[flush]);
  useEffect(()=>{
   if(!pageId)return;
+  const compareStarted=__DEV__?perfNow():0;
   const serialized=serializeContent(content);
+  if(__DEV__)lastCompareMs.current=perfNow()-compareStarted;
   if(!initialized.current){initialized.current=true;lastSerialized.current=serialized;return}
   if(serialized===lastSerialized.current)return;
   lastSerialized.current=serialized;

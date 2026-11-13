@@ -7,18 +7,21 @@ import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
 type PageRow={id:string;notebook_id:string;position:number;template:PageTemplate;paper_color:PaperColor;content:string;thumbnail_path:string|null;created_at:string;updated_at:string};
 const convert=(r:PageRow):Page=>({id:r.id,notebookId:r.notebook_id,position:r.position,template:r.template,paperColor:r.paper_color,content:r.content,thumbnailPath:r.thumbnail_path,createdAt:r.created_at,updatedAt:r.updated_at});
+export type RecentPageRecord={page:Page;notebookTitle:string};
 const now=()=>new Date().toISOString();
 export const pageRepository={
- async getByNotebook(notebookId:string){const db=await getDatabase(),started=__DEV__?perfNow():0;const rows=await db.getAllAsync<PageRow>('SELECT * FROM pages WHERE notebook_id=? AND EXISTS(SELECT 1 FROM notebooks WHERE id=? AND deleted_at IS NULL) ORDER BY position',notebookId,notebookId);const pages=rows.map(convert);if(__DEV__)console.log('[Notex perf] sqlite_pages_read',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length,content_characters:pages.reduce((total,page)=>total+page.content.length,0)});return pages;},
+ async getByNotebook(notebookId:string){const started=__DEV__?perfNow():0;const db=await getDatabase(),queryStarted=__DEV__?perfNow():0;const rows=await db.getAllAsync<PageRow>('SELECT * FROM pages WHERE notebook_id=? AND EXISTS(SELECT 1 FROM notebooks WHERE id=? AND deleted_at IS NULL) ORDER BY position',notebookId,notebookId);const queryFinished=__DEV__?perfNow():0;const pages=rows.map(convert);if(__DEV__)console.log('[Notex perf] sqlite_pages_read',{duration_ms:Math.round((perfNow()-started)*10)/10,db_ready_ms:Math.round((queryStarted-started)*10)/10,query_ms:Math.round((queryFinished-queryStarted)*10)/10,map_ms:Math.round((perfNow()-queryFinished)*10)/10,page_count:pages.length,content_characters:pages.reduce((total,page)=>total+page.content.length,0)});return pages;},
+ async getRecentAcrossNotebooks(limit=5):Promise<RecentPageRecord[]>{const started=__DEV__?perfNow():0;const db=await getDatabase();const safeLimit=Math.max(0,Math.floor(Number.isFinite(limit)?limit:5));const rows=await db.getAllAsync<PageRow&{notebook_title:string}>('SELECT p.*,n.title AS notebook_title FROM pages p INNER JOIN notebooks n ON n.id=p.notebook_id WHERE n.deleted_at IS NULL ORDER BY p.updated_at DESC LIMIT ?',safeLimit);const pages=rows.map(({notebook_title,...row})=>({page:convert(row),notebookTitle:notebook_title}));if(__DEV__)console.log('[Notex perf] recent_pages_read',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length,content_characters:pages.reduce((total,item)=>total+item.page.content.length,0)});return pages;},
  async add(notebookId:string,afterPosition?:number){
   const db=await getDatabase(),id=Crypto.randomUUID(),date=now();
   await withSafeTransaction(db,async tx=>{
    const notebook=await tx.getFirstAsync<{template:PageTemplate;paper_color:PaperColor}>('SELECT template,paper_color FROM notebooks WHERE id=? AND deleted_at IS NULL',notebookId);
    if(!notebook)throw new Error('Defter bulunamadı');
+   const source=afterPosition===undefined?null:await tx.getFirstAsync<{template:PageTemplate;paper_color:PaperColor}>('SELECT template,paper_color FROM pages WHERE notebook_id=? AND position=?',notebookId,afterPosition);
    const count=await tx.getFirstAsync<{n:number}>('SELECT COUNT(*) AS n FROM pages WHERE notebook_id=?',notebookId);
    const position=afterPosition===undefined?count!.n:Math.max(0,Math.min(count!.n,afterPosition+1));
    await tx.runAsync('UPDATE pages SET position=position+1 WHERE notebook_id=? AND position>=?',notebookId,position);
-   await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',id,notebookId,position,notebook.template,notebook.paper_color,date,date);
+   await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',id,notebookId,position,source?.template??notebook.template,source?.paper_color??notebook.paper_color,date,date);
    await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=?',date,notebookId);
   });return id;
  },

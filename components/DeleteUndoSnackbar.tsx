@@ -5,15 +5,15 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 export function DeleteUndoSnackbar(){
  const {colors}=useTheme();
- const id=useNotebookStore(s=>s.lastDeletedId);
+ const ids=useNotebookStore(s=>s.lastDeletedIds);
  const clear=useNotebookStore(s=>s.clearUndo);
- const restore=useNotebookStore(s=>s.restoreNotebook);
- useEffect(()=>{if(!id)return;const timer=setTimeout(clear,5500);return()=>clearTimeout(timer)},[id,clear]);
- if(!id)return null;
+ const restoreMany=useNotebookStore(s=>s.restoreNotebooks);
+ useEffect(()=>{if(!ids.length)return;const timer=setTimeout(clear,5500);return()=>clearTimeout(timer)},[ids,clear]);
+ if(!ids.length)return null;
  return <View pointerEvents="box-none" style={{position:'absolute',bottom:100,left:20,right:20,alignItems:'center'}}>
   <View style={{width:'100%',maxWidth:440,minHeight:54,borderRadius:14,backgroundColor:colors.ink,paddingHorizontal:18,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12}}>
-   <Text style={{color:colors.surface,flex:1}}>Defter Silinenler'e taşındı</Text>
-   <Pressable accessibilityRole="button" accessibilityLabel="Silmeyi geri al" onPress={()=>{clear();void restore(id).catch(console.error)}} style={{padding:10}}><Text style={{color:colors.highlight,fontWeight:'700'}}>Geri al</Text></Pressable>
+   <Text style={{color:colors.surface,flex:1}}>{ids.length===1?"Defter Silinenler'e ta\u015f\u0131nd\u0131":`${ids.length} defter Silinenler'e ta\u015f\u0131nd\u0131`}</Text>
+   <Pressable accessibilityRole="button" accessibilityLabel="Silinen defterleri geri al" onPress={()=>{void restoreMany(ids)}} style={{padding:10}}><Text style={{color:colors.highlight,fontWeight:'700'}}>Geri al</Text></Pressable>
   </View>
  </View>;
 }

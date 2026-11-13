@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, BackHandler, FlatList, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { Copy, Heart, LayoutGrid, List, MoreHorizontal, Pencil, Search, Settings2, Trash2, X } from 'lucide-react-native';
 import { BackupReminder } from '@/components/BackupReminder';
 import { EmptyState } from '@/components/EmptyState';
 import { FolderChips } from '@/components/FolderChips';
 import { NotebookCard } from '@/components/NotebookCard';
+import { SelectionActionBar } from '@/components/SelectionActionBar';
 import { NotexIcon, NotexWordmark } from '@/components/NotexBrand';
 import { libraryColors } from '@/components/libraryTheme';
 import { useNotebookStore } from '@/store/notebookStore';
@@ -36,11 +37,12 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   const setViewMode = useNotebookStore(state => state.setViewMode);
   const toggleFavorite = useNotebookStore(state => state.toggleFavorite);
   const duplicateNotebook = useNotebookStore(state => state.duplicateNotebook);
-  const deleteNotebook = useNotebookStore(state => state.deleteNotebook);
+  const deleteNotebooks = useNotebookStore(state => state.deleteNotebooks);
   const folders = useNotebookStore(state => state.folders);
   const moveNotebook = useNotebookStore(state => state.moveNotebook);
 
   const [checked, setChecked] = useState<string[]>([]);
+  const [multiSelect, setMultiSelect] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [working, setWorking] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -56,9 +58,32 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     sortBy,
   ), [all, favorites, folder, sortBy]);
 
+  useEffect(() => {
+    const available = new Set(data.map(notebook => notebook.id));
+    setChecked(current => current.filter(id => available.has(id)));
+  }, [data]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (confirmDelete || menu || selected || moveTarget) return false;
+      if (working) return true;
+      if (!multiSelect) return false;
+      setChecked([]);
+      setMultiSelect(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [confirmDelete, menu, selected, moveTarget, multiSelect]);
+
+  useFocusEffect(useCallback(() => () => {
+    setChecked([]);
+    setMultiSelect(false);
+  }, []));
+
   const toggleChecked = (id: string) => setChecked(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+  const beginSelection = (id: string) => { setMultiSelect(true); setChecked(current => current.includes(id) ? current : [...current, id]); };
   const openNotebook = (id: string) => {
-    if (checked.length > 0) {
+    if (multiSelect) {
       toggleChecked(id);
       return;
     }
@@ -68,15 +93,47 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   const openEditor = (id?: string) => router.push({ pathname: '/notebook-editor', params: id ? { id } : {} });
 
   const confirmBulkDelete = async () => {
+    if (working) return;
     setWorking(true);
     try {
-      for (const id of checked) await deleteNotebook(id);
+      const validIds = [...new Set(checked.filter(id => data.some(notebook => notebook.id === id)))];
+      if (!validIds.length) return;
+      const removed = await deleteNotebooks(validIds);
+      if (!removed?.length) {
+        if (Platform.OS === 'web' && typeof window !== 'undefined') window.alert('Defterler silinemedi. Lütfen tekrar dene.');
+        else Alert.alert('Defterler silinemedi', 'Lütfen tekrar dene.');
+        return;
+      }
+      if (removed.length < validIds.length) {
+        const movedIds = new Set(removed);
+        setChecked(validIds.filter(id => !movedIds.has(id)));
+        setConfirmDelete(false);
+        const message = `${removed.length} defter taşındı; kalan ${validIds.length - removed.length} defter için işlem tamamlanamadı.`;
+        if (Platform.OS === 'web' && typeof window !== 'undefined') window.alert(message);
+        else Alert.alert('Kısmi silme', message);
+        return;
+      }
       setChecked([]);
+      setMultiSelect(false);
       setConfirmDelete(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Tekrar dene.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') window.alert(message);
+      else Alert.alert('Defterler silinemedi', message);
     } finally {
       setWorking(false);
     }
   };
+
+  const selectionActions = [
+    { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || checked.length === 0, onPress: () => setConfirmDelete(true) },
+    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => { setMultiSelect(true); setChecked(data.map(notebook => notebook.id)); } },
+    { key: 'duplicate', label: 'Çoğalt', icon: Copy, disabled: working || checked.length === 0, onPress: async () => { setWorking(true); try { const failed: string[] = []; for (const id of checked) if (!(await duplicateNotebook(id))) failed.push(id); setChecked(failed); if (!failed.length) setMultiSelect(false); } finally { setWorking(false); } } },
+    { key: 'favorite', label: 'Favori', icon: Heart, disabled: working || checked.length === 0, onPress: async () => { setWorking(true); try { const failed: string[] = []; for (const id of checked) if (!(await toggleFavorite(id))) failed.push(id); setChecked(failed); if (!failed.length) setMultiSelect(false); } finally { setWorking(false); } } },
+    { key: 'clear', label: 'Temizle', icon: X, disabled: working || checked.length === 0, onPress: () => setChecked([]) },
+    ...(checked.length === 1 ? [{ key: 'more', label: 'Diğer', icon: MoreHorizontal, disabled: working, onPress: () => setSelected(data.find(notebook => notebook.id === checked[0]) ?? null) }] : []),
+    { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setChecked([]); setMultiSelect(false); } },
+  ];
 
   const listHeader = <View>
     <View style={styles.hero}>
@@ -85,7 +142,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     </View>
     {!favorites && <BackupReminder />}
     <View style={styles.section}>
-      {checked.length > 0 ? <View style={styles.selectionBar}>
+      {checked.length > 0 ? <View style={[styles.selectionBar, { display: 'none' }]}>
         <Text numberOfLines={1} style={styles.selectedCount}>{checked.length} seçili</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectionActions}>
           <Pressable disabled={working} accessibilityRole="button" accessibilityLabel="Seçilen defterleri çoğalt" onPress={async () => { setWorking(true); try { for (const id of checked) await duplicateNotebook(id); setChecked([]); } finally { setWorking(false); } }} style={styles.slimAction}><Copy size={17} color={colors.accent} /><Text style={[styles.slimText, styles.accentText]}>Çoğalt</Text></Pressable>
@@ -107,7 +164,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   return <SafeAreaView style={styles.safe}>
     <View style={styles.body}>
       <View style={styles.topBar}>
-        <View style={styles.brand}><NotexIcon compact /><NotexWordmark compact /></View>
+        <View style={styles.brand}><NotexIcon compact /><NotexWordmark compact dark={scheme==='dark'} /></View>
         <View style={styles.topActions}>
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
@@ -129,19 +186,20 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         contentContainerStyle={data.length > 0 ? styles.listContent : styles.emptyContent}
         ListHeaderComponent={listHeader}
         renderItem={({ item }) => <View style={columns > 1 ? { width: cardWidth, marginBottom: 22 } : styles.listItem}>
-          <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => toggleChecked(item.id)} onMenu={() => setSelected(item)} selected={checked.includes(item.id)} colorsOverride={colors} />
+          <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => multiSelect ? toggleChecked(item.id) : beginSelection(item.id)} onMenu={() => setSelected(item)} selected={checked.includes(item.id)} colorsOverride={colors} />
         </View>}
         ListEmptyComponent={<EmptyState colorsOverride={colors} />}
       />
 
-      {!favorites && <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => openEditor()} style={styles.fab}><Pencil size={21} strokeWidth={2.3} color={colors.onAccent} /></Pressable>}
+      {!favorites && !multiSelect && <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => openEditor()} style={styles.fab}><Pencil size={21} strokeWidth={2.3} color={colors.onAccent} /></Pressable>}
     </View>
 
+    <SelectionActionBar visible={multiSelect} selectedCount={checked.length} actions={selectionActions} />
     <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
       <View style={styles.modalBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={() => setConfirmDelete(false)} /><View style={styles.confirmCard}>
         <Text style={styles.modalTitle}>Defterleri sil</Text>
-        <Text style={styles.modalCopy}>Bu defterler Silinenler'e taşınacak ve 30 gün sonra kalıcı olarak silinecek.</Text>
-        <View style={styles.confirmActions}><Pressable onPress={() => setConfirmDelete(false)} style={styles.confirmButton}><Text style={styles.slimText}>Vazgeç</Text></Pressable><Pressable disabled={working} onPress={() => void confirmBulkDelete()} style={styles.confirmButton}><Text style={styles.dangerText}>Sil</Text></Pressable></View>
+        <Text style={styles.modalCopy}>{checked.length} defter Silinenler'e taşınacak ve 30 gün sonra kalıcı olarak silinecek.</Text>
+        <View style={styles.confirmActions}><Pressable disabled={working} onPress={() => setConfirmDelete(false)} style={styles.confirmButton}><Text style={styles.slimText}>Vazgeç</Text></Pressable><Pressable disabled={working} onPress={() => void confirmBulkDelete()} style={styles.confirmButton}>{working?<View style={{flexDirection:'row',alignItems:'center',gap:8}}><ActivityIndicator size="small" color={colors.coral}/><Text style={styles.dangerText}>Siliniyor</Text></View>:<Text style={styles.dangerText}>Sil</Text>}</Pressable></View>
       </View></View>
     </Modal>
 

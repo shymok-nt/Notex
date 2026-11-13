@@ -58,12 +58,3 @@ export function rotateElement(e:Element,cx:number,cy:number,angle:number):Elemen
  if(e.type==='text')return e; // Text rotation is intentionally unsupported.
  const p=e.params;const params={...p,rotation:p.rotation+angle};return {...e,params,bbox:shapeBounds(params)};
 }
-export function pointInside(poly:number[],x:number,y:number){let inside=false;for(let i=0,j=poly.length-2;i<poly.length;j=i,i+=2){const xi=poly[i],yi=poly[i+1],xj=poly[j],yj=poly[j+1];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)inside=!inside}return inside}
-export function lassoSelect(elements:Element[],poly:number[]):string[]{
- if(poly.length<6)return [];
- return elements.filter(e=>{const samples:number[][]=[];if(e.type==='stroke'){for(let i=0;i<e.points.length;i+=Math.max(3,Math.floor(e.points.length/120/3)*3))samples.push([e.points[i],e.points[i+1]])}
- else if(e.type==='text'){const b=e.bbox;samples.push([(b[0]+b[2])/2,(b[1]+b[3])/2])}
- else{const b=e.bbox;for(let i=0;i<=4;i++)for(let j=0;j<=4;j++)samples.push([b[0]+(b[2]-b[0])*i/4,b[1]+(b[3]-b[1])*j/4])}
- return samples.length>0&&samples.filter(p=>pointInside(poly,p[0],p[1])).length>=samples.length*0.5
- }).map(e=>e.id);
-}

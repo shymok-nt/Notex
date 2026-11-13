@@ -11,4 +11,4 @@ export type Notebook={
  showTitleOnCover:boolean;template:PageTemplate;paperColor:PaperColor;pageCount:number;
  createdAt:string;updatedAt:string;favorite:boolean;autoConvertEnabled:boolean;conversionFont:ConversionFont;conversionDelayMs:number;
 };
-export type NotebookDraft=Pick<Notebook,'title'|'folder'|'coverType'|'coverColor'|'coverImageUri'|'showTitleOnCover'|'template'|'paperColor'|'autoConvertEnabled'|'conversionFont'|'conversionDelayMs'>;
+export type NotebookDraft=Pick<Notebook,'title'|'folder'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'|'template'|'paperColor'|'autoConvertEnabled'|'conversionFont'|'conversionDelayMs'>;

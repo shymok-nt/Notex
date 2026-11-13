@@ -1,6 +1,6 @@
 import React,{useState} from 'react';
 import {Pressable,Text,View,ScrollView} from 'react-native';
-import {Pen,Highlighter,Eraser,Hand,Move,Shapes,Type,Image as ImageIcon,PanelsTopLeft} from 'lucide-react-native';
+import {Pen,Highlighter,Eraser,Hand,Lasso,Shapes,Type,Image as ImageIcon,PanelsTopLeft} from 'lucide-react-native';
 import type {Tool} from './DrawingCanvas';
 import type {ThemeColors} from '@/theme/colors';
 
@@ -9,7 +9,7 @@ export const tools:{id:UiTool;label:string;icon:typeof Pen;enabled:boolean}[]=[
  {id:'pen',label:'Kalem',icon:Pen,enabled:true},
  {id:'highlighter',label:'Vurgulayıcı',icon:Highlighter,enabled:true},
  {id:'eraser',label:'Silgi',icon:Eraser,enabled:true},
- {id:'select',label:'Seç ve taşı',icon:Move,enabled:true},
+ {id:'select',label:'Kement',icon:Lasso,enabled:true},
  {id:'shape',label:'Şekil',icon:Shapes,enabled:true},
  {id:'text',label:'Metin',icon:Type,enabled:true},
  {id:'image',label:'Resim',icon:ImageIcon,enabled:true},

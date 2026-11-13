@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { getDatabase,withSafeTransaction } from '@/db/database';
 import { copyCoverFile,deleteCoverFile,resolveCoverUri,coverPathFromUri } from '@/utils/files';
 import type { NotebookDraft,PageTemplate,PaperColor,ConversionFont } from '@/types/notebook';
+import { perfNow } from '@/features/canvas/engine/performance';
 export type NotebookRow={
  id:string;title:string;folder_id:string|null;cover_type:'color'|'image'|'preset';cover_color:string|null;
  cover_image_path:string|null;cover_preset_id:string|null;show_title_on_cover:number;
@@ -12,7 +13,7 @@ const select=`SELECT n.*,COUNT(p.id) AS page_count FROM notebooks n LEFT JOIN pa
 const now=()=>new Date().toISOString();
 const rowParams=(input:NotebookInput)=>[input.title,input.folderId,input.coverType,input.coverColor,input.coverImagePath,input.coverPresetId??null,input.showTitleOnCover?1:0,input.template,input.paperColor,input.autoConvertEnabled?1:0,input.conversionFont,input.conversionDelayMs] as const;
 export const notebookRepository={
- async getAll(){const db=await getDatabase();return db.getAllAsync<NotebookRow>(`${select} GROUP BY n.id ORDER BY n.updated_at DESC`);},
+ async getAll(){const started=__DEV__?perfNow():0;const db=await getDatabase(),queryStarted=__DEV__?perfNow():0;const rows=await db.getAllAsync<NotebookRow>(`${select} GROUP BY n.id ORDER BY n.updated_at DESC`);if(__DEV__)console.log('[Notex perf] sqlite_notebooks_read',{duration_ms:Math.round((perfNow()-started)*10)/10,db_ready_ms:Math.round((queryStarted-started)*10)/10,query_ms:Math.round((perfNow()-queryStarted)*10)/10,notebook_count:rows.length});return rows;},
  async getById(id:string){const db=await getDatabase();return db.getFirstAsync<NotebookRow>(`${select} AND n.id=? GROUP BY n.id`,id);},
  async create(input:NotebookInput){
   const db=await getDatabase(),id=Crypto.randomUUID(),date=now(),pageId=Crypto.randomUUID();
@@ -36,6 +37,48 @@ export const notebookRepository={
  async remove(id:string){
   const db=await getDatabase();
   await db.runAsync('UPDATE notebooks SET deleted_at=? WHERE id=? AND deleted_at IS NULL',now(),id);
+ },
+ async removeMany(ids:readonly string[]){
+  const started=__DEV__?perfNow():0;
+  const unique=[...new Set(ids.filter(id=>typeof id==='string'&&id.trim().length>0))];
+  const preparedAt=__DEV__?perfNow():0;
+  if(!unique.length)return [] as string[];
+  const db=await getDatabase();
+  const openedAt=__DEV__?perfNow():0;
+  const removed=await withSafeTransaction(db,async tx=>{
+   const active:string[]=[];
+   for(let offset=0;offset<unique.length;offset+=500){
+    const chunk=unique.slice(offset,offset+500),placeholders=chunk.map(()=>'?').join(',');
+    const rows=await tx.getAllAsync<{id:string}>(`SELECT id FROM notebooks WHERE deleted_at IS NULL AND id IN (${placeholders})`,...chunk);
+    active.push(...rows.map(row=>row.id));
+   }
+   const date=now();
+   for(let offset=0;offset<active.length;offset+=500){
+    const chunk=active.slice(offset,offset+500),placeholders=chunk.map(()=>'?').join(',');
+    await tx.runAsync(`UPDATE notebooks SET deleted_at=? WHERE deleted_at IS NULL AND id IN (${placeholders})`,date,...chunk);
+   }
+   return active;
+  });
+  if(__DEV__)console.log('[Notex perf] notebook_bulk_remove_repository',{requested_count:ids.length,unique_count:unique.length,id_prep_ms:Math.round((preparedAt-started)*10)/10,db_open_ms:Math.round((openedAt-preparedAt)*10)/10,transaction_ms:Math.round((perfNow()-openedAt)*10)/10,moved_count:removed.length,total_ms:Math.round((perfNow()-started)*10)/10});
+  return removed;
+ },
+ async restoreMany(ids:readonly string[]){
+  const unique=[...new Set(ids.filter(id=>typeof id==='string'&&id.trim().length>0))];
+  if(!unique.length)return [] as string[];
+  const db=await getDatabase();
+  return withSafeTransaction(db,async tx=>{
+   const deleted:string[]=[];
+   for(let offset=0;offset<unique.length;offset+=500){
+    const chunk=unique.slice(offset,offset+500),placeholders=chunk.map(()=>'?').join(',');
+    const rows=await tx.getAllAsync<{id:string}>(`SELECT id FROM notebooks WHERE deleted_at IS NOT NULL AND id IN (${placeholders})`,...chunk);
+    deleted.push(...rows.map(row=>row.id));
+   }
+   for(let offset=0;offset<deleted.length;offset+=500){
+    const chunk=deleted.slice(offset,offset+500),placeholders=chunk.map(()=>'?').join(',');
+    await tx.runAsync(`UPDATE notebooks SET deleted_at=NULL,folder_id=CASE WHEN folder_id IS NULL OR EXISTS(SELECT 1 FROM folders WHERE folders.id=notebooks.folder_id) THEN folder_id ELSE NULL END WHERE deleted_at IS NOT NULL AND id IN (${placeholders})`,...chunk);
+   }
+   return deleted;
+  });
  },
  async getDeleted(){
   const db=await getDatabase();

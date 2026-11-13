@@ -18,12 +18,15 @@ import {pixelErase} from '@/features/canvas/engine/pixelEraser';
 import {hasCommittedErase,isCurrentEraseHandoff,shouldReleaseEraserHandoff} from '@/features/canvas/engine/eraserHandoff';
 import {getPaperGuideMetrics,nearestPaperGuide,PAPER_GUIDE_SPACING,PAPER_GUIDE_LINE_WIDTH} from '@/features/canvas/engine/paperGuides';
 import {recognizeShape} from '@/features/canvas/engine/recognizeShape';
-import {shapePath,makeShape,lassoSelect,moveElement,scaleElement,rotateElement} from '@/features/canvas/engine/shapes';
+import {shapePath,makeShape,moveElement,scaleElement,rotateElement} from '@/features/canvas/engine/shapes';
+import {lassoSelect,lassoPathLength} from '@/features/canvas/engine/lassoGeometry';
+import {readSelectionClipboard,writeSelectionClipboard,hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
+import {isSelectionHandoffCommitted,needsReleasedSelectionHandoff,shouldApplySelectionPreviewTransform,shouldDismissSelectionOnBlankTap,shouldUseCommittedSelectionGeometry} from '@/features/canvas/engine/selectionHandoff';
 import type {ShapeMode,Element} from '@/features/canvas/types';
 import type {PageTemplate,PaperColor} from '@/types/notebook';
 export type Tool='pen'|'highlighter'|'eraser'|'hand'|'select'|'shape'|'text';
 export type Brush={color:string;width:number;opacity:number};
-type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onDrawingActive?:(active:boolean)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify';value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;imageAction?:{kind:'grow'|'shrink'|'delete';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}};
+type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onDrawingActive?:(active:boolean)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;imageAction?:{kind:'grow'|'shrink'|'delete';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}};
 const normalizeShapeSize=(kind:string,w:number,h:number):[number,number]=>{ 'worklet';
  if(kind==='triangle'){
   const side=Math.max(Math.abs(w),Math.abs(h)*2/Math.sqrt(3));
@@ -248,7 +251,7 @@ const Completed=memo(function Completed({content,hiddenIds,fonts}:{content:PageC
  },[elements]);
  return <>{elements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={fonts}/>:<StrokeLayer key={element.id} element={element}/>)}</>;
 });
-export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,eraserSize,eraserMode='pixel',onChange,onDrawingActive,onStrokeComplete,shapeKind='auto',shapeFill=false,onSelectionChange,selectionAction,transformMode=false,onImageSelectionChange,imageAction,textStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left'}}:Props){
+export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,eraserSize,eraserMode='pixel',onChange,onDrawingActive,onStrokeComplete,shapeKind='auto',shapeFill=false,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,selectionAction,transformMode=false,onImageSelectionChange,imageAction,textStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left'}}:Props){
  const pressureEnabled=useSettingsStore(state=>state.penSettings.pressureEnabled);
  const pressureSensitivity=useSettingsStore(state=>state.penSettings.pressureSensitivity);
  const fingerDraw=useSettingsStore(state=>state.penSettings.fingerDraw);
@@ -310,11 +313,18 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const [wordEditing,setWordEditing]=useState<{id:string;text:string}|null>(null);
  const [selectedIds,setSelectedIds]=useState<string[]>([]);
  const selectedRef=useRef<string[]>([]);selectedRef.current=selectedIds;
+ const traceRef=useRef<{id:number;part:number;ids:string[];gestureEndAt:number|null;events:{t:number;event:string;ids:string[];detail?:unknown}[]}>({id:0,part:0,ids:[],gestureEndAt:null,events:[]});
+ const traceSequence=useRef(0);
+ const trace=(event:string,detail?:unknown)=>{if(!__DEV__||Platform.OS!=='android')return;const current=traceRef.current;if(!current.id)return;const t=Math.round(perfNow()*10)/10;if(event==='gesture_end')current.gestureEndAt=t;const timing=event==='react_render_commit'&&current.gestureEndAt!==null?{msSinceGestureEnd:Math.round((t-current.gestureEndAt)*10)/10}:{};current.events.push({t,event,ids:current.ids,detail:event==='react_render_commit'?{...(detail as Record<string,unknown>),...timing}:detail});if(current.events.length>80)current.events.shift()};
+ const flushTrace=()=>{if(!__DEV__||Platform.OS!=='android')return;const current=traceRef.current;if(current.events.length){console.log('[Notex lasso-trace] '+JSON.stringify({operation:current.id,part:++current.part,pageId,measurement:'React commit and JS events; not presented Skia frames',events:current.events}));current.events=[]}};
+ const beginTrace=(kind:string,bounds:readonly number[])=>{if(!__DEV__||Platform.OS!=='android')return;flushTrace();traceRef.current={id:++traceSequence.current,part:0,ids:selectedRef.current.slice(0,12),gestureEndAt:null,events:[]};trace('gesture_begin',{kind,bounds})};
+
  useEffect(()=>{
-  if(!selectionAction||selectionAction.kind!=='toggleBeautify')return;
+  if(!selectionAction||selectionAction.pageId!==pageId||selectionAction.kind!=='toggleBeautify')return;
   const selected=new Set(selectedRef.current);
   const matching=(content.beautifications??[]).filter(item=>item.sourceIds.some(id=>selected.has(id)));
   if(matching.length)onChange({...content,beautifications:(content.beautifications??[]).map(item=>matching.includes(item)?{...item,mode:item.mode==='original'?'beautified':'original'}:item)});
+  onSelectionActionComplete?.(selectionAction.version);
  },[selectionAction?.version]);
  const [imageId,setImageId]=useState<string|null>(null);
  const imageIdRef=useRef<string|null>(null);imageIdRef.current=imageId;
@@ -323,15 +333,32 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const factor=imageAction.kind==='grow'?1.2:1/1.2;
   onChange({...content,images:(content.images??[]).map(i=>i.id!==id?i:{...i,width:Math.max(50,Math.min(PAGE_WIDTH*2,i.width*factor)),height:Math.max(50,Math.min(PAGE_HEIGHT*2,i.height*factor))})});
  },[imageAction?.version]);
- useEffect(()=>{if(!selectionAction||selectionAction.kind==='toggleBeautify')return;const ids=new Set(selectedRef.current);if(!ids.size)return;let next:Element[]=content.elements;
- if(selectionAction.kind==='delete')next=next.filter(e=>!ids.has(e.id));
- if(selectionAction.kind==='duplicate')next=[...next,...next.filter(e=>ids.has(e.id)).map(e=>({...moveElement(e,20,20),id:e.id+'-copy-'+selectionAction.version,z:next.length+1}))];
+ useEffect(()=>{
+  if(!selectionAction||selectionAction.pageId!==pageId||selectionAction.kind==='toggleBeautify')return;
+  if(selectionAction.kind==='copy'){writeSelectionClipboard(selectedElements);onSelectionClipboardChange?.(hasSelectionClipboard());onSelectionActionComplete?.(selectionAction.version);return;}
+  if(selectionAction.kind==='clear'){
+   clearElementSelection();
+   onSelectionActionComplete?.(selectionAction.version);return;
+  }
+  const ids=new Set(selectedRef.current);
+  if(selectionAction.kind==='paste'||selectionAction.kind==='duplicate'){
+   const source=selectionAction.kind==='paste'?readSelectionClipboard():content.elements.filter(e=>ids.has(e.id));
+   if(!source.length){onSelectionActionComplete?.(selectionAction.version);return;}
+   const copies=source.map((element,index)=>({...moveElement(element,20,20),id:Crypto.randomUUID(),z:content.elements.length+index}));
+   const next=[...content.elements,...copies],copyIds=copies.map(element=>element.id);
+   resetPaintedTransform();setHandoff(null);setSelectedIds(copyIds);onSelectionChange?.(copyIds);onChange(withHeight(next));onSelectionActionComplete?.(selectionAction.version);
+   return;
+  }
+  if(!ids.size){onSelectionActionComplete?.(selectionAction.version);return;}
+  let next:Element[]=content.elements;
+  if(selectionAction.kind==='delete')next=next.filter(e=>!ids.has(e.id));
  if(selectionAction.kind==='move')next=next.map(e=>ids.has(e.id)?moveElement(e,selectionAction.value??20,selectionAction.value??20):e);
  if(selectionAction.kind==='scale')next=next.map(e=>ids.has(e.id)?scaleElement(e,(e.bbox[0]+e.bbox[2])/2,(e.bbox[1]+e.bbox[3])/2,selectionAction.value??1.1,selectionAction.value??1.1):e);
  if(selectionAction.kind==='rotate')next=next.map(e=>ids.has(e.id)?rotateElement(e,(e.bbox[0]+e.bbox[2])/2,(e.bbox[1]+e.bbox[3])/2,selectionAction.value??Math.PI/12):e);
  if(selectionAction.kind==='color')next=next.map(e=>{if(!ids.has(e.id))return e;if(e.type==='stroke')return {...e,color:selectionAction.color??e.color};if(e.type==='text')return {...e,color:selectionAction.color??e.color};return {...e,stroke:{...e.stroke,color:selectionAction.color??e.stroke.color}}});
  if(selectionAction.kind==='textStyle'&&selectionAction.textStyle)next=next.map(e=>{if(!ids.has(e.id)||e.type!=='text')return e;const updated={...e,...selectionAction.textStyle};let height=Math.max(updated.fontSize*1.25,e.bbox[3]-e.bbox[1]);if(textFonts){const builder=Skia.ParagraphBuilder.Make({textAlign:paragraphAlign(updated.align)},textFonts);builder.pushStyle({fontFamilies:[skiaFontFamily(updated.fontFamily,updated.bold),'Inter'],fontSize:updated.fontSize,color:Skia.Color(updated.color)});builder.addText(updated.text);builder.pop();const paragraph=builder.build();paragraph.layout(updated.w);height=Math.max(updated.fontSize*1.25,paragraph.getHeight())}return {...updated,bbox:[updated.x,updated.y,updated.x+updated.w,updated.y+height] as [number,number,number,number]};});
- if(next!==content.elements){onChange(withHeight(next));if(selectionAction.kind==='delete'){setSelectedIds([]);onSelectionChange?.([])}}
+  if(next!==content.elements){onChange(withHeight(next));if(selectionAction.kind==='delete'){setSelectedIds([]);onSelectionChange?.([])}}
+  onSelectionActionComplete?.(selectionAction.version);
  },[selectionAction?.version]);
  const [size,setSize]=useState({width:300,height:450});
   const eraserCommitRef=useRef<{elements:Element[];generation:number}|null>(null);
@@ -357,6 +384,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const samples=useSharedValue<SampleBuffer>(emptySampleBuffer()),blocked=useSharedValue(false),drawing=useSharedValue(false);
  const dragX=useSharedValue(0),dragY=useSharedValue(0),draggingSelection=useSharedValue(false);
  const dragPending=useSharedValue(false);
+ const selectionGestureGeneration=useSharedValue(0);
  const cornerActive=useSharedValue(false),cornerStartX=useSharedValue(0),cornerStartY=useSharedValue(0);
  const cornerCenterX=useSharedValue(0),cornerCenterY=useSharedValue(0);
  const cornerStartRadius=useSharedValue(1),cornerStartAngle=useSharedValue(0);
@@ -368,34 +396,75 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // Keep the preview pose until the final shape is mounted on release.
  const selectionPreviewLive=useSharedValue(false);
  const transformActive=useSharedValue(false),transformPending=useSharedValue(false);
- const [handoff,setHandoff]=useState<{elements:Element[];bounds:readonly [number,number,number,number];rotation:number;dx:number;dy:number;scale:number;angle:number}|null>(null);
+ const [handoff,setHandoff]=useState<{elements:Element[];bounds:readonly [number,number,number,number];rotation:number;dx:number;dy:number;scale:number;angle:number;generation:number}|null>(null);
  const pendingHandoff=useRef(false);
  const rotateActive=useSharedValue(false),pinchActive=useSharedValue(false);
  const gestureFocalX=useSharedValue(0),gestureFocalY=useSharedValue(0);
  const gestureCenterX=useSharedValue(0),gestureCenterY=useSharedValue(0);
 
  const selectedElements=useMemo(()=>content.elements.filter(e=>selectedIds.includes(e.id)),[content,selectedIds]);
+ const selectionCanRotate=selectedElements.every(element=>element.type!=='text');
+ const selectionCanRotateValue=useSharedValue(selectionCanRotate);
+ useEffect(()=>{selectionCanRotateValue.value=selectionCanRotate;},[selectionCanRotate]);
+  // Only retain a handoff while it represents the same selection.
+  const handoffMatchesSelection=!!handoff&&handoff.elements.length===selectedIds.length&&
+   handoff.elements.every(e=>selectedIds.includes(e.id));
  // Freeze the selected Skia paths for the entire selection session.
  // Saving a gesture updates document data, NOT the visible path tree.
  const selectionKey=selectedIds.join('|');
  const frozenSelection=useRef<{key:string;elements:Element[];frame:ReturnType<typeof selectionFrame>}|null>(null);
+  const frozenContentElements=useRef(content.elements);
  if(!frozenSelection.current||frozenSelection.current.key!==selectionKey){
   frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
  }
- const paintedElements=frozenSelection.current.elements;
- const paintedFrame=frozenSelection.current.frame;
+  // A transform commit can land one React render after the gesture ends.
+  // Track document commit independently from whether selection is still active.
+  const handoffIsCommitted=isSelectionHandoffCommitted(handoff?.elements??null,content.elements);
+  const handoffNeedsReleaseRender=needsReleasedSelectionHandoff(!!handoff,handoffIsCommitted,tool==='select',handoffMatchesSelection);
+  if(frozenContentElements.current!==content.elements){
+   if(!handoffIsCommitted)frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
+   frozenContentElements.current=content.elements;
+  }
+ // Before the page commit, keep the frozen source paths under the live
+ // transform. As soon as the exact final objects are in content, swap the
+ // selected overlay to those same objects and remove the preview transform.
+ const renderCommittedSelection=shouldUseCommittedSelectionGeometry(handoffIsCommitted,handoffMatchesSelection);
+  if(renderCommittedSelection)frozenSelection.current={key:selectionKey,elements:handoff!.elements,frame:{bounds:handoff!.bounds,rotation:handoff!.rotation}};
+ const paintedElements=renderCommittedSelection?handoff!.elements:frozenSelection.current.elements;
+ const paintedFrame=renderCommittedSelection?{bounds:handoff!.bounds,rotation:handoff!.rotation}:frozenSelection.current.frame;
  const committedDX=useSharedValue(0),committedDY=useSharedValue(0);
  const committedScale=useSharedValue(1),committedAngle=useSharedValue(0);
  const resetPaintedTransform=()=>{
+  trace('shared_transform_reset',{dx:committedDX.value+dragX.value+gestureDX.value,dy:committedDY.value+dragY.value+gestureDY.value,scale:committedScale.value*gestureScale.value,angle:committedAngle.value+gestureAngle.value,pendingDrag:dragPending.value,pendingTransform:transformPending.value});
   committedDX.value=0;committedDY.value=0;
   committedScale.value=1;committedAngle.value=0;
   dragX.value=0;dragY.value=0;gestureScale.value=1;gestureAngle.value=0;
+   dragPending.value=false;transformPending.value=false;
  };
+ const tracedContentRef=useRef(content.elements);
  useLayoutEffect(()=>{resetPaintedTransform();},[selectionKey,tool]);
+ useLayoutEffect(()=>{
+  const contentReferenceChanged=tracedContentRef.current!==content.elements;
+  tracedContentRef.current=content.elements;
+  if(!__DEV__||Platform.OS!=='android'||!traceRef.current.id)return;
+  const hidden=new Set(tool==='select'?selectedIds:[]);
+  if(handoffNeedsReleaseRender)for(const element of handoff!.elements)hidden.add(element.id);
+  const relevant=new Set([...selectedIds,...(handoff?.elements.map(e=>e.id)??[])]);
+  trace('react_render_commit',{
+   scope:'tracked element IDs',contentReferenceChanged,
+   committed:handoffIsCommitted,pending:pendingHandoff.current,
+   completedHidden:[...hidden].slice(0,12),
+   completedDrawn:content.elements.filter(e=>relevant.has(e.id)&&!hidden.has(e.id)).slice(0,12).map(e=>({id:e.id,bbox:e.bbox})),
+   selectionActive:tool==='select'&&!!paintedFrame,
+   selectionDrawn:tool==='select'?paintedElements.slice(0,12).map(e=>({id:e.id,bbox:e.bbox})):[],
+   handoffActive:handoffNeedsReleaseRender,
+   handoffDrawn:handoffNeedsReleaseRender?handoff!.elements.slice(0,12).map(e=>({id:e.id,bbox:e.bbox})):[],
+   transform:{dx:committedDX.value+dragX.value+gestureDX.value,dy:committedDY.value+dragY.value+gestureDY.value,scale:committedScale.value*gestureScale.value,angle:committedAngle.value+gestureAngle.value},
+   previewApplied:shouldApplySelectionPreviewTransform(renderCommittedSelection,draggingSelection.value||cornerActive.value||transformActive.value,dragPending.value||transformPending.value,handoff?.generation??-1,selectionGestureGeneration.value),
+   handoffGeneration:handoff?.generation??null,gestureGeneration:selectionGestureGeneration.value,
+  });
+ },[content.elements,handoff,selectedIds,tool]);
 
- // Only retain a handoff while it represents the same selection.
- const handoffMatchesSelection=!!handoff&&handoff.elements.length===selectedIds.length&&
-  handoff.elements.every(e=>selectedIds.includes(e.id));
 
  // Use the same committed baseline for drawing, hit-testing and the next edit.
  // Parent content can arrive a render later than the locally committed handoff.
@@ -427,26 +496,49 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // for the first and every subsequent gesture.
  const paintedCenterX=paintedFrame?(paintedFrame.bounds[0]+paintedFrame.bounds[2])/2:0;
  const paintedCenterY=paintedFrame?(paintedFrame.bounds[1]+paintedFrame.bounds[3])/2:0;
- const selectionTransform=useDerivedValue(()=>[
-  {translateX:committedDX.value+dragX.value+gestureDX.value},
-  {translateY:committedDY.value+dragY.value+gestureDY.value},
+ const paintedHandoffGeneration=handoff?.generation??-1;
+  const selectionTransform=useDerivedValue(()=>{
+   const applyPreview=shouldApplySelectionPreviewTransform(renderCommittedSelection,draggingSelection.value||cornerActive.value||transformActive.value,dragPending.value||transformPending.value,paintedHandoffGeneration,selectionGestureGeneration.value);
+   return [
+   {translateX:applyPreview?committedDX.value+dragX.value+gestureDX.value:0},
+   {translateY:applyPreview?committedDY.value+dragY.value+gestureDY.value:0},
   {translateX:paintedCenterX},
   {translateY:paintedCenterY},
-  {rotate:committedAngle.value+gestureAngle.value},
-  {scale:committedScale.value*gestureScale.value},
+   {rotate:applyPreview?committedAngle.value+gestureAngle.value:0},
+   {scale:applyPreview?committedScale.value*gestureScale.value:1},
   {translateX:-paintedCenterX},
   {translateY:-paintedCenterY}
- ]);
+   ];
+  });
  const deleteSelectedImage=()=>{const id=imageIdRef.current;if(!id)return;onChange({...content,images:(content.images??[]).filter(i=>i.id!==id)});setImageId(null);onImageSelectionChange?.(null);setDisplayImageId(null);paintedImageIdRef.current=null;};
+ const clearElementSelection=()=>{
+  const keepPendingHandoff=!!handoff&&pendingHandoff.current&&!handoffIsCommitted;
+  trace('selection_clear',{handoff:!!handoff,committed:handoffIsCommitted,pending:pendingHandoff.current});
+  setSelectedIds([]);onSelectionChange?.([]);
+  // Keep the mounted preview pose until React removes the selection layer.
+  // The selectionKey layout effect resets it after that commit.
+  if(!keepPendingHandoff){trace('handoff_clear',{reason:'selection_clear'});setHandoff(null);}
+ };
  const selectAt=(x:number,y:number)=>{
   const image=[...(content.images??[])].reverse().find(i=>{const cx=i.x+i.width/2,cy=i.y+i.height/2,a=-(i.rotation??0),dx=x-cx,dy=y-cy,px=dx*Math.cos(a)-dy*Math.sin(a)+cx,py=dx*Math.sin(a)+dy*Math.cos(a)+cy;return px>=i.x&&px<=i.x+i.width&&py>=i.y&&py<=i.y+i.height});
-  if(image){setImageId(image.id);onImageSelectionChange?.(image.id);setSelectedIds([]);onSelectionChange?.([]);return;}
+  if(image){setImageId(image.id);onImageSelectionChange?.(image.id);clearElementSelection();return;}
   setImageId(null);onImageSelectionChange?.(null);
   const margin=16/fitWidth;
   const hit=[...content.elements].reverse().find(e=>x>=e.bbox[0]-margin&&x<=e.bbox[2]+margin&&y>=e.bbox[1]-margin&&y<=e.bbox[3]+margin);
   if(hit){if(!selectedRef.current.includes(hit.id)){resetPaintedTransform();setHandoff(null);}setSelectedIds([hit.id]);onSelectionChange?.([hit.id]);}
+  else if(shouldDismissSelectionOnBlankTap(tool==='select',selectedRef.current.length>0,false))clearElementSelection();
  };
- const commitSelectionMove=(dx:number,dy:number)=>{
+ const completeLasso=(points:Sample[])=>{
+  const polygon=points.flatMap(point=>[point[0],point[1]]);
+  const ids=lassoSelect(content.elements,polygon);
+  resetPaintedTransform();setHandoff(null);setImageId(null);onImageSelectionChange?.(null);
+  const selectedNow=content.elements.filter(element=>ids.includes(element.id));
+  frozenSelection.current={key:ids.join('|'),elements:selectedNow,frame:selectionFrame(selectedNow)};
+  frozenContentElements.current=content.elements;
+  setSelectedIds(ids);onSelectionChange?.(ids);
+ };
+ const commitSelectionMove=(dx:number,dy:number,generation:number)=>{
+  trace('runOnJS_commit_start',{kind:'move',dx,dy});
   if(Math.hypot(dx,dy)<0.1)return;
   const ids=new Set(selectedRef.current);
   if(!ids.size)return;
@@ -457,13 +549,20 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const finalElements=next.filter(e=>ids.has(e.id));
   const finalFrame=selectionFrame(finalElements);
   if(!finalFrame)return;
+  trace('final_bbox',finalElements.slice(0,12).map(e=>({id:e.id,bbox:e.bbox})));
   pendingHandoff.current=true;
-  setHandoff({elements:finalElements,bounds:finalFrame.bounds,rotation:finalFrame.rotation,dx:0,dy:0,scale:1,angle:0});
+  trace('handoff_created',{bounds:finalFrame.bounds});
+  setHandoff({elements:finalElements,bounds:finalFrame.bounds,rotation:finalFrame.rotation,dx:0,dy:0,scale:1,angle:0,generation});
+  trace('onChange',{count:next.length});
   onChange(withHeight(next));
  };
- const commitGesture=(dx:number,dy:number,scale:number,angle:number)=>{
+ const commitGesture=(dx:number,dy:number,scale:number,angle:number,generation:number)=>{
+  trace('runOnJS_commit_start',{kind:'transform',dx,dy,scale,angle});
   const ids=new Set(selectedRef.current);
   if(!ids.size)return;
+  // Text elements have no persisted rotation model. Never preview a rotation
+  // that cannot be committed to the document.
+  if(baselineElements.some(element=>ids.has(element.id)&&element.type==='text'))angle=0;
   const b=selectedBounds;
   if(!b)return;
   const cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;
@@ -491,31 +590,52 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const finalElements=next.filter(e=>ids.has(e.id));
   const finalFrame=selectionFrame(finalElements);
   if(!finalFrame)return;
+  trace('final_bbox',finalElements.slice(0,12).map(e=>({id:e.id,bbox:e.bbox})));
   pendingHandoff.current=true;
-  setHandoff({elements:finalElements,bounds:finalFrame.bounds,rotation:finalFrame.rotation,dx:0,dy:0,scale:1,angle:0});
+  trace('handoff_created',{bounds:finalFrame.bounds});
+  setHandoff({elements:finalElements,bounds:finalFrame.bounds,rotation:finalFrame.rotation,dx:0,dy:0,scale:1,angle:0,generation});
+  trace('onChange',{count:next.length});
   onChange(withHeight(next));
  };
- // React commits the final path and its selection frame as ONE Skia group.
- // Reset worklet transforms only after that group has switched to final geometry.
+ // Keep the released preview pose until the exact final objects are in content.
  useLayoutEffect(()=>{
   if(!handoff)return;
-  // The painted geometry stays frozen; the UI worklet has already folded
-  // this gesture into its accumulated transform before the JS commit.
-  dragPending.value=false;
-  transformPending.value=false;
-  
- },[handoff]);
+  if(handoffIsCommitted){
+   trace('content_commit_confirmed',{final:handoff.elements.map(e=>content.elements.find(item=>item.id===e.id)).filter((e):e is Element=>!!e).slice(0,12).map(e=>({id:e.id,bbox:e.bbox}))});
+   pendingHandoff.current=false;
+   if(selectionGestureGeneration.value===handoff.generation){
+    trace('shared_transform_pending_reset',{handoff:handoff.elements.map(e=>e.id),dx:committedDX.value+dragX.value+gestureDX.value,dy:committedDY.value+dragY.value+gestureDY.value,scale:committedScale.value*gestureScale.value,angle:committedAngle.value+gestureAngle.value,pendingDrag:dragPending.value,pendingTransform:transformPending.value});
+    resetPaintedTransform();
+   }
+   if(tool!=='select'||!handoffMatchesSelection){trace('handoff_clear',{reason:'committed_release'});setHandoff(null)}
+   return;
+  }
+  // Keep final geometry until the exact elements are present in document
+  // content. If it is no longer a pending edit (Undo/external content change),
+  // its overlay is stale and can be discarded.
+  if((tool!=='select'||!handoffMatchesSelection)&&pendingHandoff.current){resetPaintedTransform();return;}
+  if(!pendingHandoff.current){trace('handoff_clear',{reason:'stale'});setHandoff(null);resetPaintedTransform();}
+ },[content.elements,handoff,handoffIsCommitted,handoffMatchesSelection,tool]);
+ useEffect(()=>{
+  const available=new Set(content.elements.map(element=>element.id));
+  const current=selectedRef.current;
+  const valid=current.filter(id=>available.has(id));
+  if(valid.length!==current.length){setSelectedIds(valid);onSelectionChange?.(valid);}
+ },[content.elements]);
  // Keep the committed geometry mounted as the selected shape's baseline.
  // Removing the handoff after React's commit caused a second Skia scene
  // replacement, briefly repainting the previous geometry on CanvasKit.
  // It is cleared only when selection/tool identity changes.
  useEffect(()=>{
   if(tool!=='select'||selectedIds.length===0){
-   pendingHandoff.current=false;
-   setHandoff(null);
+   if(handoff&&pendingHandoff.current&&!handoffIsCommitted){resetPaintedTransform();return;}
+   trace('handoff_clear',{reason:'selection_closed'});pendingHandoff.current=false;setHandoff(null);
   }
- },[tool,selectedIds.length]);
- const selectionStart=useSharedValue<Sample|null>(null);
+ },[tool,selectedIds.length,handoff,handoffIsCommitted]);
+  useEffect(()=>{if(handoffIsCommitted||(!handoff&&selectedIds.length===0))flushTrace()},[handoffIsCommitted,handoff,selectedIds.length]);
+  const selectionStart=useSharedValue<Sample|null>(null);
+  const lassoDrawing=useSharedValue(false);
+  useEffect(()=>{if(tool!=='select'&&lassoDrawing.value){lassoDrawing.value=false;samples.value=emptySampleBuffer();draft.value=''}},[tool]);
  const originX=useDerivedValue(()=>(size.width-PAGE_WIDTH*fitWidth*zoom.value)/2+offsetX.value);
  const originY=useDerivedValue(()=>offsetY.value);
  const transform=useDerivedValue(()=>[{translateX:originX.value},{translateY:originY.value},{scale:fitWidth*zoom.value}]);
@@ -673,8 +793,8 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // Keep the selected image's rendered geometry frozen until the Skia preview
  // and persisted geometry can be reconciled together, like shape selection.
  const [paintedImage,setPaintedImage]=useState<import('@/features/canvas/types').PageImage|null>(null);
- const paintedImageRef=useRef<import('@/features/canvas/types').PageImage|null>(null);
- paintedImageRef.current=paintedImage;
+ // UI gestures need only the frozen image rotation, never a mutable React ref.
+ const paintedImageRotation=useSharedValue(0);
  
  const imageTransform=useDerivedValue(()=>{const b=imagePaintBounds.value,cx=b?(b[0]+b[2])/2:0,cy=b?(b[1]+b[3])/2:0;return [{translateX:imageCommittedX.value+imageDX.value+imageFocalDX.value},{translateY:imageCommittedY.value+imageDY.value+imageFocalDY.value},{translateX:cx},{translateY:cy},{rotate:imageCommittedAngle.value+imageAngle.value},{scale:imageCommittedScale.value*imageScale.value},{translateX:-cx},{translateY:-cy}]});
  // Selection chrome is drawn inside the scaled image group. Compensate for
@@ -713,11 +833,12 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   imageCommittedScale.value=1;imageCommittedAngle.value=0;
   imageDX.value=0;imageDY.value=0;imageScale.value=1;imageAngle.value=0;
   imagePaintBounds.value=current?[current.x,current.y,current.x+current.width,current.y+current.height]:null;
+  paintedImageRotation.value=current?.rotation??0;
   setPaintedImage(current??null);
  },[imageId,content.images]);
  const logPointerStart=(pointerType:string,currentTool:Tool,allowed:boolean)=>{if(__DEV__){console.log('[Notex canvas] pointer start:',{pointerType,tool:currentTool,fingerDraw:fingerDraw,stylusOnly:stylusOnly,allowed});if(allowed&&(currentTool==='pen'||currentTool==='highlighter')){strokeTelemetryStart.current=perfNow();strokeTelemetryPointer.current=pointerType}}};
  const pan=Gesture.Pan().minDistance(0).onTouchesDown(e=>{
-  if(e.allTouches.length>1){const action=finishInterruptedStroke();blocked.value=true;imageDragging.value=false;imageDX.value=0;imageDY.value=0;samples.value=emptySampleBuffer();if(action==='discard')draft.value='';drawing.value=false}
+  if(e.allTouches.length>1){const action=finishInterruptedStroke();blocked.value=true;lassoDrawing.value=false;imageDragging.value=false;imageDX.value=0;imageDY.value=0;samples.value=emptySampleBuffer();if(action==='discard')draft.value='';drawing.value=false}
  }).onBegin(e=>{
   if(e.numberOfPointers!==1||imageGestureLocked.value)return;
   const isStylus=e.pointerType===PointerType.STYLUS;
@@ -733,7 +854,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    const p=pagePoint(e.x,e.y),bounds=imagePaintBounds.value;
    const cx=(bounds[0]+bounds[2])/2,cy=(bounds[1]+bounds[3])/2;
    const scale=Math.max(0.001,imageCommittedScale.value*imageScale.value);
-   const angle=(paintedImageRef.current?.rotation??0)+imageCommittedAngle.value+imageAngle.value;
+   const angle=paintedImageRotation.value+imageCommittedAngle.value+imageAngle.value;
    const cos=Math.cos(angle),sin=Math.sin(angle);
    const dx=(p[0]-cx-imageCommittedX.value-imageDX.value)/scale;
    const dy=(p[1]-cy-imageCommittedY.value-imageDY.value)/scale;
@@ -765,6 +886,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   // Drag an already selected element immediately; don't wait for a long press.
   // The previous zero-distance Pan gesture prevented LongPress from reliably activating.
   if(tool==='select'&&selectionBoundsValue.value){
+    if(renderCommittedSelection){committedDX.value=0;committedDY.value=0;committedScale.value=1;committedAngle.value=0;gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
    const p=pagePoint(e.x,e.y),b=selectionBoundsValue.value;
    const cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;
    const cornerRadius=22/(fitWidth*zoom.value);
@@ -789,21 +911,22 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
      break;
     }
    }
-   if(cornerHit){samples.value=emptySampleBuffer();drawing.value=false;draft.value='';return;}
+   if(cornerHit){selectionGestureGeneration.value+=1;(__DEV__&&runOnJS(beginTrace)('corner',b));samples.value=emptySampleBuffer();drawing.value=false;draft.value='';return;}
    const hitSlop=12/(fitWidth*zoom.value);
    // Reuse the rotation matrix from the handle hit test above.
     const localX=cx+(p[0]-cx)*cos+(p[1]-cy)*sin;
     const localY=cy-(p[0]-cx)*sin+(p[1]-cy)*cos;
     if(localX>=b[0]-hitSlop&&localX<=b[2]+hitSlop&&localY>=b[1]-hitSlop&&localY<=b[3]+hitSlop){
     selectionPreviewLive.value=true;
-    draggingSelection.value=true;dragX.value=0;dragY.value=0;
+    selectionGestureGeneration.value+=1;draggingSelection.value=true;dragX.value=0;dragY.value=0;(__DEV__&&runOnJS(beginTrace)('move',b));
     samples.value=emptySampleBuffer();drawing.value=false;draft.value='';
     return;
    }
   }
   if(tool==='text'){samples.value=emptySampleBuffer();drawing.value=false;draft.value='';blocked.value=false;return;}
   if(tool==='select'){
-   samples.value=sampleBufferFromPoint(pagePoint(e.x,e.y));drawing.value=false;draft.value='';
+   const start=pagePoint(e.x,e.y);
+   samples.value=sampleBufferFromPoint(start);drawing.value=false;lassoDrawing.value=true;draft.value=centerlinePathString([start]);
    return;
   }
   const start=pagePoint(e.x,e.y);
@@ -820,7 +943,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(imageCorner.value){
    const p=pagePoint(e.x,e.y),b=imagePaintBounds.value;if(!b)return;
    const cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;
-   const totalAngle=(paintedImageRef.current?.rotation??0)+imageCommittedAngle.value;
+   const totalAngle=paintedImageRotation.value+imageCommittedAngle.value;
    const cos=Math.cos(totalAngle),sin=Math.sin(totalAngle);
    const vx=imageCornerSignX.value*(b[2]-b[0])/2;
    const vy=imageCornerSignY.value*(b[3]-b[1])/2;
@@ -843,7 +966,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    const radial=(startX*dx+startY*dy)/cornerStartRadius.value;
    // Decide the gesture after a small screen-space movement, without an 8px dead zone.
    if(cornerMode.value===0&&Math.hypot(dx,dy)>2/(fitWidth*zoom.value))
-    cornerMode.value=Math.abs(tangent)>Math.abs(radial)*1.25?2:1;
+    cornerMode.value=selectionCanRotateValue.value&&Math.abs(tangent)>Math.abs(radial)*1.25?2:1;
    if(cornerMode.value===1){
     // Relative projection ensures scale starts at exactly 1 under the pointer.
     gestureScale.value=Math.max(0.15,Math.min(8,1+radial/cornerStartRadius.value));
@@ -863,6 +986,13 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(draggingSelection.value){
    dragX.value=e.translationX/(fitWidth*zoom.value);
    dragY.value=e.translationY/(fitWidth*zoom.value);
+   return;
+  }
+  if(tool==='select'&&lassoDrawing.value){
+   const p=pagePoint(e.x,e.y);
+   if(!Number.isFinite(p[0])||!Number.isFinite(p[1]))return;
+   samples.value=appendSample(samples.value,p);
+   draft.value=appendPolylinePoint(draft.value,p);
    return;
   }
   if(tool==='select'||tool==='text')return;
@@ -887,23 +1017,33 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(imageDragging.value){const dx=imageDX.value,dy=imageDY.value;imageDragging.value=false;imageDX.value=0;imageDY.value=0;if(!imagePinching.value&&Math.hypot(dx,dy)>0.1){imageCommittedX.value+=dx;imageCommittedY.value+=dy;runOnJS(commitImageMove)(dx,dy);}return;}
   if(cornerActive.value){
    const scale=gestureScale.value,angle=gestureAngle.value;
+   if(__DEV__)runOnJS(trace)('gesture_end',{kind:'corner',scale,angle});
+   const shouldCommit=!blocked.value&&(Math.abs(scale-1)>0.0001||Math.abs(angle)>0.0001);
+   if(shouldCommit)transformPending.value=true;
    cornerActive.value=false;cornerMode.value=0;
-   if(!blocked.value&&(Math.abs(scale-1)>0.0001||Math.abs(angle)>0.0001)){
-    transformPending.value=true;
-    committedScale.value*=scale;
-    committedAngle.value+=angle;
-    gestureScale.value=1;gestureAngle.value=0;
-    runOnJS(commitGesture)(0,0,scale,angle);
+   if(shouldCommit){
+    runOnJS(commitGesture)(0,0,scale,angle,selectionGestureGeneration.value);
    }else {gestureScale.value=1;gestureAngle.value=0;selectionPreviewLive.value=false}
    runOnJS(notify)(false);return;
   }
   if(draggingSelection.value){
    const dx=dragX.value,dy=dragY.value;
+   if(__DEV__)runOnJS(trace)('gesture_end',{kind:'move',dx,dy});
+   const shouldCommit=!blocked.value&&Math.hypot(dx,dy)>0.1;
+   if(shouldCommit)dragPending.value=true;
    draggingSelection.value=false;
-   if(!blocked.value&&Math.hypot(dx,dy)>0.1){committedDX.value+=dx;committedDY.value+=dy;dragX.value=0;dragY.value=0;runOnJS(commitSelectionMove)(dx,dy);}
-   else {dragX.value=0;dragY.value=0}
+    if(shouldCommit){runOnJS(commitSelectionMove)(dx,dy,selectionGestureGeneration.value);}
+    else {dragX.value=0;dragY.value=0;dragPending.value=false}
    drawing.value=false;
    runOnJS(notify)(false);return;
+  }
+  if(tool==='select'&&lassoDrawing.value){
+   lassoDrawing.value=false;
+   const points=flattenSamples(samples.value),minimumLength=12/(fitWidth*zoom.value);
+   const length=lassoPathLength(points);
+   if(length>=minimumLength)runOnJS(completeLasso)(flattenSamples(samples.value));
+   samples.value=emptySampleBuffer();draft.value='';drawing.value=false;
+   return;
   }
    if(!imageBounds.value&&!blocked.value&&tool!=='hand'&&tool!=='text'&&drawing.value&&samples.value.length){awaitingCommit.value=true;const commitGeneration=tool==='pen'||tool==='highlighter'||tool==='shape'?transferActivePathToHandoff():tool==='eraser'?transferEraserPathToHandoff():handoffGeneration.value;runOnJS(complete)(samples.value,commitGeneration)}
   samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;cursorOn.value=false;runOnJS(notify)(false);
@@ -911,12 +1051,16 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   // Android can cancel a stylus gesture when its input device is unplugged.
   // Preserve the points collected so far through the ordinary JS commit path.
   finishInterruptedStroke();
-  samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;blocked.value=false;cursorOn.value=false;draggingSelection.value=false;cornerActive.value=false;if(!dragPending.value&&!draggingSelection.value){/* Keep the last pose until the JS handoff mounts. */}
+   if(draggingSelection.value&&!dragPending.value){dragX.value=0;dragY.value=0;committedDX.value=0;committedDY.value=0}
+   lassoDrawing.value=false;samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;blocked.value=false;cursorOn.value=false;draggingSelection.value=false;cornerActive.value=false;
  }).runOnJS(false);
  const pinch=Gesture.Pinch().onBegin(e=>{
   if(imageBounds.value){const action=finishInterruptedStroke();blocked.value=true;samples.value=emptySampleBuffer();if(action==='discard')draft.value='';drawing.value=false;imageGestureLocked.value=true;imagePinching.value=true;imagePinchActive.value=true;imageDragging.value=false;imageDX.value=0;imageDY.value=0;imageScale.value=1;imageFocalDX.value=0;imageFocalDY.value=0;imageFocalX.value=e.focalX;imageFocalY.value=e.focalY;return;}
   if(tool==='select'&&selectionBoundsValue.value){
+    if(renderCommittedSelection){committedDX.value=0;committedDY.value=0;committedScale.value=1;committedAngle.value=0;gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
    blocked.value=true;samples.value=emptySampleBuffer();draft.value='';drawing.value=false;
+   if(!transformActive.value)selectionGestureGeneration.value+=1;
+   (__DEV__&&runOnJS(beginTrace)('pinch',selectionBoundsValue.value));
    transformActive.value=true;pinchActive.value=true;
    gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;
    gestureFocalX.value=e.focalX;gestureFocalY.value=e.focalY;
@@ -952,12 +1096,12 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    pinchActive.value=false;
    if(!rotateActive.value){
     const dx=gestureDX.value,dy=gestureDY.value,scale=gestureScale.value,angle=gestureAngle.value;
+    if(__DEV__)runOnJS(trace)('gesture_end',{kind:'pinch',dx,dy,scale,angle});
+    const shouldCommit=Math.abs(dx)+Math.abs(dy)+Math.abs(scale-1)+Math.abs(angle)>0.0001;
+    if(shouldCommit)transformPending.value=true;
     transformActive.value=false;
-    if(Math.abs(dx)+Math.abs(dy)+Math.abs(scale-1)+Math.abs(angle)>0.0001){
-     committedDX.value+=dx;committedDY.value+=dy;
-     committedScale.value*=scale;committedAngle.value+=angle;
-     gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;
-     runOnJS(commitGesture)(dx,dy,scale,angle);
+    if(shouldCommit){
+     runOnJS(commitGesture)(dx,dy,scale,angle,selectionGestureGeneration.value);
     }
     else {gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
     runOnJS(notify)(false);
@@ -968,20 +1112,23 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  }).runOnJS(false);
  const rotation=Gesture.Rotation().onBegin(()=>{
   if(imageBounds.value){imageGestureLocked.value=true;imagePinching.value=true;imageRotateActive.value=true;blocked.value=true;samples.value=emptySampleBuffer();drawing.value=false;draft.value='';return;}
-  if(tool==='select'&&selectionBoundsValue.value){if(!transformActive.value){gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;}transformActive.value=true;selectionPreviewLive.value=true;rotateActive.value=true;blocked.value=true;return;}
+   if(tool==='select'&&selectionBoundsValue.value&&selectionCanRotateValue.value){if(__DEV__)runOnJS(beginTrace)('rotation',selectionBoundsValue.value);if(!transformActive.value)selectionGestureGeneration.value+=1;if(renderCommittedSelection){committedDX.value=0;committedDY.value=0;committedScale.value=1;committedAngle.value=0;}if(!transformActive.value){gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;}transformActive.value=true;selectionPreviewLive.value=true;rotateActive.value=true;blocked.value=true;return;}
  }).onUpdate(e=>{
   if(imageGestureLocked.value){imageAngle.value=e.rotation;return;}
-  if(tool==='select'&&transformActive.value)gestureAngle.value=e.rotation;
+  if(tool==='select'&&transformActive.value&&selectionCanRotateValue.value)gestureAngle.value=e.rotation;
  }).onEnd(()=>{
   if(imageGestureLocked.value){imageRotateActive.value=false;if(!imagePinchActive.value){finishImagePinch();imageGestureLocked.value=false;}return;}
   if(tool==='select'&&transformActive.value){
    rotateActive.value=false;
    if(!pinchActive.value){
     const dx=gestureDX.value,dy=gestureDY.value,scale=gestureScale.value,angle=gestureAngle.value;
+    if(__DEV__)runOnJS(trace)('gesture_end',{kind:'rotation',dx,dy,scale,angle});
+    const shouldCommit=Math.abs(dx)+Math.abs(dy)+Math.abs(scale-1)+Math.abs(angle)>0.0001;
+    if(shouldCommit)transformPending.value=true;
     transformActive.value=false;
-    if(Math.abs(dx)+Math.abs(dy)+Math.abs(scale-1)+Math.abs(angle)>0.0001)
-     runOnJS(commitGesture)(dx,dy,scale,angle);
-    else {gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;}
+     if(shouldCommit){
+     runOnJS(commitGesture)(dx,dy,scale,angle,selectionGestureGeneration.value);
+     }else {gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;}
     runOnJS(notify)(false);
    }
   }
@@ -998,14 +1145,16 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  {(content.images??[]).map(source=>{const item=source.id===displayImageId&&paintedImage?paintedImage:source;const cx=item.x+item.width/2,cy=item.y+item.height/2;const art=<Group origin={vec(cx,cy)} transform={[{rotate:item.rotation??0}]}><PageImageLayer item={item}/>{item.id===imageId&&<><Rect x={item.x} y={item.y} width={item.width} height={item.height} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/>{Platform.OS==='web'&&<><Line p1={vec(cx,item.y)} p2={imageRotatePoint} color="#3388EE" strokeWidth={imageOutlineWidth}/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></>}{Platform.OS==='web'&&[[item.x,item.y],[item.x+item.width,item.y],[item.x,item.y+item.height],[item.x+item.width,item.y+item.height]].map(([x,y],index)=><Group key={index}><Circle cx={x} cy={y} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={x} cy={y} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></Group>)}</>}</Group>;return item.id===displayImageId?<Group key={item.id} transform={imageTransform}>{art}</Group>:<Group key={item.id}>{art}</Group>})}
 
  <Group layer={tool==='eraser'}>
-  <Completed content={content} hiddenIds={editing?[editing.id]:tool==='select'?selectedIds:undefined} fonts={textFonts}/>
+  <Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:tool==='select'?[...selectedIds,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts}/>
   {content.beautifications?.some(item=>item.mode==='beautified'&&item.words.length>0)&&<LegacyBeautificationLayer content={content} fonts={textFonts}/>}
+  {handoffNeedsReleaseRender&&<Group>{handoff!.elements.filter(element=>!(content.beautifications??[]).some(item=>item.mode==='beautified'&&item.sourceIds.includes(element.id))).map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}</Group>}
    {tool==='eraser'&&<>
     <Path path={eraserHandoffDraft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
     <Path path={draft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
    </>}
  </Group>
- {tool==='select'&&paintedFrame&&<Group transform={selectionTransform}>
+  {tool==='select'&&paintedFrame&&<Group transform={selectionTransform}>
+   <Rect x={paintedFrame.bounds[0]} y={paintedFrame.bounds[1]} width={paintedFrame.bounds[2]-paintedFrame.bounds[0]} height={paintedFrame.bounds[3]-paintedFrame.bounds[1]} color="#3388EE" opacity={0.035}/>
   {paintedElements.filter(element=>!(content.beautifications??[]).some(b=>b.mode==='beautified'&&b.sourceIds.includes(element.id))).map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}
   {(()=>{
    const bounds=paintedFrame.bounds;
@@ -1021,6 +1170,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  </Group>}
  <Path path={handoffDraft} color={handoffColor} opacity={handoffOpacity} blendMode={handoffBlendMode} style={handoffPaintStyle} strokeWidth={handoffWidth} strokeCap="round" strokeJoin="round"/>
  {tool!=='eraser'&&tool!=='select'&&<Path path={draft} color={brush.color} opacity={brush.opacity} blendMode={tool==='highlighter'?'multiply':'srcOver'} style={draftPaintStyle} strokeWidth={brush.width} strokeCap="round" strokeJoin="round"/>}
+  {tool==='select'&&<>
+   <Path path={draft} color="#3388EE" opacity={0.1} style="fill"/>
+   <Path path={draft} color="#3388EE" opacity={0.95} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round"/>
+  </>}
  {tool==='eraser'&&<Circle cx={cursorX} cy={cursorY} r={eraserRadius} color="#808080" opacity={cursorOpacity} style="stroke" strokeWidth={1.5}/>}
  </Group></Canvas></View></GestureDetector>{editing&&<InlineTextEditor key={editing.id} item={editing} left={(size.width-PAGE_WIDTH*fitWidth*zoom.value)/2+offsetX.value+editing.x*fitWidth*zoom.value} top={offsetY.value+editing.y*fitWidth*zoom.value} scale={fitWidth*zoom.value} onCommit={value=>{editValueRef.current=value;finishRef.current()}} onValueChange={value=>{editValueRef.current=value}} onMove={(dx,dy)=>{const current=editingRef.current;if(!current)return;const scale=fitWidth*zoom.value;const x=Math.max(0,Math.min(PAGE_WIDTH-current.w,current.x+dx/scale));const y=Math.max(0,current.y+dy/scale);const next={...current,x,y,bbox:[x,y,x+current.w,y+(current.bbox[3]-current.bbox[1])] as [number,number,number,number]};editingRef.current=next;setEditing(next)}}/>}{wordEditing&&<Modal transparent animationType="fade" visible onRequestClose={()=>setWordEditing(null)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#0008'}}><View style={{backgroundColor:'#FFFFFF',borderRadius:16,padding:20,gap:12}}><Text style={{fontSize:17,color:'#202020',fontWeight:'600'}}>TanÄ±nan kelimeyi dÃ¼zelt</Text><TextInput autoFocus value={wordEditing.text} onChangeText={value=>setWordEditing(previous=>previous?{...previous,text:value}:null)} style={{borderWidth:1,borderColor:'#AAAAAA',borderRadius:8,padding:10,color:'#202020',fontSize:17}}/><View style={{flexDirection:'row',justifyContent:'flex-end',gap:20}}><Pressable onPress={()=>setWordEditing(null)}><Text style={{color:'#444444'}}>Ä°ptal</Text></Pressable><Pressable onPress={()=>{
  const value=wordEditing.text.trim();
