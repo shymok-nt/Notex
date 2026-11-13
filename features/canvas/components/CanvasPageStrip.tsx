@@ -23,7 +23,7 @@ const PageItem=memo(function PageItem({page,index,count,tablet,colors,selected,c
  return <View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center'}}>
  <GestureDetector gesture={gesture}><Animated.View style={[style,{touchAction:'none'}]}>
  <View accessibilityLabel={`Sayfa ${index+1}`} style={{padding:5,borderRadius:13,borderWidth:2,borderColor:checked||selected?colors.accent:colors.border,backgroundColor:colors.surface,alignItems:'center'}}>
- <PagePreview template={page.template} paperColor={page.paperColor} width={80} height={108}/>
+ <PagePreview template={page.template} paperColor={page.paperColor} width={80} height={108} thumbnailPath={page.thumbnailPath}/>
  {multiSelect&&<View style={{position:'absolute',right:0,top:0,width:22,height:22,borderRadius:11,alignItems:'center',justifyContent:'center',backgroundColor:checked?colors.accent:colors.surfaceRaised,borderWidth:1,borderColor:colors.accent}}>{checked&&<Check size={14} color="#FFFFFF"/>}</View>}
  </View></Animated.View></GestureDetector>
  <Text style={{fontSize:12,color:selected?colors.accent:colors.muted,marginTop:5,fontWeight:selected?'600':'400'}}>Sayfa {index+1}</Text>

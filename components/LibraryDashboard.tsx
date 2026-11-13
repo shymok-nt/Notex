@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { LayoutGrid, List, Pencil, Settings2, ChevronRight, Trash2, X } from 'lucide-react-native';
+import { LayoutGrid, List, Pencil, Settings2, ChevronRight, Trash2, X, FileUp } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotebookCover } from '@/components/NotebookCover';
 import { NotebookSelectionMark } from '@/components/NotebookSelectionMark';
@@ -17,6 +17,9 @@ import { dateLabel, sortNotebooks } from '@/utils/notebook';
 import { markNotebookNavigationStart } from '@/utils/notebookOpenPerformance';
 import { getRecentNotebookActivity } from '@/utils/recentNotebooks';
 import type { RecentNotebookActivity } from '@/utils/recentNotebookActivity';
+import { isTauriDesktop } from '@/utils/tauriFiles';
+import { notebookRepository } from '@/db/repositories/notebookRepository';
+import { cleanupPreparedPdfImport, preparePdfImport, type PreparedPdfImport } from '@/utils/pdfImport';
 
 export function LibraryDashboard() {
   const { colors: themeColors, scheme } = useTheme();
@@ -33,6 +36,8 @@ export function LibraryDashboard() {
   const [selectionKind, setSelectionKind] = useState<'notebooks' | null>(null);
   const [selectedNotebookIds, setSelectedNotebookIds] = useState<string[]>([]);
   const [working, setWorking] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<{completed:number;total:number;label:string}|null>(null);
+  const pdfImporting = useRef(false);
   const [confirmNotebookDeleteVisible, setConfirmNotebookDeleteVisible] = useState(false);
   const longPressHandled = useRef(false);
   const recentOpenedNotebooks = useMemo(() => {
@@ -78,6 +83,31 @@ export function LibraryDashboard() {
   }, []));
 
   const openNotebook = (id: string) => { markNotebookNavigationStart(id); router.push({ pathname: '/note/[id]', params: { id } }); };
+  const importPdf = async () => {
+    if (!isTauriDesktop() || pdfImporting.current) return;
+    pdfImporting.current = true;
+    let prepared: PreparedPdfImport | null = null;
+    try {
+      prepared = await preparePdfImport((completed,total,label) => setPdfProgress({completed,total,label}));
+      if (!prepared.pages.length) return;
+      setPdfProgress({completed:prepared.pages.length,total:prepared.pages.length,label:'PDF defteri kaydediliyor…'});
+      const notebookId = await notebookRepository.createFromPdf(prepared.title,prepared.pages);
+      const firstPageId = prepared.pages[0].id;
+      prepared = null;
+      await useNotebookStore.getState().refresh();
+      markNotebookNavigationStart(notebookId);
+      router.push({pathname:'/note/[id]',params:{id:notebookId,pageId:firstPageId}});
+    } catch (error) {
+      if (prepared) await cleanupPreparedPdfImport(prepared).catch(cleanupError => console.error('[Notex PDF] Geçici dosyalar temizlenemedi',cleanupError));
+      console.error('[Notex PDF] İçe aktarma başarısız',error);
+      const message=error instanceof Error?error.message:'PDF defteri oluşturulamadı.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') window.alert(message);
+      else Alert.alert('PDF içe aktarılamadı',message);
+    } finally {
+      pdfImporting.current = false;
+      setPdfProgress(null);
+    }
+  };
   const toggleNotebook = (id: string) => setSelectedNotebookIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
   const notebookPress = (id: string) => {
     if (longPressHandled.current) { longPressHandled.current = false; return; }
@@ -134,12 +164,22 @@ export function LibraryDashboard() {
       <View style={styles.topBar}>
         <View style={styles.brand}><NotexIcon compact/><NotexWordmark compact dark={scheme==='dark'}/></View>
         <View style={styles.actions}>
+          {isTauriDesktop() && <Pressable accessibilityRole="button" accessibilityLabel="PDF içe aktar" disabled={pdfImporting.current} onPress={() => void importPdf()} style={styles.iconButton}><FileUp size={21} color={colors.ink}/></Pressable>}
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste g\u00f6r\u00fcn\u00fcm\u00fcne ge\u00e7' : '\u0130zgara g\u00f6r\u00fcn\u00fcm\u00fcne ge\u00e7'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={21} color={colors.ink}/> : <LayoutGrid size={20} color={colors.ink}/>}
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={21} color={colors.ink}/></Pressable>
         </View>
       </View>
+
+      <Modal visible={pdfProgress!==null} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={{flex:1,alignItems:'center',justifyContent:'center',padding:24,backgroundColor:colors.overlay}}>
+          <View style={{width:'100%',maxWidth:380,gap:14,padding:22,borderRadius:18,backgroundColor:colors.surfaceRaised}}>
+            <View style={{flexDirection:'row',alignItems:'center',gap:12}}><ActivityIndicator color={colors.accent}/><Text style={{flex:1,color:colors.ink,fontFamily:fonts.semibold,fontSize:15}}>{pdfProgress?.label??'PDF hazırlanıyor…'}</Text></View>
+            {pdfProgress&&pdfProgress.total>1&&<View style={{height:6,borderRadius:4,overflow:'hidden',backgroundColor:colors.divider}}><View style={{height:6,width:`${Math.min(100,Math.round(pdfProgress.completed/pdfProgress.total*100))}%`,backgroundColor:colors.accent}}/></View>}
+          </View>
+        </View>
+      </Modal>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.headingBlock}>
@@ -149,7 +189,7 @@ export function LibraryDashboard() {
 
         <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>Defterlerim</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Tüm defterleri gör" onPress={() => router.navigate('/(tabs)/notebooks' as never)} style={styles.seeAll}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Tüm defterleri gör" onPress={() => router.navigate('/notebooks')} style={styles.seeAll}>
             <Text style={styles.seeAllText}>Tümü</Text><ChevronRight size={17} color={colors.accent}/>
           </Pressable>
         </View>

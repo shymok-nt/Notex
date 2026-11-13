@@ -15,5 +15,5 @@ export type PageImage={id:string;uri:string;x:number;y:number;width:number;heigh
 export type HandwritingFont='Caveat'|'PatrickHand'|'DancingScript'|'Kalam';
 export type BeautifiedWord={id:string;text:string;bbox:Bounds;baseline:number;fontSize:number;color:string;font:'Inter'|'InterBold'|HandwritingFont};
 export type Beautification={sourceIds:string[];words:BeautifiedWord[];mode:'original'|'beautified'};
-export type PageContent={v:2;elements:Element[];images?:PageImage[];h?:number;beautifications?:Beautification[]};
+export type PageContent={v:2;elements:Element[];images?:PageImage[];backgroundImage?:PageImage;h?:number;beautifications?:Beautification[]};
 export const emptyContent=():PageContent=>({v:2,elements:[]});

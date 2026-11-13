@@ -26,6 +26,22 @@ export const pageRepository={
    await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=?',date,notebookId);
   });return id;
  },
+ async appendImportedPages(notebookId:string,items:{id:string;content:string;thumbnailPath:string|null}[]){
+  if(!items.length)return [];
+  const db=await getDatabase(),date=now();
+  await withSafeTransaction(db,async tx=>{
+   const notebook=await tx.getFirstAsync<{id:string}>('SELECT id FROM notebooks WHERE id=? AND deleted_at IS NULL',notebookId);
+   if(!notebook)throw new Error('PDF sayfaları eklenecek defter bulunamadı.');
+   const count=await tx.getFirstAsync<{n:number}>('SELECT COUNT(*) AS n FROM pages WHERE notebook_id=?',notebookId);
+   const firstPosition=count?.n??0;
+   for(let index=0;index<items.length;index++){
+    const page=items[index];
+    await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',page.id,notebookId,firstPosition+index,'boş','beyaz',page.content,page.thumbnailPath,date,date);
+   }
+   await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=?',date,notebookId);
+  });
+  return items.map(page=>page.id);
+ },
  async remove(pageId:string){
   const db=await getDatabase();await withSafeTransaction(db,async tx=>{
    const row=await tx.getFirstAsync<{notebook_id:string}>('SELECT notebook_id FROM pages WHERE id=?',pageId);if(!row)throw new Error('Sayfa bulunamadı');

@@ -169,7 +169,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Defterlerde ara" onPress={() => router.navigate('/(tabs)/search' as never)} style={styles.iconButton}><Search size={20} color={colors.ink} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Defterlerde ara" onPress={() => router.navigate('/search')} style={styles.iconButton}><Search size={20} color={colors.ink} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={20} color={colors.ink} /></Pressable>
         </View>
       </View>

@@ -32,9 +32,10 @@ export async function createBackup(progress:Progress){
  for(let i=0;i<transformed.pages.length;i++){
   const p=transformed.pages[i];let parsed:unknown;
   try{parsed=JSON.parse(p.content)}catch{throw new Error('Sayfa içeriği okunamadı')}
-  if(parsed&&typeof parsed==='object'&&Array.isArray((parsed as {images?:unknown}).images)){
-   const data=parsed as {images:{uri?:string}[]};
-   for(const img of data.images){
+   if(parsed&&typeof parsed==='object'){
+    const data=parsed as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+    const images=[...(Array.isArray(data.images)?data.images:[]),...(data.backgroundImage?[data.backgroundImage]:[])];
+    for(const img of images){
     if(typeof img.uri!=='string')continue;
     const match=/^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(img.uri);
     if(match){const path='images/'+Crypto.randomUUID()+'.'+imageExtension(match[1]);zip.file('files/'+path,decodeBase64(match[2]));img.uri=path;imageCount++}
@@ -97,8 +98,8 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
   for(const n of data.notebooks)if(n.cover_image_path)paths.add(n.cover_image_path);
   for(const p of data.pages){
    if(p.thumbnail_path)paths.add(p.thumbnail_path);
-   const parsed=JSON.parse(p.content) as {images?:{uri?:string}[]};
-   for(const img of parsed.images??[])if(typeof img.uri==='string'&&!img.uri.startsWith('data:'))paths.add(img.uri);
+    const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+    for(const img of [...(parsed.images??[]),...(parsed.backgroundImage?[parsed.backgroundImage]:[])])if(typeof img.uri==='string'&&!img.uri.startsWith('data:'))paths.add(img.uri);
   }
   // On web, expo-file-system's Directory.create may call an unavailable validatePath native method.
   // Do not enter a database transaction or create partial records until file storage is supported.
@@ -127,8 +128,8 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
     await tx.runAsync('UPDATE notebooks SET auto_convert_enabled=?,conversion_font=?,conversion_delay_ms=? WHERE id=?',n.auto_convert_enabled===0?0:1,font,delay,notebookId);
    }
    for(const p of data.pages){
-    const parsed=JSON.parse(p.content) as {images?:{uri?:string}[]};
-    for(const img of parsed.images??[])if(typeof img.uri==='string'&&fileMap.has(img.uri)){
+     const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+     for(const img of [...(parsed.images??[]),...(parsed.backgroundImage?[parsed.backgroundImage]:[])])if(typeof img.uri==='string'&&fileMap.has(img.uri)){
      const path=fileMap.get(img.uri)!;
      if(isTauriDesktop())img.uri=path;
      else{const file=new File(Paths.document,path);const ext=path.split('.').pop();const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':ext==='gif'?'image/gif':'image/jpeg';img.uri='data:'+mime+';base64,'+encodeBase64(await file.bytes())}

@@ -3,6 +3,8 @@ import { getDatabase,withSafeTransaction } from '@/db/database';
 import { copyCoverFile,deleteCoverFile,resolveCoverUri,coverPathFromUri } from '@/utils/files';
 import type { NotebookDraft,PageTemplate,PaperColor,ConversionFont } from '@/types/notebook';
 import { perfNow } from '@/features/canvas/engine/performance';
+import { defaultCoverColor } from '@/theme/covers';
+import type { ImportedPdfPage } from '@/utils/pdfImport';
 export type NotebookRow={
  id:string;title:string;folder_id:string|null;cover_type:'color'|'image'|'preset';cover_color:string|null;
  cover_image_path:string|null;cover_preset_id:string|null;show_title_on_cover:number;
@@ -21,6 +23,18 @@ export const notebookRepository={
    await tx.runAsync(`INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,auto_convert_enabled,conversion_font,conversion_delay_ms,favorite,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,NULL)`,id,...rowParams(input),date,date);
    await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,created_at,updated_at) VALUES(?,?,0,?,?,?,?)',pageId,id,input.template,input.paperColor,date,date);
   });return id;
+ },
+ async createFromPdf(title:string,pages:ImportedPdfPage[]){
+  if(!pages.length)throw new Error('PDF içinde sayfa bulunamadı.');
+  const db=await getDatabase(),id=Crypto.randomUUID(),date=now();
+  await withSafeTransaction(db,async tx=>{
+   await tx.runAsync(`INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,NULL,'color',?,NULL,NULL,1,?,?,0,?,?,NULL)`,id,title,defaultCoverColor,'boş','beyaz',date,date);
+   for(let index=0;index<pages.length;index++){
+    const page=pages[index];
+    await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',page.id,id,index,'boş','beyaz',page.content,page.thumbnailPath,date,date);
+   }
+  });
+  return id;
  },
  async update(id:string,patch:Partial<NotebookInput>){
   const db=await getDatabase();const before=await this.getById(id);if(!before)throw new Error('Defter bulunamadı');
