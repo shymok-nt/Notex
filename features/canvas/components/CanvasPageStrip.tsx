@@ -1,4 +1,4 @@
-import React,{memo,useMemo} from 'react';
+import React,{memo,useMemo,useRef,useState} from 'react';
 import {View,Text,Pressable,ScrollView} from 'react-native';
 import {Plus,Check} from 'lucide-react-native';
 import Animated,{useAnimatedStyle,useSharedValue,withSpring,runOnJS} from 'react-native-reanimated';
@@ -6,7 +6,7 @@ import {Gesture,GestureDetector} from 'react-native-gesture-handler';
 import {PagePreview} from '@/components/PagePreview';
 import type {Page} from '@/types/page';
 import type {ThemeColors} from '@/theme/colors';
-type Props={pages:Page[];selectedId?:string;tablet:boolean;colors:ThemeColors;onSelect:(id:string)=>void;onAdd:()=>void;onMove:(id:string,index:number)=>void;onActions:(id:string)=>void;multiSelect?:boolean;selectedPageIds?:string[];onToggle?:(id:string)=>void;onEnterSelection?:(id:string)=>void};
+type Props={pages:Page[];selectedId?:string;tablet:boolean;pdfMode?:boolean;colors:ThemeColors;onSelect:(id:string)=>void;onAdd:()=>void;onMove:(id:string,index:number)=>void;onActions:(id:string)=>void;multiSelect?:boolean;selectedPageIds?:string[];onToggle?:(id:string)=>void;onEnterSelection?:(id:string)=>void};
 const PAGE_ITEM_HEIGHT=148;
 const PAGE_ITEM_GAP=8;
 const PageItem=memo(function PageItem({page,index,count,tablet,colors,selected,checked,multiSelect,onSelect,onMove,onActions,onToggle,onEnterSelection}:{page:Page;index:number;count:number;tablet:boolean;colors:ThemeColors;selected:boolean;checked:boolean;multiSelect:boolean;onSelect:(id:string)=>void;onMove:(id:string,index:number)=>void;onActions:(id:string)=>void;onToggle:(id:string)=>void;onEnterSelection:(id:string)=>void}){
@@ -29,9 +29,33 @@ const PageItem=memo(function PageItem({page,index,count,tablet,colors,selected,c
  <Text style={{fontSize:12,color:selected?colors.accent:colors.muted,marginTop:5,fontWeight:selected?'600':'400'}}>Sayfa {index+1}</Text>
  </View>;
 });
-export const CanvasPageStrip=memo(function CanvasPageStrip({pages,selectedId,tablet,colors,onSelect,onAdd,onMove,onActions,multiSelect=false,selectedPageIds=[],onToggle,onEnterSelection}:Props){
- return <ScrollView style={tablet?{flex:1}:undefined} horizontal={!tablet} disableScrollViewPanResponder showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} contentContainerStyle={{padding:12,alignItems:'center',gap:tablet?PAGE_ITEM_GAP:0,flexGrow:tablet?0:1}}>
+export const CanvasPageStrip=memo(function CanvasPageStrip({pages,selectedId,tablet,pdfMode=false,colors,onSelect,onAdd,onMove,onActions,multiSelect=false,selectedPageIds=[],onToggle,onEnterSelection}:Props){
+ const scrollRef=useRef<ScrollView>(null);
+ const [viewportHeight,setViewportHeight]=useState(0);
+ const [contentHeight,setContentHeight]=useState(0);
+ const [scrollY,setScrollY]=useState(0);
+ const showScrubber=pdfMode&&tablet&&contentHeight>viewportHeight+1&&viewportHeight>0;
+ const thumbHeight=Math.max(40,viewportHeight*viewportHeight/Math.max(contentHeight,1));
+ const travel=Math.max(1,viewportHeight-thumbHeight);
+ const scrollToTrack=(y:number)=>{const ratio=Math.max(0,Math.min(1,(y-thumbHeight/2)/travel));scrollRef.current?.scrollTo({y:ratio*(contentHeight-viewportHeight),animated:false})};
+ return <View style={tablet?{flex:1,minHeight:0,flexDirection:'row'}:{}}>
+ <ScrollView ref={scrollRef} style={tablet?{flex:1}:undefined} horizontal={!tablet} disableScrollViewPanResponder
+  showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={pdfMode&&tablet&&!showScrubber}
+  scrollEventThrottle={32}
+  onLayout={event=>{if(tablet)setViewportHeight(event.nativeEvent.layout.height)}}
+  onContentSizeChange={(_,height)=>{if(tablet)setContentHeight(height)}}
+  onScroll={event=>{if(tablet)setScrollY(event.nativeEvent.contentOffset.y)}}
+  contentContainerStyle={{padding:12,alignItems:'center',gap:tablet?PAGE_ITEM_GAP:0,flexGrow:tablet?0:1}}>
  {pages.map((page,index)=><PageItem key={page.id} page={page} index={index} count={pages.length} tablet={tablet} colors={colors} selected={page.id===selectedId} checked={selectedPageIds.includes(page.id)} multiSelect={multiSelect} onSelect={onSelect} onMove={onMove} onActions={onActions} onToggle={onToggle??onSelect} onEnterSelection={onEnterSelection??onSelect}/>)}
- {!multiSelect&&<View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center'}}><Pressable accessibilityRole="button" accessibilityLabel="Sayfa ekle" onPress={onAdd} style={{width:90,height:108,borderWidth:1,borderStyle:'dashed',borderColor:colors.border,borderRadius:8,alignItems:'center',justifyContent:'center',gap:5}}><Plus size={24} color={colors.accent}/><Text style={{fontSize:12,color:colors.accent}}>Sayfa ekle</Text></Pressable></View>}
- </ScrollView>;
+ {!pdfMode&&!multiSelect&&<View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center'}}><Pressable accessibilityRole="button" accessibilityLabel="Sayfa ekle" onPress={onAdd} style={{width:90,height:108,borderWidth:1,borderStyle:'dashed',borderColor:colors.border,borderRadius:8,alignItems:'center',justifyContent:'center',gap:5}}><Plus size={24} color={colors.accent}/><Text style={{fontSize:12,color:colors.accent}}>Sayfa ekle</Text></Pressable></View>}
+ </ScrollView>
+ {showScrubber&&<View accessibilityLabel="PDF sayfa listesi hızlı kaydırma" style={{width:18,paddingHorizontal:5,paddingVertical:0,justifyContent:'flex-start'}}
+  onStartShouldSetResponder={()=>true} onMoveShouldSetResponder={()=>true}
+  onResponderGrant={event=>scrollToTrack(event.nativeEvent.locationY)}
+  onResponderMove={event=>scrollToTrack(event.nativeEvent.locationY)}>
+  <View style={{flex:1,borderRadius:8,backgroundColor:colors.divider,overflow:'hidden'}}>
+   <View pointerEvents="none" style={{position:'absolute',left:0,right:0,top:Math.max(0,Math.min(travel,scrollY/Math.max(1,contentHeight-viewportHeight)*travel)),height:thumbHeight,borderRadius:8,backgroundColor:colors.accent}}/>
+  </View>
+ </View>}
+ </View>;
 });
