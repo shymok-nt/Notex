@@ -286,7 +286,7 @@ export default function NoteCanvasScreen(){
  </View>}
  <View style={{flex:1,flexDirection:'row'}}>
   {tablet&&!focus&&<View style={{width:148,flexGrow:0,flexShrink:0,flexBasis:148,minHeight:0,backgroundColor:colors.background,borderRightWidth:1,borderRightColor:colors.divider}}>{selectionBar}<CanvasPageStrip tablet {...pageStripProps}/></View>}
- <View style={{flex:1,marginHorizontal:0,marginTop:0,marginBottom:0,borderRadius:0,overflow:'hidden'}}>
+ <View onTouchStart={()=>{if(panel!==null)setPanel(null)}} style={{flex:1,marginHorizontal:0,marginTop:0,marginBottom:0,borderRadius:0,overflow:'hidden'}}>
   {selected?<CanvasPage key={selected.id} page={selected} tool={tool} brush={brush} eraserSize={eraserSize} eraserMode={eraserMode} onController={setController} onHistory={()=>{}} onDrawStart={()=>setPanel(null)} onStrokeComplete={recordStroke} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={setSelectedElements} onSelectionClipboardChange={setInkClipboardAvailable} onSelectionActionComplete={version=>setSelectionAction(current=>current?.version===version?undefined:current)} onTextSelectionChange={setSelectedText} selectionAction={selectionAction} imageRequest={imageRequest} onImageRequestConsumed={version=>setImageRequest(current=>current?.version===version?null:current)} imageAction={imageAction} onImageSelectionChange={setSelectedImageId} onImageLoadError={message=>Alert.alert('Görsel yüklenemedi',message)}/>:<Text style={{color:ink}}>{pagesReady?'Sayfa bulunamadı':'Sayfalar yükleniyor…'}</Text>}
  </View>
  {isPdfNotebook&&pagesReady&&pages.length>1&&<View style={{position:'absolute',right:16,top:'36%',gap:9,zIndex:12,alignItems:'center'}}>
