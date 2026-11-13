@@ -1,5 +1,5 @@
 /** Experimental, Windows-only offline OCR. Does not alter the live stroke pipeline. */
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,type MutableRefObject} from 'react';
 import {isTauri,invoke} from '@tauri-apps/api/core';
 import type {PageContent,StrokeElement,BeautifiedWord} from '@/features/canvas/types';
 
@@ -39,7 +39,7 @@ function rasterize(strokes:StrokeElement[]):string|null {
 export function useAutoHandwritingOCR(
   pageId:string,
   content:PageContent,
-  contentRef:React.MutableRefObject<PageContent>,
+  contentRef:MutableRefObject<PageContent>,
   apply:(next:PageContent)=>void,
 ){
   const known=useRef<Set<string>>(new Set(content.elements.map(e=>e.id)));
