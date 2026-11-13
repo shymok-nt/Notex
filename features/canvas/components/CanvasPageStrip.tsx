@@ -21,7 +21,7 @@ const PageItem=memo(function PageItem({page,index,count,tablet,pdfMode,colors,se
  const tap=useMemo(()=>Gesture.Tap().maxDuration(220).onEnd((_,success)=>{if(success){if(multiSelect)runOnJS(onToggle)(page.id);else runOnJS(onSelect)(page.id)}}),[multiSelect,onToggle,onSelect,page.id]);
  const gesture=useMemo(()=>Gesture.Race(drag,hold,tap),[drag,hold,tap]);
  const style=useAnimatedStyle(()=>({transform:[tablet?{translateY:translation.value}:{translateX:translation.value},{scale:withSpring(active.value?1.07:1)}],zIndex:active.value?100:0,opacity:active.value?0.92:1}));
- return <View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center',borderRadius:15,backgroundColor:pdfMode&&selected?colors.accent+'16':'transparent'}}>
+ return <View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center',borderRadius:15,backgroundColor:'transparent'}}>
  <GestureDetector gesture={gesture}><Animated.View style={[style,{touchAction:'none'}]}>
  <View accessibilityLabel={`Sayfa ${index+1}`} style={{padding:5,borderRadius:13,borderWidth:pdfMode&&selected?3:2,borderColor:checked||selected?colors.accent:colors.border,backgroundColor:colors.surface,alignItems:'center',shadowColor:colors.accent,shadowOpacity:pdfMode&&selected?0.28:0,shadowRadius:7,elevation:pdfMode&&selected?3:0}}>
  <PagePreview template={page.template} paperColor={page.paperColor} width={80} height={108} thumbnailPath={page.thumbnailPath}/>
