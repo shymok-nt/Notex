@@ -9,7 +9,7 @@ export type ShapeMode=ShapeKind|'auto';
 export type ShapeElement={id:string;type:'shape';z:number;createdAt:string;kind:ShapeKind;params:{x:number;y:number;w:number;h:number;rotation:number;points?:number[]};stroke:{color:string;width:number;opacity:number};fill:null|{color:string;opacity:number};bbox:Bounds};
 // Legacy recognition metadata remains part of the stored shape so old notes and
 // backups round-trip without losing their original stroke recovery data.
-export type TextElement={id:string;type:'text';z:number;createdAt:string;x:number;y:number;w:number;text:string;fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right';fontFamily?:TextFontFamily;erasures?:{points:number[];radius:number}[];recognitionSourceStrokes?:StrokeElement[];recognitionManuallyEdited?:boolean;bbox:Bounds};
+export type TextElement={id:string;type:'text';z:number;createdAt:string;x:number;y:number;w:number;text:string;fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right';fontFamily?:TextFontFamily;minHeight?:number;erasures?:{points:number[];radius:number}[];recognitionSourceStrokes?:StrokeElement[];recognitionManuallyEdited?:boolean;bbox:Bounds};
 export type Element=StrokeElement|ShapeElement|TextElement;
 export type PageImage={id:string;uri:string;x:number;y:number;width:number;height:number;rotation?:number};
 export type HandwritingFont='Caveat'|'PatrickHand'|'DancingScript'|'Kalam';

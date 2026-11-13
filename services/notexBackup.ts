@@ -3,7 +3,8 @@ import * as Crypto from 'expo-crypto';
 import { File,Directory,Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { getDatabase,withSafeTransaction } from '@/db/database';
-import { coverPathFromUri,resolveCoverUri } from '@/utils/files';
+import { coverPathFromUri } from '@/utils/files';
+import {deleteStoredFile,isTauriDesktop,readStoredFile,restoreBackupAsset} from '@/utils/tauriFiles';
 
 type Folder={id:string;name:string;position:number;created_at:string};
 type Notebook={id:string;title:string;folder_id:string|null;cover_type:string;cover_color:string|null;cover_image_path:string|null;cover_preset_id:string|null;show_title_on_cover:number;template:string;paper_color:string;auto_convert_enabled?:number;conversion_font?:string;conversion_delay_ms?:number;favorite:number;created_at:string;updated_at:string;deleted_at:string|null};
@@ -37,6 +38,7 @@ export async function createBackup(progress:Progress){
     if(typeof img.uri!=='string')continue;
     const match=/^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(img.uri);
     if(match){const path='images/'+Crypto.randomUUID()+'.'+imageExtension(match[1]);zip.file('files/'+path,decodeBase64(match[2]));img.uri=path;imageCount++}
+    else if(isTauriDesktop()&&safePath(img.uri)){filePaths.add(img.uri)}
     else if(img.uri.startsWith('file:')||img.uri.startsWith('content:')){
      const path=coverPathFromUri(img.uri);if(!path||!safePath(path))throw new Error('Sayfa görseli okunamadı');filePaths.add(path);img.uri=path;
     }else if(!safePath(img.uri))throw new Error('Desteklenmeyen görsel yolu');
@@ -46,8 +48,8 @@ export async function createBackup(progress:Progress){
   if(i%5===0){progress('Sayfalar hazırlanıyor…',10+Math.round(35*i/Math.max(1,pages.length)));await yieldUI()}
  }
  let done=0;for(const path of filePaths){
-  const file=new File(Paths.document,path);if(!file.exists)throw new Error('Yedeklenecek dosya bulunamadı: '+path);
-  zip.file('files/'+path,await file.bytes());
+  if(isTauriDesktop())zip.file('files/'+path,await readStoredFile(path));
+  else{const file=new File(Paths.document,path);if(!file.exists)throw new Error('Yedeklenecek dosya bulunamadı: '+path);zip.file('files/'+path,await file.bytes())}
   done++;progress('Resimler hazırlanıyor…',45+Math.round(30*done/Math.max(1,filePaths.size)));await yieldUI();
  }
  const manifest:Manifest={format:1,appVersion:'1.0.0',exportedAt:new Date().toISOString(),counts:{folders:folders.length,notebooks:notebooks.length,pages:pages.length,files:filePaths.size+imageCount}};
@@ -100,15 +102,17 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
   }
   // On web, expo-file-system's Directory.create may call an unavailable validatePath native method.
   // Do not enter a database transaction or create partial records until file storage is supported.
-  if(Platform.OS==='web'&&paths.size>0)throw new Error('Web üzerinde görsel dosyalarını güvenli biçimde geri yükleme henüz desteklenmiyor. Veriler değiştirilmedi.');
-  if(paths.size>0){const dir=new Directory(Paths.document,'covers');dir.create({idempotent:true,intermediates:true});}
+  if(Platform.OS==='web'&&!isTauriDesktop()&&paths.size>0)throw new Error('Web üzerinde görsel dosyalarını güvenli biçimde geri yükleme henüz desteklenmiyor. Veriler değiştirilmedi.');
+  if(paths.size>0&&!isTauriDesktop()){const dir=new Directory(Paths.document,'covers');dir.create({idempotent:true,intermediates:true});}
   let i=0;for(const path of paths){
    if(!safePath(path))throw Error('invalid path');
    const entry=zip.file('files/'+path);if(!entry)throw Error('missing image');
    const ext=path.split('.').pop()!.toLowerCase();if(!['jpg','jpeg','png','webp','heic','gif'].includes(ext))throw Error('invalid image');
-   const relative='covers/'+Crypto.randomUUID()+'.'+ext;
-   const target=new File(Paths.document,relative);
-   const blob=await entry.async('uint8array');await target.write(blob);created.push(relative);fileMap.set(path,relative);
+   const blob=await entry.async('uint8array');
+   let relative:string;
+   if(isTauriDesktop())relative=await restoreBackupAsset(path,blob);
+   else{relative='covers/'+Crypto.randomUUID()+'.'+ext;const target=new File(Paths.document,relative);await target.write(blob)}
+   created.push(relative);fileMap.set(path,relative);
    i++;progress('Resimler geri yükleniyor…',Math.round(50*i/Math.max(1,paths.size)));await yieldUI();
   }
   await withSafeTransaction(db,async tx=>{
@@ -125,16 +129,16 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
    for(const p of data.pages){
     const parsed=JSON.parse(p.content) as {images?:{uri?:string}[]};
     for(const img of parsed.images??[])if(typeof img.uri==='string'&&fileMap.has(img.uri)){
-     const path=fileMap.get(img.uri)!;const file=new File(Paths.document,path);
-     const ext=path.split('.').pop();const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':ext==='gif'?'image/gif':'image/jpeg';
-     img.uri='data:'+mime+';base64,'+encodeBase64(await file.bytes());
+     const path=fileMap.get(img.uri)!;
+     if(isTauriDesktop())img.uri=path;
+     else{const file=new File(Paths.document,path);const ext=path.split('.').pop();const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':ext==='gif'?'image/gif':'image/jpeg';img.uri='data:'+mime+';base64,'+encodeBase64(await file.bytes())}
     }
     await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',Crypto.randomUUID(),notebookMap.get(p.notebook_id)!,p.position,p.template,p.paper_color,JSON.stringify(parsed),p.thumbnail_path?fileMap.get(p.thumbnail_path)??null:null,p.created_at,p.updated_at);
    }
   });
   progress('Geri yükleme tamamlandı',100);
  }catch(error){
-  for(const path of created){try{const f=new File(Paths.document,path);if(f.exists)f.delete()}catch(e){console.warn('Geri alma dosya temizliği başarısız',e)}}
+  for(const path of created){try{if(isTauriDesktop())await deleteStoredFile(path);else{const f=new File(Paths.document,path);if(f.exists)f.delete()}}catch(e){console.warn('Geri alma dosya temizliği başarısız',e)}}
   if(error instanceof Error&&error.message.startsWith('Web üzerinde'))throw error;
   throw new Error('Bu dosya okunamadı veya geri yüklenemedi: '+String(error));
  }

@@ -1,4 +1,5 @@
 import {emptyContent,type PageContent,type Element,type StrokeElement} from '@/features/canvas/types';
+import {isStoredImagePath} from './storedImagePath';
 function isStrokeElement(value:unknown):value is StrokeElement{
  if(!value||typeof value!=='object')return false;
  const stroke=value as Record<string,unknown>;
@@ -14,6 +15,7 @@ export function parseContent(raw:string):PageContent{
  if(e.type==='text'){
   const safe={...e};
   if(safe.fontFamily!==undefined&&safe.fontFamily!=='Inter'&&safe.fontFamily!=='SpaceGrotesk')delete safe.fontFamily;
+  if(safe.minHeight!==undefined&&(typeof safe.minHeight!=='number'||!Number.isFinite(safe.minHeight)||safe.minHeight<0||safe.minHeight>1000000))delete safe.minHeight;
   if(safe.recognitionSourceStrokes!==undefined&&(!Array.isArray(safe.recognitionSourceStrokes)||!safe.recognitionSourceStrokes.every(isStrokeElement)))delete safe.recognitionSourceStrokes;
   if(safe.recognitionManuallyEdited!==undefined&&typeof safe.recognitionManuallyEdited!=='boolean')delete safe.recognitionManuallyEdited;
   return safe;
@@ -26,11 +28,11 @@ export function parseContent(raw:string):PageContent{
  if(typeof e.id!=='string'||!Array.isArray(e.bbox)||e.bbox.length!==4||!e.bbox.every(n=>typeof n==='number'&&Number.isFinite(n)))return false;
  if(e.type==='stroke')return Array.isArray(e.points)&&e.points.length%3===0&&e.points.every(n=>typeof n==='number'&&Number.isFinite(n));
  if(e.type==='shape'){const p=e.params as Record<string,unknown>|undefined;return ['line','arrow','rect','ellipse','triangle','polygon'].includes(String(e.kind))&&!!p&&['x','y','w','h','rotation'].every(k=>typeof p[k]==='number'&&Number.isFinite(p[k]))&&!!e.stroke}
- if(e.type==='text')return typeof e.text==='string'&&e.text.length<=100000&&typeof e.color==='string'&&typeof e.bold==='boolean'&&['left','center','right'].includes(String(e.align))&&(e.fontFamily===undefined||e.fontFamily==='Inter'||e.fontFamily==='SpaceGrotesk')&&(e.recognitionManuallyEdited===undefined||typeof e.recognitionManuallyEdited==='boolean')&&['x','y','w','fontSize'].every(k=>typeof e[k]==='number'&&Number.isFinite(e[k]))&&Number(e.w)>0&&Number(e.fontSize)>=16&&Number(e.fontSize)<=200&&Array.isArray(e.bbox)&&e.bbox.length===4&&e.bbox.every(n=>typeof n==='number'&&Number.isFinite(n))&&(e.recognitionSourceStrokes===undefined||Array.isArray(e.recognitionSourceStrokes)&&e.recognitionSourceStrokes.every(isStrokeElement));
+ if(e.type==='text')return typeof e.text==='string'&&e.text.length<=100000&&typeof e.color==='string'&&typeof e.bold==='boolean'&&['left','center','right'].includes(String(e.align))&&(e.fontFamily===undefined||e.fontFamily==='Inter'||e.fontFamily==='SpaceGrotesk')&&(e.minHeight===undefined||typeof e.minHeight==='number'&&Number.isFinite(e.minHeight)&&e.minHeight>=0&&e.minHeight<=1000000)&&(e.recognitionManuallyEdited===undefined||typeof e.recognitionManuallyEdited==='boolean')&&['x','y','w','fontSize'].every(k=>typeof e[k]==='number'&&Number.isFinite(e[k]))&&Number(e.w)>0&&Number(e.fontSize)>=16&&Number(e.fontSize)<=200&&Array.isArray(e.bbox)&&e.bbox.length===4&&e.bbox.every(n=>typeof n==='number'&&Number.isFinite(n))&&(e.recognitionSourceStrokes===undefined||Array.isArray(e.recognitionSourceStrokes)&&e.recognitionSourceStrokes.every(isStrokeElement));
  return false;
  });
  const h=typeof obj.h==='number'&&Number.isFinite(obj.h)&&obj.h>=1414?Math.min(obj.h,1000000):undefined;
- const images=Array.isArray(obj.images)?obj.images.filter((value):value is import('@/features/canvas/types').PageImage=>{if(!value||typeof value!=='object')return false;const i=value as Record<string,unknown>;return typeof i.id==='string'&&typeof i.uri==='string'&&i.uri.startsWith('data:image/')&&['x','y','width','height'].every(k=>typeof i[k]==='number'&&Number.isFinite(i[k]))&&Number(i.width)>0&&Number(i.height)>0}):[];
+ const images=Array.isArray(obj.images)?obj.images.filter((value):value is import('@/features/canvas/types').PageImage=>{if(!value||typeof value!=='object')return false;const i=value as Record<string,unknown>;return typeof i.id==='string'&&typeof i.uri==='string'&&(i.uri.startsWith('data:image/')||isStoredImagePath(i.uri))&&['x','y','width','height'].every(k=>typeof i[k]==='number'&&Number.isFinite(i[k]))&&Number(i.width)>0&&Number(i.height)>0}):[];
  const beautifications=Array.isArray(obj.beautifications)?obj.beautifications.filter((value):value is import('@/features/canvas/types').Beautification=>{
  if(!value||typeof value!=='object')return false;
  const b=value as Record<string,unknown>;

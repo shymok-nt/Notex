@@ -19,13 +19,15 @@ import {parseContent} from '@/features/canvas/engine/content';
 import {useAutosave} from '@/features/canvas/hooks/useAutosave';
 import {visibleSaveStatus} from '@/features/canvas/engine/autosavePolicy';
 import {record,undo,redo,historyState} from '@/features/canvas/store/history';
-import type {PageContent,ShapeMode} from '@/features/canvas/types';
+import type {PageContent,PageImage,ShapeMode} from '@/features/canvas/types';
 import {hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
 import type {Page} from '@/types/page';
 import type {PageTemplate} from '@/types/notebook';
 import {useCanvasAwake} from '@/features/canvas/hooks/useCanvasAwake';
 import {perfNow} from '@/features/canvas/engine/performance';
 import {consumeNotebookNavigationStart} from '@/utils/notebookOpenPerformance';
+import {recordRecentNotebook} from '@/utils/recentNotebooks';
+import {deleteStoredFile,imageDimensions,imageDebugError,isTauriDesktop,logImageDebug,pickCanvasImagePath,pickImagePath,storeSelectedImage} from '@/utils/tauriFiles';
 const defaultTextStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left' as 'left'|'center'|'right'};
 const templates:PageTemplate[]=['boş','çizgili','kareli','noktalı'];
 const swatches=['#1B1B2F','#3347D9','#FF6B5A','#3E8E5A','#F2B632','#7B5CD6','#FF8BBD','#16A6B6','#FFFFFF','#6D6D6D','#F48C35','#7947AB','#000000','#1D4ED8','#EF4444','#10B981','#F59E0B','#8B5CF6','#EC4899','#06B6D4','#94A3B8','#78350F','#A3E635','#F97316'];
@@ -51,8 +53,9 @@ export default function NoteCanvasScreen(){
  const [controller,setController]=useState<CanvasController|null>(null);
  const [imageRequest,setImageRequest]=useState<{uri:string;width:number;height:number;version:number}|null>(null);
  const [selectedImageId,setSelectedImageId]=useState<string|null>(null);
- const [imageAction,setImageAction]=useState<{kind:'grow'|'shrink'|'delete';version:number}>();
- const editImage=(kind:'grow'|'shrink'|'delete')=>setImageAction({kind,version:Date.now()});
+ const [imageAction,setImageAction]=useState<{kind:'grow'|'shrink'|'delete'|'clear';version:number}>();
+ const imageActionVersion=useRef(0);
+ const editImage=(kind:'grow'|'shrink'|'delete'|'clear')=>setImageAction({kind,version:++imageActionVersion.current});
  const [shapeKind,setShapeKind]=useState<ShapeMode>('auto'),[shapeFill,setShapeFill]=useState(false),[ruler,setRuler]=useState(false);
  const [selectedText,setSelectedText]=useState(false);
  const [selectedElements,setSelectedElements]=useState<string[]>([]),[selectionAction,setSelectionAction]=useState<{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}>;version:number}>();
@@ -84,7 +87,54 @@ export default function NoteCanvasScreen(){
  const presetMenu=(item:Preset)=>Alert.alert('Hazır ayar','İşlem seç',[{text:'Mevcut ayarı buraya kaydet',onPress:()=>savePreset(item.id)},{text:'Sil',style:'destructive',onPress:()=>setPresets(p=>p.filter(v=>v.id!==item.id))},{text:'Vazgeç',style:'cancel'}]);
  const [textStyle,setTextStyle]=useState(defaultTextStyle);
  const controllerRef=useRef<CanvasController|null>(null);controllerRef.current=controller;
- useEffect(()=>{let active=true;if(id){const started=__DEV__?perfNow():0,navigationStartedAt=consumeNotebookNavigationStart(id);if(__DEV__&&navigationStartedAt!==undefined)console.log('[Notex perf] navigation_to_editor_mount',{duration_ms:Math.round((started-navigationStartedAt)*10)/10});setReadyNotebookId(null);setSelectedId(null);const lookupStarted=__DEV__?perfNow():0;const notebookLookup=notebookExists?Promise.resolve({row:true,duration_ms:0}):notebookRepository.getById(id).then(row=>({row:!!row,duration_ms:__DEV__?perfNow()-lookupStarted:0}));const pagesStarted=__DEV__?perfNow():0;const pageLoad=load(id).then(()=>__DEV__?perfNow()-pagesStarted:0);void Promise.all([notebookLookup,pageLoad]).then(([lookup,pageLoadMs])=>{if(!active)return;if(!lookup.row){router.replace('/(tabs)');return;}const loadedPages=usePageStore.getState().pages;const requestedPage=typeof pageId==='string'?loadedPages.find(page=>page.id===pageId):undefined;setSelectedId(requestedPage?.id??loadedPages[0]?.id??null);setReadyNotebookId(id);if(__DEV__)console.log('[Notex perf] notebook_open_data_ready',{duration_ms:Math.round((perfNow()-started)*10)/10,notebook_query_ms:Math.round(lookup.duration_ms*10)/10,page_load_ms:Math.round(pageLoadMs*10)/10,page_count:loadedPages.length})}).catch(error=>{console.error('Defter açılamadı',error);if(active)router.replace('/(tabs)')})}return()=>{active=false}},[id,pageId,load,notebookExists]);
+ useEffect(()=>{
+  if(!isTauriDesktop()||typeof window==='undefined')return;
+  const isEditableTarget=(target:EventTarget|null)=>{
+   if(!(target instanceof HTMLElement))return false;
+   return target.isContentEditable||!!target.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]');
+  };
+  const onKeyDown=(event:KeyboardEvent)=>{
+   if(event.isComposing||isEditableTarget(event.target))return;
+   const modifier=event.ctrlKey&&!event.altKey;
+   if(modifier&&event.key.toLowerCase()==='z'){
+    event.preventDefault();
+    if(event.shiftKey)controllerRef.current?.forward();else controllerRef.current?.back();
+    return;
+   }
+   if(modifier&&event.key.toLowerCase()==='y'){
+    event.preventDefault();controllerRef.current?.forward();return;
+   }
+   if(modifier&&event.key.toLowerCase()==='s'){
+    event.preventDefault();
+    void controllerRef.current?.flush().catch(error=>Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Kaydetme sırasında bir hata oluştu.'));
+    return;
+   }
+   if(modifier&&event.key.toLowerCase()==='n'){
+    event.preventDefault();router.push('/notebook-editor');return;
+   }
+   if(modifier&&event.key.toLowerCase()==='o'){
+    event.preventDefault();router.push({pathname:'/backup',params:{open:'1'}});return;
+   }
+   if(event.key==='Escape'){
+    if(moreOpen){setMoreOpen(false);event.preventDefault();return;}
+    if(panel){setPanel(null);event.preventDefault();return;}
+    if(sheet){setSheet(false);setMultiSelect(false);setSelectedPageIds([]);event.preventDefault();return;}
+    if(templatePageId){setTemplatePageId(null);event.preventDefault();return;}
+    if(multiSelect){setMultiSelect(false);setSelectedPageIds([]);event.preventDefault();return;}
+    if(selectedElements.length){action('clear');setSelectedText(false);event.preventDefault();return;}
+    if(selectedImageId){editImage('clear');event.preventDefault();return;}
+    if(focus){setFocus(false);event.preventDefault();}
+    return;
+   }
+   if(event.key==='Delete'&&!event.repeat){
+    if(selectedElements.length){event.preventDefault();action('delete');return;}
+    if(selectedImageId){event.preventDefault();editImage('delete');}
+   }
+  };
+  window.addEventListener('keydown',onKeyDown);
+  return()=>window.removeEventListener('keydown',onKeyDown);
+ },[moreOpen,panel,sheet,templatePageId,multiSelect,selectedElements.length,selectedImageId,focus]);
+ useEffect(()=>{let active=true;if(id){const started=__DEV__?perfNow():0,navigationStartedAt=consumeNotebookNavigationStart(id);if(__DEV__&&navigationStartedAt!==undefined)console.log('[Notex perf] navigation_to_editor_mount',{duration_ms:Math.round((started-navigationStartedAt)*10)/10});setReadyNotebookId(null);setSelectedId(null);const lookupStarted=__DEV__?perfNow():0;const notebookLookup=notebookExists?Promise.resolve({row:true,duration_ms:0}):notebookRepository.getById(id).then(row=>({row:!!row,duration_ms:__DEV__?perfNow()-lookupStarted:0}));const pagesStarted=__DEV__?perfNow():0;const pageLoad=load(id).then(()=>__DEV__?perfNow()-pagesStarted:0);void Promise.all([notebookLookup,pageLoad]).then(async([lookup,pageLoadMs])=>{if(!active)return;if(!lookup.row){router.replace('/(tabs)');return;}try{await recordRecentNotebook(id)}catch(error){console.warn('[Notex home] Defter açılma zamanı kaydedilemedi',error)}if(!active)return;const loadedPages=usePageStore.getState().pages;const requestedPage=typeof pageId==='string'?loadedPages.find(page=>page.id===pageId):undefined;setSelectedId(requestedPage?.id??loadedPages[0]?.id??null);setReadyNotebookId(id);if(__DEV__)console.log('[Notex perf] notebook_open_data_ready',{duration_ms:Math.round((perfNow()-started)*10)/10,notebook_query_ms:Math.round(lookup.duration_ms*10)/10,page_load_ms:Math.round(pageLoadMs*10)/10,page_count:loadedPages.length})}).catch(error=>{console.error('Defter açılamadı',error);if(active)router.replace('/(tabs)')})}return()=>{active=false}},[id,pageId,load,notebookExists]);
  useEffect(()=>{let live=true;void settingsRepository.get('canvasToolSettings').then(raw=>{if(!raw||!live)return;try{const s=JSON.parse(raw) as {tool?:Tool;brush?:Brush;recent?:string[];eraserMode?:'pixel'|'stroke';eraserSize?:number;textStyle?:typeof textStyle};if(s.tool&&['pen','highlighter','eraser','hand'].includes(s.tool))setTool(s.tool);if(s.brush&&typeof s.brush.color==='string'&&typeof s.brush.width==='number'&&typeof s.brush.opacity==='number')setBrush(s.brush);if(s.eraserMode==='pixel'||s.eraserMode==='stroke')setEraserMode(s.eraserMode);if(typeof s.eraserSize==='number')setEraserSize(s.eraserSize);if(s.textStyle&&typeof s.textStyle.fontSize==='number')setTextStyle(s.textStyle)}catch{}}).catch(()=>{});return()=>{live=false}},[]);
  useEffect(()=>{void settingsRepository.set('canvasToolSettings',JSON.stringify({tool,brush,eraserMode,eraserSize,textStyle})).catch(()=>{})},[tool,brush,recent,eraserMode,eraserSize,textStyle]);
  const pagesReady=readyNotebookId===id&&pageStoreNotebookId===id&&!pagesLoading;const selected=pagesReady?pages.find(p=>p.id===selectedId):undefined;const index=selected?pages.findIndex(p=>p.id===selected.id):0;
@@ -92,10 +142,9 @@ export default function NoteCanvasScreen(){
  const loadingRemovalLogged=useRef(false);
  useEffect(()=>{loadingRemovalLogged.current=false;if(__DEV__)loadingStartedAt.current=perfNow()},[id,pageId]);
  useEffect(()=>{if(!pagesReady||!__DEV__||loadingRemovalLogged.current)return;loadingRemovalLogged.current=true;console.log('[Notex perf] loading_overlay_removed',{duration_ms:Math.round((perfNow()-loadingStartedAt.current)*10)/10,page_ready:!!selected,page_count:pages.length})},[id,pagesReady,selected?.id,pages.length]);
- const select=(pageId:string)=>{if(pageId===selected?.id)return;void controllerRef.current?.flush();setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
+ const select=async(pageId:string)=>{if(pageId===selected?.id)return;try{await controllerRef.current?.flush()}catch(error){Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Sayfayı değiştirmeden önce tekrar dene.');return}const current=usePageStore.getState();if(current.notebookId!==id||!current.pages.some(page=>page.id===pageId))return;setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
  const addingPageRef=useRef(false);
- const [addingPage,setAddingPage]=useState(false);
- const addPage=async()=>{if(addingPageRef.current||!selected||!controllerRef.current)return;addingPageRef.current=true;setAddingPage(true);const notebookId=usePageStore.getState().notebookId;try{await controllerRef.current.flush();if(usePageStore.getState().notebookId!==notebookId)return;const created=await add(selected.position);if(created&&usePageStore.getState().notebookId===notebookId)select(created)}catch(error){Alert.alert('Sayfa eklenemedi',error instanceof Error?error.message:'Tekrar dene.')}finally{addingPageRef.current=false;setAddingPage(false)}};
+ const addPage=async()=>{if(addingPageRef.current||!selected||!controllerRef.current)return;addingPageRef.current=true;const notebookId=usePageStore.getState().notebookId;try{await controllerRef.current.flush();if(usePageStore.getState().notebookId!==notebookId)return;const created=await add(selected.position);if(created&&usePageStore.getState().notebookId===notebookId)await select(created)}catch(error){Alert.alert('Sayfa eklenemedi',error instanceof Error?error.message:'Tekrar dene.')}finally{addingPageRef.current=false}};
  const askRemove=(pageId:string)=>{if(pages.length<=1){Alert.alert('Son sayfa','Defterin son sayfası silinemez.');return}Alert.alert('Sayfayı sil','Bu sayfa silinsin mi?',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:async()=>{await controllerRef.current?.flush();await remove(pageId);const next=usePageStore.getState().pages;if(pageId===selected?.id&&next.length)setSelectedId(next[Math.min(index,next.length-1)].id)}}])};
  const chooseTemplate=(pageId:string)=>{setTemplatePageId(pageId);};
  const duplicatePages=async(ids:string[])=>{await controllerRef.current?.flush();const created=await duplicateMany(ids);if(created.length===1)select(created[0]);setMultiSelect(false);setSelectedPageIds([])};
@@ -138,8 +187,24 @@ export default function NoteCanvasScreen(){
  ];
 
  const insertImage=async()=>{
-  if(!selected)return;
+  if(!selected){logImageDebug('insert_aborted_no_active_page');return;}
+  logImageDebug('insert_button_pressed',{pageId:selected.id,platform:isTauriDesktop()?'tauri':'other'});
   try{
+   if(isTauriDesktop()){
+    const source=await pickCanvasImagePath();if(!source)return;
+    const uri=await storeSelectedImage(source,'images');
+    try{
+     const dimensions=await imageDimensions(uri);
+     logImageDebug('image_file_inspected',{pageId:selected.id,mime:dimensions.mime,sizeBytes:dimensions.sizeBytes,width:dimensions.width,height:dimensions.height});
+     const ratio=Math.max(0.1,dimensions.width/Math.max(1,dimensions.height));
+     const targetWidth=Math.min(650,Math.max(150,ratio*450));
+     const targetHeight=targetWidth/ratio;
+     const fit=Math.min(1,1100/targetHeight);
+     setImageRequest({uri,width:targetWidth*fit,height:targetHeight*fit,version:Date.now()});
+     logImageDebug('image_request_created',{pageId:selected.id,width:targetWidth*fit,height:targetHeight*fit});
+    }catch(error){await deleteStoredFile(uri);throw error}
+    return;
+   }
    const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:false,quality:0.65,base64:true});
    if(result.canceled||!result.assets[0])return;
    const asset=result.assets[0];
@@ -148,7 +213,7 @@ export default function NoteCanvasScreen(){
    const ratio=Math.max(0.1,(asset.width||1)/(asset.height||1));
    const w=Math.min(650,Math.max(150,ratio*450));const h=w/ratio;
    setImageRequest({uri:`data:${mime};base64,${asset.base64}`,width:w,height:h,version:Date.now()});
-  }catch{Alert.alert('Resim eklenemedi','Galeriden resim seçilirken bir hata oluştu.');}
+  }catch(error){logImageDebug('insert_flow_failed',{pageId:selected.id,errorType:error instanceof Error?error.name:typeof error,error:imageDebugError(error)});Alert.alert('Resim eklenemedi',error instanceof Error?error.message:'Galeriden resim seçilirken bir hata oluştu.');}
  };
  const chooseTool=(t:Tool)=>{if((t==='pen'||t==='highlighter')&&t!==tool)setBrush(brushesRef.current[t]);if(tool===t)setPanel(p=>p==='tool'?null:'tool');else{setTool(t);setPanel(null)}};
  const chooseColor=(color:string)=>{if(tool==='text'||selectedText){setTextStyle(v=>({...v,color}));if(selectedText)action('textStyle',undefined,undefined,{color})}else setBrush(b=>({...b,color}));};
@@ -199,7 +264,6 @@ export default function NoteCanvasScreen(){
  <Text numberOfLines={1} style={{fontFamily:fonts.heading,fontSize:17,color:ink}}>{notebook?.title??'Defter'}</Text></Pressable>
  <View style={{flexDirection:'row',alignItems:'center',minWidth:0}}>
  <Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}>{`Sayfa ${pages.length?index+1:0} / ${pages.length}`}</Text>
- <Pressable accessibilityRole="button" accessibilityLabel="Sayfa Ekle" disabled={addingPage||!selected} onPress={()=>void addPage()} style={{marginLeft:8,minHeight:44,paddingHorizontal:8,borderWidth:1,borderColor:colors.border,borderRadius:8,flexDirection:'row',alignItems:'center',gap:4,opacity:addingPage?0.5:1}}><Plus size={14} color={colors.accent}/><Text style={{fontSize:12,color:colors.accent}}>{addingPage?'Ekleniyor...':'Sayfa Ekle'}</Text></Pressable>
  {saveStatus==='error'&&<Pressable accessibilityRole="button" accessibilityLabel="Kaydetmeyi tekrar dene" onPress={()=>{void controllerRef.current?.retry().catch(()=>{})}}><Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:colors.coral}}> · Kaydedilemedi, tekrar dene</Text></Pressable>}
  {saveStatus==='saving'&&<Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}> · Kaydediliyor…</Text>}
  </View></View></View>;
@@ -217,9 +281,9 @@ export default function NoteCanvasScreen(){
  {selectedDeleteButton}{undoButton}{redoButton}{control('Diğer',Ellipsis,more)}{tablet&&control('Odak modu',Eye,()=>setFocus(true))}
  </View>}
  <View style={{flex:1,flexDirection:'row'}}>
- {tablet&&!focus&&<View style={{width:132,backgroundColor:colors.background,borderRightWidth:1,borderRightColor:colors.divider}}>{selectionBar}<CanvasPageStrip tablet {...pageStripProps}/></View>}
+  {tablet&&!focus&&<View style={{width:148,flexGrow:0,flexShrink:0,flexBasis:148,minHeight:0,backgroundColor:colors.background,borderRightWidth:1,borderRightColor:colors.divider}}>{selectionBar}<CanvasPageStrip tablet {...pageStripProps}/></View>}
  <View style={{flex:1,marginHorizontal:0,marginTop:0,marginBottom:0,borderRadius:0,overflow:'hidden'}}>
-  {selected?<CanvasPage key={selected.id} page={selected} tool={tool} brush={brush} eraserSize={eraserSize} eraserMode={eraserMode} onController={setController} onHistory={()=>{}} onDrawStart={()=>setPanel(null)} onStrokeComplete={recordStroke} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={setSelectedElements} onSelectionClipboardChange={setInkClipboardAvailable} onSelectionActionComplete={version=>setSelectionAction(current=>current?.version===version?undefined:current)} onTextSelectionChange={setSelectedText} selectionAction={selectionAction} imageRequest={imageRequest} imageAction={imageAction} onImageSelectionChange={setSelectedImageId}/>:<Text style={{color:ink}}>{pagesReady?'Sayfa bulunamadı':'Sayfalar yükleniyor…'}</Text>}
+  {selected?<CanvasPage key={selected.id} page={selected} tool={tool} brush={brush} eraserSize={eraserSize} eraserMode={eraserMode} onController={setController} onHistory={()=>{}} onDrawStart={()=>setPanel(null)} onStrokeComplete={recordStroke} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={setSelectedElements} onSelectionClipboardChange={setInkClipboardAvailable} onSelectionActionComplete={version=>setSelectionAction(current=>current?.version===version?undefined:current)} onTextSelectionChange={setSelectedText} selectionAction={selectionAction} imageRequest={imageRequest} onImageRequestConsumed={version=>setImageRequest(current=>current?.version===version?null:current)} imageAction={imageAction} onImageSelectionChange={setSelectedImageId} onImageLoadError={message=>Alert.alert('Görsel yüklenemedi',message)}/>:<Text style={{color:ink}}>{pagesReady?'Sayfa bulunamadı':'Sayfalar yükleniyor…'}</Text>}
  </View>
  <View pointerEvents="none" style={{position:'absolute',bottom:tablet?22:110,right:24,backgroundColor:'#1B1B2FBB',borderRadius:20,paddingHorizontal:12,paddingVertical:7}}><Text style={{color:'#FFFFFF',fontSize:12}}>{index+1} / {pages.length}</Text></View>
  {focus&&<Pressable accessibilityRole="button" accessibilityLabel="Araç çubuklarını göster" onPress={()=>setFocus(false)} style={{position:'absolute',top:0,left:0,right:0,height:44,alignItems:'center',justifyContent:'center'}}><Eye color={colors.accent} size={20}/></Pressable>}
@@ -259,16 +323,17 @@ export default function NoteCanvasScreen(){
  </View></View></Modal>
  </SafeAreaView>;
 }
-function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistory,onDrawStart,onStrokeComplete,shapeKind,shapeFill,textStyle,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,onTextSelectionChange,selectionAction,imageRequest,imageAction,onImageSelectionChange}:{page:Page;tool:Tool;brush:Brush;eraserSize:number;eraserMode:'pixel'|'stroke';onController:(value:CanvasController|null)=>void;onHistory:()=>void;onDrawStart:()=>void;onStrokeComplete:(tool:PenTool,color:string)=>void;shapeKind:ShapeMode;shapeFill:boolean;textStyle:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'};onSelectionChange:(ids:string[])=>void;onSelectionClipboardChange:(hasItems:boolean)=>void;onSelectionActionComplete:(version:number)=>void;onTextSelectionChange:(selected:boolean)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}>;version:number};imageRequest?:{uri:string;width:number;height:number;version:number}|null;imageAction?:{kind:'grow'|'shrink'|'delete';version:number};onImageSelectionChange:(id:string|null)=>void}){
+function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistory,onDrawStart,onStrokeComplete,shapeKind,shapeFill,textStyle,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,onTextSelectionChange,selectionAction,imageRequest,onImageRequestConsumed,imageAction,onImageSelectionChange,onImageLoadError}:{page:Page;tool:Tool;brush:Brush;eraserSize:number;eraserMode:'pixel'|'stroke';onController:(value:CanvasController|null)=>void;onHistory:()=>void;onDrawStart:()=>void;onStrokeComplete:(tool:PenTool,color:string)=>void;shapeKind:ShapeMode;shapeFill:boolean;textStyle:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'};onSelectionChange:(ids:string[])=>void;onSelectionClipboardChange:(hasItems:boolean)=>void;onSelectionActionComplete:(version:number)=>void;onTextSelectionChange:(selected:boolean)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}>;version:number};imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};onImageSelectionChange:(id:string|null)=>void;onImageLoadError?:(message:string)=>void}){
  useCanvasAwake();const [content,setContent]=useState<PageContent>(()=>{const started=__DEV__?perfNow():0;const parsed=parseContent(page.content);if(__DEV__)console.log('[Notex perf] page_parse',{duration_ms:Math.round((perfNow()-started)*10)/10,element_count:parsed.elements.length,content_characters:page.content.length});return parsed});
- const {error,saving,retry,flush,setDrawingActive}=useAutosave(page.id,content);
- const change=(next:PageContent)=>{record(page.id,content);setContent(next);onHistory()};
- useEffect(()=>{if(!imageRequest)return;setContent(previous=>{record(page.id,previous);return {...previous,images:[...(previous.images??[]),{id:Crypto.randomUUID(),uri:imageRequest.uri,x:175,y:240,width:imageRequest.width,height:imageRequest.height}]}});onHistory()},[imageRequest?.version]);
- const back=()=>{const next=undo(page.id,content);if(next){setContent(next);onHistory()}};
- const forward=()=>{const next=redo(page.id,content);if(next){setContent(next);onHistory()}};
+ const contentRef=useRef(content);contentRef.current=content;
+ const {error,saving,retry,flush,setDrawingActive}=useAutosave(page.id,content,(savedPageId,serialized)=>{usePageStore.getState().cacheContent(savedPageId,serialized);const saved=parseContent(serialized);if(saved.images?.length)logImageDebug('page_store_cache_updated',{pageId:savedPageId,imageCount:saved.images.length,elementIds:saved.images.map(image=>image.id)})});
+ const change=(next:PageContent)=>{const previous=contentRef.current;record(page.id,previous);contentRef.current=next;setContent(next);onHistory()};
+ const addImage=(image:PageImage)=>{const previous=contentRef.current;const next={...previous,images:[...(previous.images??[]),image]};record(page.id,previous);contentRef.current=next;setContent(next);onHistory();logImageDebug('page_content_updated',{pageId:page.id,elementId:image.id,imageCount:next.images?.length??0,bounds:[image.x,image.y,image.x+image.width,image.y+image.height]})};
+ const back=()=>{const next=undo(page.id,contentRef.current);if(next){contentRef.current=next;setContent(next);onHistory()}};
+ const forward=()=>{const next=redo(page.id,contentRef.current);if(next){contentRef.current=next;setContent(next);onHistory()}};
  const h=historyState(page.id);
  const controller:CanvasController={back,forward,flush,canUndo:h.canUndo,canRedo:h.canRedo,error,saving,retry};
  useEffect(()=>{onController(controller)},[error,saving,h.canUndo,h.canRedo]);
  useEffect(()=>()=>{void flush();onController(null)},[]);
- return <DrawingCanvas pageId={page.id} content={content} template={page.template} paperColor={page.paperColor} tool={tool} brush={tool==='highlighter'?{...brush,width:brush.width*5}:brush} eraserSize={eraserSize} eraserMode={eraserMode} onChange={change} onDrawingActive={setDrawingActive} onStrokeComplete={onStrokeComplete} onSelectionClipboardChange={onSelectionClipboardChange} onSelectionActionComplete={onSelectionActionComplete} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={ids=>{onSelectionChange(ids);onTextSelectionChange(ids.some(id=>content.elements.some(e=>e.id===id&&e.type==='text')))}} selectionAction={selectionAction} imageAction={imageAction} onImageSelectionChange={onImageSelectionChange}/>;
+ return <DrawingCanvas pageId={page.id} content={content} template={page.template} paperColor={page.paperColor} tool={tool} brush={tool==='highlighter'?{...brush,width:brush.width*5}:brush} eraserSize={eraserSize} eraserMode={eraserMode} onChange={change} onAddImage={addImage} onDrawingActive={setDrawingActive} onStrokeComplete={onStrokeComplete} onSelectionClipboardChange={onSelectionClipboardChange} onSelectionActionComplete={onSelectionActionComplete} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={ids=>{onSelectionChange(ids);onTextSelectionChange(ids.some(id=>content.elements.some(e=>e.id===id&&e.type==='text')))}} selectionAction={selectionAction} imageAction={imageAction} onImageSelectionChange={onImageSelectionChange} onImageLoadError={onImageLoadError} imageRequest={imageRequest} onImageRequestConsumed={onImageRequestConsumed}/>;
 }

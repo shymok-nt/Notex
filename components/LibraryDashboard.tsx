@@ -1,39 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { LayoutGrid, List, Pencil, Settings2, ChevronRight, Trash2, X, Check } from 'lucide-react-native';
+import { LayoutGrid, List, Pencil, Settings2, ChevronRight, Trash2, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotebookCover } from '@/components/NotebookCover';
 import { NotebookSelectionMark } from '@/components/NotebookSelectionMark';
-import { PagePreview } from '@/components/PagePreview';
 import { SelectionActionBar } from '@/components/SelectionActionBar';
 import type { SelectionAction } from '@/components/SelectionActionBar';
 import { NotexIcon, NotexWordmark } from '@/components/NotexBrand';
 import { libraryColors } from '@/components/libraryTheme';
-import { parseContent } from '@/features/canvas/engine/content';
-import { pageRepository } from '@/db/repositories/pageRepository';
 import { useNotebookStore } from '@/store/notebookStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import type { ThemeColors } from '@/theme/colors';
 import { fonts } from '@/theme/fonts';
-import type { Page } from '@/types/page';
 import { dateLabel, sortNotebooks } from '@/utils/notebook';
-import { resolveCoverUri } from '@/utils/files';
 import { markNotebookNavigationStart } from '@/utils/notebookOpenPerformance';
-
-type RecentPage = { page: Page; notebookTitle: string };
-const recentPageKey = (page: Page) => `${page.notebookId}:${page.id}`;
-
-function groupPagesByNotebook(pages: Page[]) {
-  const groups = new Map<string, Page[]>();
-  for (const page of pages) groups.set(page.notebookId, [...(groups.get(page.notebookId) ?? []), page]);
-  return groups;
-}
-
-function firstTextTitle(content: string) {
-  const element = parseContent(content).elements.find(item => item.type === 'text' && item.text.trim().length > 0);
-  return element?.type === 'text' ? element.text.trim().replace(/\s+/g, ' ').slice(0, 120) : null;
-}
+import { getRecentNotebookActivity } from '@/utils/recentNotebooks';
+import type { RecentNotebookActivity } from '@/utils/recentNotebookActivity';
 
 export function LibraryDashboard() {
   const { colors: themeColors, scheme } = useTheme();
@@ -42,32 +25,28 @@ export function LibraryDashboard() {
   const { width } = useWindowDimensions();
   const notebooks = useNotebookStore(state => state.notebooks);
   const deleteNotebooks = useNotebookStore(state => state.deleteNotebooks);
-  const refreshNotebooks = useNotebookStore(state => state.refresh);
   const viewMode = useNotebookStore(state => state.viewMode);
   const setViewMode = useNotebookStore(state => state.setViewMode);
   const recentNotebooks = useMemo(() => sortNotebooks(notebooks, 'updated').slice(0, 8), [notebooks]);
-  const [recentPages, setRecentPages] = useState<RecentPage[]>([]);
-  const [pagesLoading, setPagesLoading] = useState(true);
-  const [selectionKind, setSelectionKind] = useState<'notebooks' | 'pages' | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentNotebookActivity[]>([]);
+  const [recentActivityLoading, setRecentActivityLoading] = useState(true);
+  const [selectionKind, setSelectionKind] = useState<'notebooks' | null>(null);
   const [selectedNotebookIds, setSelectedNotebookIds] = useState<string[]>([]);
-  const [selectedPageKeys, setSelectedPageKeys] = useState<string[]>([]);
-  const [pendingDeletedPages, setPendingDeletedPages] = useState<Page[]>([]);
   const [working, setWorking] = useState(false);
   const [confirmNotebookDeleteVisible, setConfirmNotebookDeleteVisible] = useState(false);
   const longPressHandled = useRef(false);
-  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
+  const recentOpenedNotebooks = useMemo(() => {
+    const byId = new Map(notebooks.map(notebook => [notebook.id, notebook]));
+    return recentActivity.flatMap(activity => {
+      const notebook = byId.get(activity.id);
+      return notebook ? [{ notebook, openedAt: activity.openedAt }] : [];
+    }).slice(0, 5);
+  }, [notebooks, recentActivity]);
 
   useEffect(() => {
-    const valid = new Set(recentPages.map(({ page }) => recentPageKey(page)));
-    setSelectedPageKeys(current => current.filter(key => valid.has(key)));
-  }, [recentPages]);
-
-  useEffect(() => {
-    const valid = new Set(recentNotebooks.map(notebook => notebook.id));
+    const valid = new Set(notebooks.map(notebook => notebook.id));
     setSelectedNotebookIds(current => current.filter(id => valid.has(id)));
-  }, [recentNotebooks]);
+  }, [notebooks]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -75,7 +54,6 @@ export function LibraryDashboard() {
       if (!selectionKind) return false;
       setSelectionKind(null);
       setSelectedNotebookIds([]);
-      setSelectedPageKeys([]);
       return true;
     });
     return () => subscription.remove();
@@ -84,55 +62,36 @@ export function LibraryDashboard() {
   useFocusEffect(useCallback(() => () => {
     setSelectionKind(null);
     setSelectedNotebookIds([]);
-    setSelectedPageKeys([]);
   }, []));
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let active = true;
-    setPagesLoading(true);
-    void pageRepository.getRecentAcrossNotebooks(5).then(pages => {
+    setRecentActivityLoading(true);
+    void getRecentNotebookActivity().then(activity => {
       if (!active) return;
-      setRecentPages(pages);
+      setRecentActivity(activity);
     }).catch(error => {
-      console.warn('[Notex home] Recent pages could not be loaded', error);
-      if (active) setRecentPages([]);
-    }).finally(() => { if (active) setPagesLoading(false); });
+      console.warn('[Notex home] Recent notebooks could not be loaded', error);
+      if (active) setRecentActivity([]);
+    }).finally(() => { if (active) setRecentActivityLoading(false); });
     return () => { active = false; };
-  }, [notebooks]);
+  }, []));
 
   const openNotebook = (id: string) => { markNotebookNavigationStart(id); router.push({ pathname: '/note/[id]', params: { id } }); };
-  const openPage = (item: RecentPage) => { markNotebookNavigationStart(item.page.notebookId); router.push({ pathname: '/note/[id]', params: { id: item.page.notebookId, pageId: item.page.id } }); };
   const toggleNotebook = (id: string) => setSelectedNotebookIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
-  const toggleRecentPage = (page: Page) => {
-    const key = recentPageKey(page);
-    setSelectedPageKeys(current => current.includes(key) ? current.filter(value => value !== key) : [...current, key]);
-  };
   const notebookPress = (id: string) => {
     if (longPressHandled.current) { longPressHandled.current = false; return; }
     if (selectionKind === 'notebooks') { toggleNotebook(id); return; }
-    if (selectionKind === 'pages') { setSelectionKind('notebooks'); setSelectedPageKeys([]); setSelectedNotebookIds([id]); return; }
     openNotebook(id);
   };
   const notebookLongPress = (id: string) => {
     longPressHandled.current = true;
     if (selectionKind === 'notebooks') toggleNotebook(id);
-    else { setSelectionKind('notebooks'); setSelectedPageKeys([]); setSelectedNotebookIds([id]); }
-  };
-  const pagePress = (item: RecentPage) => {
-    if (longPressHandled.current) { longPressHandled.current = false; return; }
-    if (selectionKind === 'pages') { toggleRecentPage(item.page); return; }
-    if (selectionKind === 'notebooks') { setSelectionKind('pages'); setSelectedNotebookIds([]); setSelectedPageKeys([recentPageKey(item.page)]); return; }
-    openPage(item);
-  };
-  const pageLongPress = (page: Page) => {
-    longPressHandled.current = true;
-    const key = recentPageKey(page);
-    if (selectionKind === 'pages') toggleRecentPage(page);
-    else { setSelectionKind('pages'); setSelectedNotebookIds([]); setSelectedPageKeys([key]); }
+    else { setSelectionKind('notebooks'); setSelectedNotebookIds([id]); }
   };
   const performNotebookDelete = async () => {
     if (working) return;
-    const validIds = [...new Set(selectedNotebookIds.filter(id => recentNotebooks.some(notebook => notebook.id === id)))];
+    const validIds = [...new Set(selectedNotebookIds.filter(id => notebooks.some(notebook => notebook.id === id)))];
     if (!validIds.length) return;
     setWorking(true);
     try {
@@ -162,70 +121,11 @@ export function LibraryDashboard() {
   };
   const confirmNotebookDelete = () => setConfirmNotebookDeleteVisible(true);
 
-  const schedulePageUndoExpiry = () => {
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    undoTimer.current = setTimeout(() => { setPendingDeletedPages([]); undoTimer.current = null; }, 5000);
-  };
-  const performRecentPageDelete = async () => {
-    const selected = recentPages.map(({ page }) => page).filter(page => selectedPageKeys.includes(recentPageKey(page)));
-    if (!selected.length) return;
-    setWorking(true);
-    const removed: Page[] = [];
-    try {
-      for (const [notebookId, pages] of groupPagesByNotebook(selected)) {
-        const current = await pageRepository.getByNotebook(notebookId);
-        if (pages.length >= current.length) throw new Error('Bir defterin son sayfası silinemez.');
-        removed.push(...await pageRepository.removeMany(pages.map(page => page.id)));
-      }
-      await refreshNotebooks();
-      if (undoTimer.current) clearTimeout(undoTimer.current);
-      setPendingDeletedPages(removed);
-      schedulePageUndoExpiry();
-      setSelectedPageKeys([]);
-      setSelectionKind(null);
-    } catch (error) {
-      let rollbackError: unknown;
-      const rollbackFailed: Page[] = [];
-      for (const pages of groupPagesByNotebook(removed).values()) {
-        try { await pageRepository.restoreMany(pages); } catch (restoreError) { rollbackError = restoreError; rollbackFailed.push(...pages); }
-      }
-      if (rollbackFailed.length) { setPendingDeletedPages(rollbackFailed); schedulePageUndoExpiry(); }
-      Alert.alert('Sayfalar silinemedi', rollbackError instanceof Error ? `İşlemin bir bölümü geri alınamadı: ${rollbackError.message}` : error instanceof Error ? error.message : 'Tekrar dene.');
-      if (removed.length) await refreshNotebooks();
-    } finally { setWorking(false); }
-  };
-  const confirmRecentPageDelete = () => Alert.alert(
-    'Sayfaları sil',
-    `Seçilen ${selectedPageKeys.length} sayfa silinecek. Silme işleminden sonra 5 saniye boyunca geri alabilirsin.`,
-    [{ text: 'Vazgeç', style: 'cancel' }, { text: 'Sil', style: 'destructive', onPress: () => { void performRecentPageDelete(); } }],
-  );
-  const undoRecentPageDelete = async () => {
-    if (!pendingDeletedPages.length) return;
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    undoTimer.current = null;
-    const restored = new Set<string>();
-    let firstError: unknown;
-    for (const pages of groupPagesByNotebook(pendingDeletedPages).values()) {
-      try { await pageRepository.restoreMany(pages); pages.forEach(page => restored.add(recentPageKey(page))); }
-      catch (error) { firstError ??= error; }
-    }
-    const remaining = pendingDeletedPages.filter(page => !restored.has(recentPageKey(page)));
-    setPendingDeletedPages(remaining);
-    if (remaining.length) schedulePageUndoExpiry();
-    await refreshNotebooks();
-    if (firstError) Alert.alert('Geri alınamadı', firstError instanceof Error ? firstError.message : 'Tekrar dene.');
-  };
-
-  const selectionActions: SelectionAction[] = selectionKind === 'notebooks' ? [
+  const selectionActions: SelectionAction[] = [
     { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || selectedNotebookIds.length === 0, onPress: confirmNotebookDelete },
-    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => setSelectedNotebookIds(recentNotebooks.map(notebook => notebook.id)) },
+    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => setSelectedNotebookIds(notebooks.map(notebook => notebook.id)) },
     { key: 'clear', label: 'Temizle', icon: X, disabled: working || selectedNotebookIds.length === 0, onPress: () => setSelectedNotebookIds([]) },
     { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setSelectionKind(null); setSelectedNotebookIds([]); } },
-  ] : [
-    { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || selectedPageKeys.length === 0, onPress: confirmRecentPageDelete },
-    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => setSelectedPageKeys(recentPages.map(({ page }) => recentPageKey(page))) },
-    { key: 'clear', label: 'Temizle', icon: X, disabled: working || selectedPageKeys.length === 0, onPress: () => setSelectedPageKeys([]) },
-    { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setSelectionKind(null); setSelectedPageKeys([]); } },
   ];
   const coverWidth = Math.min(120, Math.max(96, (width - 84) / 2.45));
 
@@ -270,22 +170,25 @@ export function LibraryDashboard() {
           <Text style={styles.emptyCopy}>Yeni bir defter oluşturarak başlayabilirsin.</Text>
         </View>}
 
-        <View style={styles.notesHeading}><Text style={styles.sectionTitle}>Son notlar</Text></View>
-        {pagesLoading ? <View style={styles.loading}><ActivityIndicator size="small" color={colors.accent}/></View> : recentPages.length > 0 ? <View style={styles.notesCard}>
-          {recentPages.map(({ page, notebookTitle }, index) => <Pressable key={page.id} accessibilityRole="button" accessibilityLabel={`${notebookTitle}, Sayfa ${page.position + 1}`} onPressIn={() => { longPressHandled.current = false; }} onPress={() => pagePress({ page, notebookTitle })} onLongPress={() => pageLongPress(page)} delayLongPress={380} accessibilityState={{ selected: selectionKind === 'pages' && selectedPageKeys.includes(recentPageKey(page)) }} style={[styles.noteRow, index < recentPages.length - 1 && styles.noteDivider]}>
-            <View style={styles.pageThumb}>{page.thumbnailPath ? <Image source={{ uri: resolveCoverUri(page.thumbnailPath) ?? undefined }} resizeMode="cover" style={StyleSheet.absoluteFill}/> : <PagePreview template={page.template} paperColor={page.paperColor} width={44} height={56}/>}</View>
-            <View style={styles.noteText}>
-              <Text numberOfLines={1} style={styles.noteTitle}>{firstTextTitle(page.content) ?? notebookTitle}</Text>
-              <Text numberOfLines={1} style={styles.noteSubtitle}>Sayfa {page.position + 1}</Text>
-            </View>
-            <Text style={styles.noteTime}>{dateLabel(page.updatedAt)}</Text>
-            {selectionKind === 'pages' && selectedPageKeys.includes(recentPageKey(page)) && <><View pointerEvents="none" style={styles.selectionOutline}/><View pointerEvents="none" style={[styles.selectionMark, styles.noteSelectionMark]}><Check size={13} color="#FFFFFF"/></View></>}
-          </Pressable>)}
-        </View> : <View style={styles.emptyNotes}><Text style={styles.emptyCopy}>Henüz düzenlenmiş sayfa yok.</Text></View>}
-      </ScrollView>
+        <View style={styles.notesHeading}><Text style={styles.sectionTitle}>Son açılan defterler</Text></View>
+        {recentActivityLoading ? <View style={styles.loading}><ActivityIndicator size="small" color={colors.accent}/></View> : recentOpenedNotebooks.length > 0 ? <View style={styles.notesCard}>
+          {recentOpenedNotebooks.map(({ notebook, openedAt }, index) => {
+            const selected = selectionKind === 'notebooks' && selectedNotebookIds.includes(notebook.id);
+            const openedLabel = openedAt ? dateLabel(openedAt) + ' ' + new Date(openedAt).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}) : 'Daha önce açıldı';
+            return <Pressable key={notebook.id} accessibilityRole="button" accessibilityLabel={notebook.title + ' defterini aç, son açılma ' + openedLabel} onPressIn={() => { longPressHandled.current = false; }} onPress={() => notebookPress(notebook.id)} onLongPress={() => notebookLongPress(notebook.id)} delayLongPress={380} accessibilityState={{ selected }} style={[styles.noteRow, index < recentOpenedNotebooks.length - 1 && styles.noteDivider]}>
+              <View style={styles.recentNotebookCover}><NotebookCover notebook={notebook} width={48} showTitle={false} colorsOverride={colors}/>{selected&&<NotebookSelectionMark/>}</View>
+              <View style={styles.noteText}>
+                <Text numberOfLines={1} style={styles.noteTitle}>{notebook.title}</Text>
+                <Text numberOfLines={1} style={styles.noteSubtitle}>{notebook.pageCount} sayfa · Son açılma {openedLabel}</Text>
+              </View>
+              <ChevronRight size={18} color={colors.muted}/>
+            </Pressable>;
+          })}
+        </View> : <View style={styles.emptyNotes}><Text style={styles.emptyCopy}>Henüz açılmış defter yok. Bir defter açtığında burada görünecek.</Text></View>}
+        </ScrollView>
 
       <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter olu\u015ftur" onPress={() => router.push('/notebook-editor')} style={[styles.fab, selectionKind !== null && { display: 'none' }]}><Pencil size={21} color="#FFFFFF" strokeWidth={2.3}/></Pressable>
-      <SelectionActionBar visible={selectionKind !== null} selectedCount={selectionKind === 'notebooks' ? selectedNotebookIds.length : selectedPageKeys.length} actions={selectionActions} />
+      <SelectionActionBar visible={selectionKind !== null} selectedCount={selectedNotebookIds.length} actions={selectionActions} />
       <Modal visible={confirmNotebookDeleteVisible} transparent animationType="fade" onRequestClose={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}>
         <View style={styles.deleteBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}/>
@@ -299,7 +202,6 @@ export function LibraryDashboard() {
           </View>
         </View>
       </Modal>
-      {pendingDeletedPages.length > 0 && <View style={[styles.undoBanner, selectionKind !== null && styles.undoBannerAboveToolbar]}><Text style={styles.undoText}>{pendingDeletedPages.length} sayfa silindi</Text><Pressable accessibilityRole="button" accessibilityLabel="Silinen sayfaları geri al" onPress={() => void undoRecentPageDelete()}><Text style={styles.undoAction}>Geri al</Text></Pressable></View>}
     </View>
   </SafeAreaView>;
 }
@@ -321,7 +223,7 @@ function makeStyles(colors: ThemeColors) { return StyleSheet.create({
   emptyNotebooks: { paddingVertical: 22, paddingHorizontal: 18, backgroundColor: colors.surface, borderRadius: 16, marginBottom: 12 },
   emptyTitle: { fontFamily: fonts.semibold, fontSize: 15, color: colors.ink }, emptyCopy: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.muted, marginTop: 4 },
   notesHeading: { marginTop: 4, marginBottom: 13 }, notesCard: { backgroundColor: colors.surface, borderRadius: 19, paddingHorizontal: 14, paddingVertical: 3, shadowColor: colors.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.045, shadowRadius: 8, elevation: 1 },
-  noteRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, position: 'relative' }, noteDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+  noteRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, position: 'relative' }, noteDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }, recentNotebookCover: { width: 48, height: 64, position: 'relative' },
   pageThumb: { width: 44, height: 56, borderRadius: 7, overflow: 'hidden', backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
   noteText: { flex: 1, minWidth: 0 }, noteTitle: { fontFamily: fonts.semibold, fontSize: 14, color: colors.ink }, noteSubtitle: { fontFamily: fonts.body, fontSize: 12, color: colors.muted, marginTop: 4 }, noteTime: { maxWidth: 56, fontFamily: fonts.body, fontSize: 11, color: colors.muted, textAlign: 'right' },
   loading: { minHeight: 90, justifyContent: 'center', alignItems: 'center' }, emptyNotes: { backgroundColor: colors.surface, borderRadius: 16, padding: 18 },

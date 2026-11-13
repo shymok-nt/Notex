@@ -12,14 +12,22 @@
     "typecheck": "tsc --noEmit",
     "check": "expo install --check && tsc --noEmit",
     "setup:skia-web": "setup-skia-web public",
+    "tauri:export": "expo export --platform web",
+    "tauri:serve": "expo serve dist --port 1431",
     "prestart": "npm run setup:skia-web",
     "preweb": "npm run setup:skia-web",
-    "start:dev": "expo start --dev-client"
+    "start:dev": "expo start --dev-client",
+    "tauri": "tauri dev",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.1",
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@shopify/react-native-skia": "2.14.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-fs": "^2.7.1",
     "expo": "~58.0.23",
     "expo-constants": "~58.0.10",
     "expo-crypto": "~58.0.7",
@@ -52,6 +60,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "@types/react": "^19.2.0",
     "typescript": "~6.0.3"
   },

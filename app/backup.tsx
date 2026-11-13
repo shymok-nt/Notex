@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect,useRef,useState } from 'react';
 import { ActivityIndicator,Alert,Platform,Pressable,SafeAreaView,ScrollView,Text,View } from 'react-native';
-import { router } from 'expo-router';
+import { router,useLocalSearchParams } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import { File,Paths } from 'expo-file-system';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { createBackup,inspectBackup,importBackup,webDownload } from '@/services/notexBackup';
+import {isTauriDesktop,pickDesktopBackup,saveDesktopBackup} from '@/utils/tauriFiles';
 import { settingsRepository } from '@/db/repositories/settingsRepository';
 import { useNotebookStore } from '@/store/notebookStore';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -22,7 +23,9 @@ const readAndroidBytes=async(uri:string)=>{
  return bytes;
 };
 export default function BackupScreen(){
+ const {open}=useLocalSearchParams<{open?:string}>();
  const {colors}=useTheme();const [busy,setBusy]=useState(false),[label,setLabel]=useState(''),[percent,setPercent]=useState(0),[pending,setPending]=useState<Pending|null>(null),[error,setError]=useState('');
+ const openedFromShortcut=useRef(false);
  const [backupChoices,setBackupChoices]=useState<BackupChoice[]>([]);
  const refresh=useNotebookStore(s=>s.refresh),refreshFolders=useNotebookStore(s=>s.refreshFolders);
  const progress=(text:string,value:number)=>{setLabel(text);setPercent(value)};
@@ -44,8 +47,11 @@ export default function BackupScreen(){
   const date=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0'),String(now.getHours()).padStart(2,'0'),String(now.getMinutes()).padStart(2,'0'),String(now.getSeconds()).padStart(2,'0')].join('-');
   // Android document providers recognize .zip reliably with application/zip.
   // The internal ZIP format remains the same as .notex backups on web.
-  const name='Notex-yedek-'+date+(Platform.OS==='android'?'.zip':'.notex');
-  if(Platform.OS==='web')webDownload(bytes,name);
+  const name='Notex-yedek-'+date+'.notex';
+  if(isTauriDesktop()){
+   const saved=await saveDesktopBackup(bytes,name);if(!saved){setLabel('Kaydetme iptal edildi');return}
+  }
+  else if(Platform.OS==='web')webDownload(bytes,name);
   else if(Platform.OS==='android'){
    progress('Kaydedilecek klasörü seç…',95);
    const saved=await saveAndroid(bytes,name);
@@ -103,6 +109,8 @@ export default function BackupScreen(){
    setBackupChoices(choices);
    setLabel('Yedekler listelendi');setPercent(100);
    return;
+  }else if(isTauriDesktop()){
+   const selected=await pickDesktopBackup();if(!selected)return;bytes=selected.bytes;
   }else{
    const result=await DocumentPicker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true,multiple:false});
    if(result.canceled)return;
@@ -116,6 +124,11 @@ export default function BackupScreen(){
   try{({manifest}=await inspectBackup(bytes))}catch(e){console.error('Notex ZIP doğrulama hatası',e);throw new Error('Seçilen dosya geçerli bir Notex yedeği değil: '+(e instanceof Error?e.message:String(e)))}
   setPending({bytes,summary:`${manifest.counts.notebooks} defter, ${manifest.counts.pages} sayfa, ${manifest.counts.files} resim bulundu`});
  });
+ useEffect(()=>{
+  if(open!=='1'||!isTauriDesktop()||openedFromShortcut.current)return;
+  openedFromShortcut.current=true;
+  pick();
+ },[open]);
  const restore=()=>{if(!pending)return;const bytes=pending.bytes;setPending(null);void run(async()=>{await importBackup(bytes,progress);await refreshFolders();await refresh();Alert.alert('Tamamlandı','Defterler mevcut verilere eklendi.')})};
  const button=(text:string,onPress:()=>void,disabled=false)=><Pressable accessibilityRole="button" disabled={disabled||busy} onPress={onPress} style={{backgroundColor:colors.surfaceRaised,borderRadius:14,padding:18,marginTop:12,opacity:(disabled||busy)?0.5:1}}><Text style={{color:colors.ink,fontSize:16,fontWeight:'600'}}>{text}</Text></Pressable>;
  return <SafeAreaView style={{flex:1,backgroundColor:colors.background}}><View style={{height:60,flexDirection:'row',alignItems:'center',paddingHorizontal:16,gap:8}}><Pressable accessibilityRole="button" accessibilityLabel="Geri dön" onPress={()=>router.back()} style={{width:44,height:44,justifyContent:'center'}}><ArrowLeft color={colors.ink}/></Pressable><Text style={{fontSize:22,fontWeight:'700',color:colors.ink}}>Yedekle ve geri yükle</Text></View><ScrollView contentContainerStyle={{padding:20}}>

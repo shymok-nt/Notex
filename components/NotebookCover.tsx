@@ -7,6 +7,7 @@ import { PremiumCoverArt } from '@/components/PremiumCoverArt';
 import { PremiumCoverFace } from '@/components/PremiumCoverFace';
 import { SpecialCoverImage } from '@/components/SpecialCoverImage';
 import { DefaultLinenCover } from '@/components/DefaultLinenCover';
+import { resolveCoverRenderUri } from '@/utils/tauriFiles';
 import type { Notebook, NotebookDraft } from '@/types/notebook';
 type CoverData=Pick<NotebookDraft,'title'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'> & {favorite?:boolean};
 export function NotebookCover({notebook,width=160,showTitle=notebook.showTitleOnCover,colorsOverride}:{notebook:CoverData;width?:number;showTitle?:boolean;colorsOverride?:ThemeColors}){
@@ -17,7 +18,7 @@ export function NotebookCover({notebook,width=160,showTitle=notebook.showTitleOn
  const legacyPreset=preset?.style==='linen'||preset?.style==='leather';
  return <View style={[styles.shadow,{width,height}]}>
   <View style={[styles.cover,{backgroundColor:coverColor}]}>
-   {notebook.coverType==='image'&&notebook.coverImageUri&&<Image source={{uri:notebook.coverImageUri}} resizeMode="contain" style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors/>}
+   {notebook.coverType==='image'&&notebook.coverImageUri&&<Image source={{uri:resolveCoverRenderUri(notebook.coverImageUri)??notebook.coverImageUri}} resizeMode="contain" style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors/>}
    {notebook.coverType==='color'&&<DefaultLinenCover color={coverColor} width={width} height={height}/>}
    {special&&<SpecialCoverImage id={special.id} width={width} height={height} backgroundColor={coverColor}/>}
    {preset&&(legacyPreset?<PremiumCoverArt style={preset.style} ink={preset.ink} width={width}/>:<PremiumCoverFace style={preset.style as PremiumCoverStyle} color={coverColor} ink={preset.ink} width={width} title={notebook.title} showTitle={false}/>)}

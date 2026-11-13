@@ -5,11 +5,13 @@ import {serializeContent} from '@/features/canvas/engine/content';
 import {autosaveDelay,AUTOSAVE_RETRY_DELAY_MS,canResetDirtyWindow} from '@/features/canvas/engine/autosavePolicy';
 import {perfNow} from '@/features/canvas/engine/performance';
 import type {PageContent} from '@/features/canvas/types';
+import {logImageDebug} from '@/utils/tauriFiles';
 
 const queues=new Map<string,Promise<void>>();
-export function useAutosave(pageId:string|null,content:PageContent){
+export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pageId:string,serializedContent:string)=>void){
  const [error,setError]=useState(false),[saving,setSaving]=useState(false);
  const latest=useRef({pageId,content});latest.current={pageId,content};
+ const onSavedRef=useRef(onSaved);onSavedRef.current=onSaved;
  const initialized=useRef(false),dirty=useRef(false),active=useRef(false);
  const version=useRef(0),savedVersion=useRef(0),firstDirty=useRef(0);
  const lastSerialized=useRef<string|null>(null);
@@ -25,6 +27,7 @@ export function useAutosave(pageId:string|null,content:PageContent){
   const snapshot=version.current;
   if(snapshot===savedVersion.current)return queues.get(id)??Promise.resolve();
   dirty.current=false;
+  const imageIds=(value.images??[]).map(image=>image.id);
   const serializeStarted=__DEV__?perfNow():0;
   const data=serializeContent(value);
   const serializeMs=__DEV__?perfNow()-serializeStarted:0;
@@ -34,12 +37,16 @@ export function useAutosave(pageId:string|null,content:PageContent){
    statusTimer.current=setTimeout(()=>{if(mounted.current)setSaving(true)},400);
    try{
     const writeStarted=__DEV__?perfNow():0;
+    if(imageIds.length)logImageDebug('sqlite_save_started',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
     await pageRepository.updateContent(id,data);
+    onSavedRef.current?.(id,data);
+    if(imageIds.length)logImageDebug('sqlite_save_succeeded',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
     if(__DEV__)console.log('[Notex perf] autosave_flush',{compare_ms:Math.round(lastCompareMs.current*10)/10,serialize_ms:Math.round(serializeMs*10)/10,sqlite_write_ms:Math.round((perfNow()-writeStarted)*10)/10,content_characters:data.length});
     savedVersion.current=Math.max(savedVersion.current,snapshot);
     if(canResetDirtyWindow(version.current,snapshot,dirty.current))firstDirty.current=0;
     if(mounted.current)setError(false);
    }catch(e){
+    if(imageIds.length)logImageDebug('sqlite_save_failed',{pageId:id,imageCount:imageIds.length,errorType:e instanceof Error?e.name:typeof e});
     dirty.current=true;
     if(mounted.current)setError(true);
     if(timer.current)clearTimeout(timer.current);

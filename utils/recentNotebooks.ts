@@ -1,17 +1,26 @@
 import {settingsRepository} from '@/db/repositories/settingsRepository';
+import {moveNotebookToRecentFront,parseRecentNotebookActivity,type RecentNotebookActivity} from '@/utils/recentNotebookActivity';
 
-const KEY='recentNotebookIds';
-export async function getRecentNotebookIds():Promise<string[]>{
+const KEY='recentNotebookActivity';
+const LEGACY_KEY='recentNotebookIds';
+let mutationQueue:Promise<void>=Promise.resolve();
+export async function getRecentNotebookActivity():Promise<RecentNotebookActivity[]>{
  try{
-  const raw=await settingsRepository.get(KEY);
-  const parsed:unknown=raw?JSON.parse(raw):[];
-  return Array.isArray(parsed)?parsed.filter((id):id is string=>typeof id==='string').slice(0,30):[];
+  const [raw,legacy]=await Promise.all([settingsRepository.get(KEY),settingsRepository.get(LEGACY_KEY)]);
+  return parseRecentNotebookActivity(raw,legacy);
  }catch{return []}
 }
+export async function getRecentNotebookIds():Promise<string[]>{
+ return (await getRecentNotebookActivity()).map(entry=>entry.id);
+}
 
-export async function recordRecentNotebook(id:string):Promise<string[]>{
- const current=await getRecentNotebookIds();
- const next=[id,...current.filter(item=>item!==id)].slice(0,30);
- await settingsRepository.set(KEY,JSON.stringify(next));
- return next;
+export function recordRecentNotebook(id:string):Promise<string[]>{
+ const operation=mutationQueue.then(async()=>{
+  const current=await getRecentNotebookActivity();
+  const next=moveNotebookToRecentFront(current,id,new Date().toISOString());
+  await settingsRepository.set(KEY,JSON.stringify(next));
+  return next.map(entry=>entry.id);
+ });
+ mutationQueue=operation.then(()=>undefined,()=>undefined);
+ return operation;
 }

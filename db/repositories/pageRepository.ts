@@ -5,6 +5,7 @@ import { getDatabase,withSafeTransaction } from '@/db/database';
 import type { Page } from '@/types/page';
 import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
+import {copyStoredFile,isTauriDesktop} from '@/utils/tauriFiles';
 type PageRow={id:string;notebook_id:string;position:number;template:PageTemplate;paper_color:PaperColor;content:string;thumbnail_path:string|null;created_at:string;updated_at:string};
 const convert=(r:PageRow):Page=>({id:r.id,notebookId:r.notebook_id,position:r.position,template:r.template,paperColor:r.paper_color,content:r.content,thumbnailPath:r.thumbnail_path,createdAt:r.created_at,updatedAt:r.updated_at});
 export type RecentPageRecord={page:Page;notebookTitle:string};
@@ -49,8 +50,11 @@ export const pageRepository={
 
  async duplicateMany(ids:string[]){
   const db=await getDatabase(),date=now(),created:string[]=[],copiedPaths:string[]=[];
-  const duplicateFile=(relative:string|null)=>{
+  const duplicateFile=async(relative:string|null)=>{
    if(!relative)return null;
+   if(isTauriDesktop()){
+    const path=await copyStoredFile(relative,'page-assets');copiedPaths.push(path);return path;
+   }
    const source=new File(Paths.document,relative);
    if(!source.exists)throw new Error('Kopyalanacak görsel bulunamadı');
    const extension=source.extension||'.png';
@@ -78,7 +82,7 @@ export const pageRepository={
      const content=JSON.parse(source.content) as {elements?:{id:string}[];images?:{id:string;uri:string}[]};
      if(Array.isArray(content.elements))content.elements=content.elements.map(e=>({...e,id:Crypto.randomUUID()}));
      if(Array.isArray(content.images))content.images=content.images.map(image=>({...image,id:Crypto.randomUUID()}));
-     const thumbnail=duplicateFile(source.thumbnail_path);
+     const thumbnail=await duplicateFile(source.thumbnail_path);
      await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',item.id,notebookId,item.position,source.template,source.paper_color,JSON.stringify(content),thumbnail,date,date);
      created.push(item.id);
     }

@@ -7,7 +7,7 @@ import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
 import * as Crypto from 'expo-crypto';
 import {glyphOffsets,fitWordFont} from '@/lib/ink/naturalText';
 import {useHandwritingFontFamilies} from '@/lib/ink/handwritingFonts';
-import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
+import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
 import {makeStroke,strokePath,strokePathString,cacheFinalizedStrokePath} from '@/features/canvas/engine/geometry';
 import {appendPolylinePoint,centerlinePathString} from '@/features/canvas/engine/centerlinePath';
 import {appendSample,emptySampleBuffer,flattenSamples,normalizeStylusPressure,sampleBufferAt,sampleBufferFromPoint,type Sample,type SampleBuffer} from '@/features/canvas/engine/sampleBuffer';
@@ -18,7 +18,9 @@ import {pixelErase} from '@/features/canvas/engine/pixelEraser';
 import {hasCommittedErase,isCurrentEraseHandoff,shouldReleaseEraserHandoff} from '@/features/canvas/engine/eraserHandoff';
 import {getPaperGuideMetrics,nearestPaperGuide,PAPER_GUIDE_SPACING,PAPER_GUIDE_LINE_WIDTH} from '@/features/canvas/engine/paperGuides';
 import {recognizeShape} from '@/features/canvas/engine/recognizeShape';
+import {deleteStoredFile,imageDebugError,isTauriDesktop,isStoredAppDataPath,isTauriDevelopmentRuntime,logImageDebug,readStoredFile} from '@/utils/tauriFiles';
 import {shapePath,makeShape,moveElement,scaleElement,rotateElement} from '@/features/canvas/engine/shapes';
+import {resizeTextBox} from '@/features/canvas/engine/textBoxResize';
 import {lassoSelect,lassoPathLength} from '@/features/canvas/engine/lassoGeometry';
 import {readSelectionClipboard,writeSelectionClipboard,hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
 import {isSelectionHandoffCommitted,needsReleasedSelectionHandoff,shouldApplySelectionPreviewTransform,shouldDismissSelectionOnBlankTap,shouldUseCommittedSelectionGeometry} from '@/features/canvas/engine/selectionHandoff';
@@ -26,7 +28,7 @@ import type {ShapeMode,Element} from '@/features/canvas/types';
 import type {PageTemplate,PaperColor} from '@/types/notebook';
 export type Tool='pen'|'highlighter'|'eraser'|'hand'|'select'|'shape'|'text';
 export type Brush={color:string;width:number;opacity:number};
-type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onDrawingActive?:(active:boolean)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;imageAction?:{kind:'grow'|'shrink'|'delete';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}};
+type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'toggleBeautify'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}};
 const normalizeShapeSize=(kind:string,w:number,h:number):[number,number]=>{ 'worklet';
  if(kind==='triangle'){
   const side=Math.max(Math.abs(w),Math.abs(h)*2/Math.sqrt(3));
@@ -38,6 +40,7 @@ const normalizeShapeSize=(kind:string,w:number,h:number):[number,number]=>{ 'wor
  }
  return [w,h];
 };
+const isTauriTextWidthDebugEnabled=()=>Platform.OS==='web'&&typeof window!=='undefined'&&window.location.protocol==='http:'&&window.location.hostname==='127.0.0.1'&&window.location.port==='1431'&&isTauriDesktop();
 const previewShape=(kind:string,x0:number,y0:number,x1:number,y1:number):string=>{ 'worklet';
  if(kind==='triangle'||kind==='rect'||kind==='ellipse'){
   const size=normalizeShapeSize(kind,x1-x0,y1-y0);
@@ -68,6 +71,20 @@ const selectionFrame=(elements:Element[]):{bounds:readonly [number,number,number
  ],rotation:0};
 };
 const pathCache=new Map<string,{element:Element;path:ReturnType<typeof strokePath>}>();
+const storedPageImageCache=new Map<string,ReturnType<typeof Skia.Image.MakeImageFromEncoded>>();
+async function decodeStoredPageImage(uri:string){
+ const cached=storedPageImageCache.get(uri);
+ if(cached){logImageDebug('skia_decode_cache_hit',{format:uri.split('.').pop()?.toLowerCase()});return cached}
+ logImageDebug('skia_decode_started',{format:uri.split('.').pop()?.toLowerCase()});
+ const bytes=await readStoredFile(uri);
+ const image=Skia.Image.MakeImageFromEncoded(Skia.Data.fromBytes(bytes));
+ if(!image)throw new Error('Skia seçilen dosyanın içeriğini çözemedi.');
+ storedPageImageCache.set(uri,image);
+ if(storedPageImageCache.size>24){const oldest=storedPageImageCache.keys().next().value;if(oldest)storedPageImageCache.delete(oldest)}
+ logImageDebug('skia_decode_succeeded',{sizeBytes:bytes.byteLength,format:uri.split('.').pop()?.toLowerCase()});
+ return image;
+}
+const IMAGE_RENDER_PROBE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAG0lEQVR4nGP4z7Dlv8id//9hNAMyB0QzEFQBAOwvLQEyGFrGAAAAAElFTkSuQmCC';
 const pathBuildMetrics={count:0,totalMs:0,maxMs:0};
 const cachedPath=(element:Element)=>{
  const cacheKey=element.id;
@@ -104,50 +121,173 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
   {dots.map((p,i)=><Circle key={i} cx={p[0]} cy={p[1]} r={lineW*1.2} color="#C4CCDD"/>)}
  </>;
 });
-const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,onCommit,onValueChange,onMove}:{item:TextElement;left:number;top:number;scale:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number)=>void}){
+const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void}){
  const [value,setValue]=useState(item.text);
  const [typing,setTyping]=useState(false);
- const [measuredHeight,setMeasuredHeight]=useState(0);
+ const [moving,setMoving]=useState(false);
+ const [measuredHeight,setMeasuredHeight]=useState(Math.max(0,item.bbox[3]-item.bbox[1]-8));
+ const [textareaContentHeight,setTextareaContentHeight]=useState<number|null>(null);
+ const textareaRef=useRef<HTMLTextAreaElement|null>(null);
+ const parentRef=useRef<View|null>(null);
+ const measureTextareaContentHeight=(input:HTMLTextAreaElement)=>{
+  const previousHeight=input.style.height;
+  const previousOverflow=input.style.overflowY;
+  try{
+   input.style.height='auto';
+   input.style.overflowY='hidden';
+   return Math.ceil(input.scrollHeight);
+  }finally{
+   input.style.height=previousHeight;
+   input.style.overflowY=previousOverflow;
+   input.scrollTop=0;
+  }
+ };
+ const handleMirrorLayout=useCallback((event:LayoutChangeEvent)=>{
+  const height=Math.ceil(event.nativeEvent.layout.height);
+  if(Number.isFinite(height))setMeasuredHeight(current=>current===height?current:height);
+ },[]);
+ const handleTextContentSizeChange=useCallback((event:{nativeEvent:{contentSize:{height:number}}})=>{
+  if(Platform.OS!=='web')return;
+  const input=textareaRef.current;
+  const height=input?measureTextareaContentHeight(input):Math.ceil(event.nativeEvent.contentSize.height);
+  if(Number.isFinite(height))setTextareaContentHeight(current=>current===height?current:height);
+ },[]);
  const valueRef=useRef(value);valueRef.current=value;
  const done=useRef(false);
  const commit=()=>{if(done.current)return;done.current=true;onCommit(valueRef.current)};
  const drag=useRef(new Animated.ValueXY()).current;
+ const renderedHeightRef=useRef(0);
  const moveRef=useRef(onMove);moveRef.current=onMove;
+ const resizeRef=useRef(onResize);resizeRef.current=onResize;
+ const geometryCommitRef=useRef(onGeometryCommit);geometryCommitRef.current=onGeometryCommit;
  const previousPosition=useRef({x:item.x,y:item.y});
  const dragCommitted=useRef(false);
- // Preserve the preview until React has committed the new page coordinates.
- // Resetting on gesture release caused a one-frame flash at the old position.
+ const resizeStart=useRef<{w:number;heightPx:number;minHeight:number|null}>({w:item.w,heightPx:0,minHeight:item.minHeight??null});
+ const desktop=Platform.OS==='web'&&isTauriDesktop();
  useLayoutEffect(()=>{
   if(previousPosition.current.x!==item.x||previousPosition.current.y!==item.y){
    previousPosition.current={x:item.x,y:item.y};
    drag.setValue({x:0,y:0});
   }
  },[item.x,item.y,drag]);
- const hold=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(12).enabled(!typing)
+ const hold=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(12).enabled(!typing&&!desktop)
   .onStart(()=>{dragCommitted.current=false;drag.setValue({x:0,y:0})})
   .onUpdate(e=>{drag.setValue({x:e.translationX,y:e.translationY})})
-  .onEnd(e=>{if(Math.hypot(e.translationX,e.translationY)>=12){dragCommitted.current=true;moveRef.current(e.translationX,e.translationY)}})
+  .onEnd(e=>{if(Math.hypot(e.translationX,e.translationY)>=12){dragCommitted.current=true;moveRef.current(e.translationX,e.translationY,renderedHeightRef.current)}})
   .onFinalize(()=>{if(!dragCommitted.current)drag.setValue({x:0,y:0})})
-  .runOnJS(true),[drag,typing]);
- const tap=useMemo(()=>Gesture.Tap().maxDuration(250).maxDistance(8).numberOfTaps(1).enabled(!typing).onEnd(()=>setTyping(true)).runOnJS(true),[]);
+  .runOnJS(true),[drag,typing,desktop]);
+ const tap=useMemo(()=>Gesture.Tap().maxDuration(250).maxDistance(8).numberOfTaps(1).enabled(!typing).onEnd(e=>{
+  if(desktop&&(e.y<=10||(e.x>=item.w*scale-14&&e.y>=renderedHeightRef.current-14)))return;
+  setTyping(true);
+ }).runOnJS(true),[desktop,item.w,scale,typing]);
  const textGesture=useMemo(()=>Gesture.Exclusive(hold,tap),[hold,tap]);
  const blankDrag=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(8)
   .onStart(()=>{dragCommitted.current=false;drag.setValue({x:0,y:0})})
   .onUpdate(e=>drag.setValue({x:e.translationX,y:e.translationY}))
-  .onEnd(e=>{if(Math.hypot(e.translationX,e.translationY)>=8){dragCommitted.current=true;moveRef.current(e.translationX,e.translationY)}})
+  .onEnd(e=>{if(Math.hypot(e.translationX,e.translationY)>=8){dragCommitted.current=true;moveRef.current(e.translationX,e.translationY,renderedHeightRef.current)}})
   .onFinalize(()=>{if(!dragCommitted.current)drag.setValue({x:0,y:0})}).runOnJS(true),[drag]);
- useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{commit();return true});return()=>sub.remove()},[]);
  const lineHeight=item.fontSize*1.3*scale;
- const minHeight=Math.max(48,lineHeight*3+8);
- const inputHeight=Math.max(lineHeight+4,measuredHeight+4);
- const blankHeight=Math.max(0,minHeight-inputHeight-2);
- const longest=Math.max(0,...value.split('\n').map(line=>line.length));
- const width=Math.max(72,item.w*scale,Math.min((PAGE_WIDTH-item.x)*scale,longest*item.fontSize*scale*0.58+16));
- return <GestureDetector gesture={textGesture}><Animated.View style={{position:'absolute',left,top,width,minHeight:Math.max(minHeight,measuredHeight+8),borderWidth:1,borderColor:'#90959E',borderRadius:0,backgroundColor:'transparent',transform:drag.getTranslateTransform()}}>
-  {typing?<><TextInput multiline autoFocus scrollEnabled={false} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onContentSizeChange={e=>setMeasuredHeight(e.nativeEvent.contentSize.height)} onBlur={()=>{setTyping(false);onValueChange(valueRef.current)}} underlineColorAndroid="transparent" style={{width:'100%',height:inputHeight,fontSize:item.fontSize*scale,lineHeight,fontFamily:nativeFontFamily(item.fontFamily,item.bold),textAlign:item.align,color:item.color,backgroundColor:'transparent',padding:0,paddingHorizontal:3,textAlignVertical:'top'}}/>{blankHeight>8&&<GestureDetector gesture={blankDrag}><View style={{height:blankHeight,width:'100%',backgroundColor:'transparent'}}/></GestureDetector>}</>:
-   <Text style={{minHeight:minHeight-4,paddingHorizontal:3,fontSize:item.fontSize*scale,lineHeight,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),textAlign:item.align}}>{value}</Text>}
+ const minHeight=Math.max(48,lineHeight+8);
+ const autoHeight=Math.max(minHeight,Platform.OS==='web'&&textareaContentHeight!==null?textareaContentHeight+2:measuredHeight+8);
+ const manualHeight=desktop?Math.max(0,item.minHeight??0)*scale:0;
+ const availableHeight=Math.max(0,(pageHeight-item.y)*scale);
+ const inputHeight=Math.min(availableHeight,Math.max(autoHeight,manualHeight));
+ renderedHeightRef.current=inputHeight;
+ const availableWidth=Math.max(1,(PAGE_WIDTH-item.x)*scale);
+ const width=Math.min(availableWidth,item.w*scale);
+ const resizeConfigRef=useRef({x:item.x,y:item.y,width:item.w,scale,pageHeight,minimumEditorHeight:minHeight,contentHeightPx:autoHeight,inputHeight,manualMinHeight:item.minHeight??null});
+ resizeConfigRef.current={x:item.x,y:item.y,width:item.w,scale,pageHeight,minimumEditorHeight:minHeight,contentHeightPx:autoHeight,inputHeight,manualMinHeight:item.minHeight??null};
+ const reportEditorMetrics=(stage:string)=>{
+  if(!isTauriTextWidthDebugEnabled()||!typing)return;
+  const input=textareaRef.current;
+  const parent=parentRef.current as unknown as HTMLElement|null;
+  if(!input||!parent)return;
+  const inputStyle=window.getComputedStyle(input);
+  const parentStyle=window.getComputedStyle(parent);
+  const inputRect=input.getBoundingClientRect();
+  const parentRect=parent.getBoundingClientRect();
+  console.info('[Notex text-width]',{stage,id:item.id,textElementW:item.w,textareaClientWidth:input.clientWidth,textareaScrollWidth:input.scrollWidth,textareaClientHeight:input.clientHeight,textareaScrollHeight:input.scrollHeight,textareaScrollTop:input.scrollTop,textareaOffsetHeight:input.offsetHeight,textareaRectTop:inputRect.top,textareaRectHeight:inputRect.height,textareaComputedHeight:inputStyle.height,textareaOverflowY:inputStyle.overflowY,textareaBoxSizing:inputStyle.boxSizing,textareaPaddingTop:inputStyle.paddingTop,textareaPaddingBottom:inputStyle.paddingBottom,expectedParentWidth:width,parentWidth:parentRect.width,parentRectLeft:parentRect.left,parentRectTop:parentRect.top,parentClientHeight:parent.clientHeight,parentRectHeight:parentRect.height,parentComputedHeight:parentStyle.height,parentOverflowY:parentStyle.overflowY,parentBoxSizing:parentStyle.boxSizing,parentTransform:parentStyle.transform,mirrorMeasuredHeight:measuredHeight,textareaContentHeight,requestedParentHeight:inputHeight,canvasScale:scale,canvasZoom});
+ };
+ const handleMove=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(2).enabled(desktop)
+  .onStart(()=>{dragCommitted.current=false;setMoving(true);drag.setValue({x:0,y:0})})
+  .onUpdate(e=>{
+   const factor=Math.max(0.01,scale);
+   const height=renderedHeightRef.current/factor;
+   const dx=Math.max(-item.x*factor,Math.min((PAGE_WIDTH-item.x-item.w)*factor,e.translationX));
+   const dy=Math.max(-item.y*factor,Math.min((pageHeight-item.y-height)*factor,e.translationY));
+   drag.setValue({x:dx,y:dy});
+  })
+  .onEnd(e=>{
+   const factor=Math.max(0.01,scale);
+   const height=renderedHeightRef.current/factor;
+   const dx=Math.max(-item.x*factor,Math.min((PAGE_WIDTH-item.x-item.w)*factor,e.translationX));
+   const dy=Math.max(-item.y*factor,Math.min((pageHeight-item.y-height)*factor,e.translationY));
+   if(Math.hypot(dx,dy)>1){dragCommitted.current=true;moveRef.current(dx,dy,renderedHeightRef.current);geometryCommitRef.current()}
+   setMoving(false);
+  })
+  .onFinalize(()=>{setMoving(false);if(!dragCommitted.current)drag.setValue({x:0,y:0})}).runOnJS(true),[desktop,drag,scale,item.x,item.y,item.w,pageHeight]);
+ const handleResize=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(1).enabled(desktop)
+  .onStart(()=>{const config=resizeConfigRef.current;dragCommitted.current=false;resizeStart.current={w:config.width,heightPx:config.inputHeight,minHeight:config.manualMinHeight}})
+  .onUpdate(e=>{
+   const config=resizeConfigRef.current;
+   const resized=resizeTextBox({
+    x:config.x,y:config.y,startWidth:resizeStart.current.w,startHeightPx:resizeStart.current.heightPx,
+    deltaX:e.translationX,deltaY:e.translationY,scale:config.scale,pageWidth:PAGE_WIDTH,pageHeight:config.pageHeight,
+    minimumEditorHeight:config.minimumEditorHeight,contentHeightPx:config.contentHeightPx,manualMinHeight:resizeStart.current.minHeight,
+   });
+   resizeRef.current(resized.width,resized.manualMinHeight,resized.heightPx);
+  })
+  .onEnd(()=>{dragCommitted.current=true;geometryCommitRef.current()})
+  .onFinalize(()=>{if(!dragCommitted.current)resizeRef.current(resizeStart.current.w,resizeStart.current.minHeight,resizeStart.current.heightPx)})
+  .runOnJS(true),[desktop]);
+ useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{commit();return true});return()=>sub.remove()},[]);
+ useLayoutEffect(()=>{
+  if(Platform.OS!=='web'||!typing)return;
+  const input=textareaRef.current;
+  if(!input)return;
+  const height=measureTextareaContentHeight(input);
+  if(Number.isFinite(height))setTextareaContentHeight(current=>current===height?current:height);
+ },[typing,value,width]);
+ useLayoutEffect(()=>{
+  if(Platform.OS!=='web'||!typing)return;
+  const input=textareaRef.current;
+  reportEditorMetrics('before_scroll_reset');
+  if(input)input.scrollTop=0;
+  reportEditorMetrics('after_scroll_reset');
+ },[typing,value,inputHeight,item.id,item.w,width,scale,canvasZoom,left]);
+ const resizeHandleStyle={position:'absolute' as const,right:-11,bottom:-11,width:24,height:24,alignItems:'center' as const,justifyContent:'center' as const,zIndex:12,cursor:'nwse-resize',userSelect:'none',touchAction:'none'};
+ return <GestureDetector gesture={textGesture}><Animated.View ref={parentRef as any} style={{position:'absolute',left,top,width,height:typing?inputHeight:Math.max(minHeight,Math.min(availableHeight,measuredHeight+8)),borderWidth:1,borderColor:'#9AA0AA',borderRadius:3,backgroundColor:'transparent',overflow:'visible',transform:drag.getTranslateTransform()}}>
+  {typing?<><Text pointerEvents="none" onLayout={handleMirrorLayout} style={{position:'absolute',left:4,top:4,width:Math.max(1,width-8),opacity:0,fontSize:item.fontSize*scale,lineHeight,fontFamily:nativeFontFamily(item.fontFamily,item.bold),textAlign:item.align,includeFontPadding:false}}>{value+'\u200b'}</Text><TextInput ref={textareaRef as any} multiline autoFocus scrollEnabled={false} value={value} onContentSizeChange={Platform.OS==='web'?handleTextContentSizeChange:undefined} onFocus={Platform.OS==='web'?()=>{window.requestAnimationFrame(()=>{reportEditorMetrics('focus_before_scroll_reset');const input=textareaRef.current;if(input)input.scrollTop=0;reportEditorMetrics('focus_after_scroll_reset')})}:undefined} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{setTyping(false);onValueChange(valueRef.current);if(valueRef.current!==item.text)commit()}} underlineColorAndroid="transparent" style={{position:'absolute',left:0,top:0,width:'100%',height:'100%',fontSize:item.fontSize*scale,lineHeight,fontFamily:nativeFontFamily(item.fontFamily,item.bold),textAlign:item.align,color:item.color,backgroundColor:'transparent',padding:4,margin:0,borderWidth:0,overflow:'hidden',textAlignVertical:'top',verticalAlign:'top',whiteSpace:'pre-wrap',wordBreak:'break-word',boxSizing:'border-box'} as any}/> </>:
+   <Text style={{height:'100%',padding:4,fontSize:item.fontSize*scale,lineHeight,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),textAlign:item.align,includeFontPadding:false,verticalAlign:'top'}}>{value}</Text>}
+  {desktop&&<GestureDetector gesture={handleMove}><View style={{position:'absolute',top:-15,left:'50%',marginLeft:-24,width:48,height:24,alignItems:'center',justifyContent:'center',zIndex:12,cursor:moving?'grabbing':'grab',userSelect:'none',touchAction:'none'} as any}><View pointerEvents="none" style={{width:30,height:5,borderRadius:4,backgroundColor:'#9AA0AA'}}/></View></GestureDetector>}
+  {desktop&&<GestureDetector gesture={handleResize}><View style={resizeHandleStyle as any}><View pointerEvents="none" style={{width:10,height:10,borderRightWidth:2,borderBottomWidth:2,borderColor:'#7B8492',borderBottomRightRadius:2}}/></View></GestureDetector>}
  </Animated.View></GestureDetector>;
 });
+type InlineTextEditorBoundaryProps={children:React.ReactNode;fallbackStyle:object;onClose:()=>void};
+type InlineTextEditorBoundaryState={error:Error|null;componentStack:string};
+class InlineTextEditorErrorBoundary extends React.Component<InlineTextEditorBoundaryProps,InlineTextEditorBoundaryState>{
+ state:InlineTextEditorBoundaryState={error:null,componentStack:''};
+ static getDerivedStateFromError(error:Error):Partial<InlineTextEditorBoundaryState>{return {error}}
+ componentDidMount(){if(Platform.OS==='web'&&isTauriDesktop()){window.addEventListener('error',this.captureWindowError);window.addEventListener('unhandledrejection',this.captureUnhandledRejection)}}
+ componentWillUnmount(){if(Platform.OS==='web'&&isTauriDesktop()){window.removeEventListener('error',this.captureWindowError);window.removeEventListener('unhandledrejection',this.captureUnhandledRejection)}}
+ private captureWindowError=(event:ErrorEvent)=>{if(this.state.error)return;const error=event.error instanceof Error?event.error:new Error(event.message||'Bilinmeyen pencere hatası');this.setState({error,componentStack:`${event.filename||''}:${event.lineno||0}:${event.colno||0}`});console.error('[Notex text editor] window error during editor session',error)};
+ private captureUnhandledRejection=(event:PromiseRejectionEvent)=>{if(this.state.error)return;const error=event.reason instanceof Error?event.reason:new Error(String(event.reason));this.setState({error,componentStack:'Unhandled promise rejection during editor session'});console.error('[Notex text editor] unhandled rejection during editor session',error)};
+ componentDidCatch(error:Error,info:React.ErrorInfo){
+  this.setState({componentStack:info.componentStack??''});
+  console.error('[Notex text editor] render/focus transition failed',error,info.componentStack);
+ }
+ render(){
+  const {error,componentStack}=this.state;
+  if(!error)return this.props.children;
+  return <View style={[{position:'absolute',zIndex:1000,maxWidth:520,padding:12,borderWidth:1,borderColor:'#B42318',backgroundColor:'#FFF4F2'} as const,this.props.fallbackStyle]}>
+   <Text style={{fontWeight:'700',color:'#7A271A'}}>Metin düzenleyici açılamadı</Text>
+   <Text selectable style={{marginTop:6,color:'#7A271A'}}>{error.message||String(error)}</Text>
+   {!!error.stack&&<Text selectable style={{marginTop:6,maxHeight:180,color:'#7A271A',fontSize:11}}>{error.stack}</Text>}
+   {!!componentStack&&<Text selectable style={{marginTop:6,maxHeight:140,color:'#7A271A',fontSize:11}}>{componentStack}</Text>}
+   <Pressable accessibilityRole="button" accessibilityLabel="Metin düzenleyici hata bildirimini kapat" onPress={this.props.onClose} style={{alignSelf:'flex-start',marginTop:8,paddingVertical:6,paddingHorizontal:10,borderWidth:1,borderColor:'#B42318'}}><Text style={{color:'#7A271A'}}>Kapat</Text></Pressable>
+  </View>;
+ }
+}
 const paragraphAlign=(align:TextElement['align']):TextAlign=>align==='center'?TextAlign.Center:align==='right'?TextAlign.Right:TextAlign.Left;
 const skiaFontFamily=(family:TextFontFamily|undefined,bold:boolean)=>family==='SpaceGrotesk'?(bold?'SpaceGroteskBold':'SpaceGrotesk'):(bold?'InterBold':'Inter');
 const nativeFontFamily=(family:TextFontFamily|undefined,bold:boolean)=>family==='SpaceGrotesk'?(bold?'SpaceGrotesk_700Bold':'SpaceGrotesk_500Medium'):(bold?'Inter_700Bold':'Inter_400Regular');
@@ -199,21 +339,40 @@ const StrokeLayer=memo(function StrokeLayer({element}:{element:Element}){
  }
  return <Path path={path} color={element.color} opacity={element.opacity} blendMode={element.tool==='highlighter'?'multiply':'srcOver'} {...(element.renderMode==='centerline'||element.renderMode==='raw'?{style:'stroke' as const,strokeWidth:element.width,strokeCap:'round' as const,strokeJoin:'round' as const}:{})}/>;
 });
-const PageImageLayer=memo(function PageImageLayer({item}:{item:import('@/features/canvas/types').PageImage}){
- // Gallery images are persisted as data URLs. useImage expects a URI/source,
- // not a Skia Data object; decode encoded bytes directly on both native and web.
+const PageImageLayer=memo(function PageImageLayer({item,onLoadError}:{item:import('@/features/canvas/types').PageImage;onLoadError?:(message:string)=>void}){
+ const desktopStored=isTauriDesktop()&&isStoredAppDataPath(item.uri);
+ const [storedImage,setStoredImage]=useState<ReturnType<typeof Skia.Image.MakeImageFromEncoded>>(null);
+ const onLoadErrorRef=useRef(onLoadError);onLoadErrorRef.current=onLoadError;
+ useEffect(()=>{
+  if(!desktopStored){setStoredImage(null);return;}
+  let current=true;
+  setStoredImage(null);
+  void decodeStoredPageImage(item.uri).then(image=>{
+   if(current)setStoredImage(image);
+  }).catch(error=>{
+   logImageDebug('skia_page_image_load_failed',{elementId:item.id,errorType:error instanceof Error?error.name:typeof error,error:imageDebugError(error)});
+   console.error('[Notex image] Stored page image could not be read or decoded',{id:item.id,uri:item.uri,error});
+   if(current)onLoadErrorRef.current?.('Görsel Notex’in yerel kopyasından okunamadı. Dosyayı yeniden ekleyip deneyin.');
+  });
+  return()=>{current=false};
+ },[desktopStored,item.id,item.uri]);
  const image=useMemo(()=>{
   try{
    const encoded=item.uri.includes(',')?item.uri.slice(item.uri.indexOf(',')+1):'';
    if(!encoded)return null;
    const data=Skia.Data.fromBase64(encoded);
-   return Skia.Image.MakeImageFromEncoded(data);
+   const decoded=Skia.Image.MakeImageFromEncoded(data);
+   if(!decoded)console.error('[Notex image] Embedded page image could not be decoded',{id:item.id});
+   return decoded;
   }catch(error){
-   console.warn('Notex: image decode failed',error);
+   console.error('[Notex image] Embedded page image decode failed',{id:item.id,error});
    return null;
   }
  },[item.uri]);
- return image?<SkiaImage image={image} x={item.x} y={item.y} width={item.width} height={item.height} fit="contain"/>:null;
+ const renderedImage=desktopStored?storedImage:image;
+ useEffect(()=>{logImageDebug('skia_render_layer_received',{elementId:item.id,source:desktopStored?'app_data_bytes':'embedded_data',width:item.width,height:item.height})},[item.id,item.uri,desktopStored]);
+ useEffect(()=>{if(renderedImage)logImageDebug('skia_canvas_layer_ready',{elementId:item.id,x:item.x,y:item.y,width:item.width,height:item.height})},[renderedImage,item.id,item.x,item.y,item.width,item.height]);
+ return renderedImage?<SkiaImage image={renderedImage} x={item.x} y={item.y} width={item.width} height={item.height} fit="contain"/>:null;
 });
 const NaturalWord=memo(function NaturalWord({word,fonts}:{word:import('@/features/canvas/types').BeautifiedWord;fonts:CanvasFontManager|null}){
  const glyphs=useMemo(()=>glyphOffsets(word.text),[word.text]);
@@ -251,7 +410,20 @@ const Completed=memo(function Completed({content,hiddenIds,fonts}:{content:PageC
  },[elements]);
  return <>{elements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={fonts}/>:<StrokeLayer key={element.id} element={element}/>)}</>;
 });
-export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,eraserSize,eraserMode='pixel',onChange,onDrawingActive,onStrokeComplete,shapeKind='auto',shapeFill=false,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,selectionAction,transformMode=false,onImageSelectionChange,imageAction,textStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left'}}:Props){
+export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,eraserSize,eraserMode='pixel',onChange,onAddImage,onDrawingActive,onStrokeComplete,shapeKind='auto',shapeFill=false,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,selectionAction,transformMode=false,onImageSelectionChange,onImageLoadError,imageRequest,onImageRequestConsumed,imageAction,textStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left'}}:Props){
+ const imageRenderProbeEnabled=useMemo(()=>{
+  if(Platform.OS!=='web'||!isTauriDevelopmentRuntime())return false;
+  try{return window.localStorage.getItem('notexImageRenderProbe')==='1'}catch{return false}
+ },[]);
+ const imageRenderProbe=useMemo(()=>{
+  if(!imageRenderProbeEnabled)return null;
+  try{
+   const decoded=Skia.Image.MakeImageFromEncoded(Skia.Data.fromBase64(IMAGE_RENDER_PROBE_BASE64));
+   logImageDebug(decoded?'isolated_render_probe_decode_succeeded':'isolated_render_probe_decode_failed',{format:'png',persistent:false});
+   return decoded;
+  }catch(error){logImageDebug('isolated_render_probe_decode_failed',{format:'png',persistent:false,error:String(error)});return null}
+ },[imageRenderProbeEnabled]);
+ const desktopSurfaceRef=useRef<any>(null);
  const pressureEnabled=useSettingsStore(state=>state.penSettings.pressureEnabled);
  const pressureSensitivity=useSettingsStore(state=>state.penSettings.pressureSensitivity);
  const fingerDraw=useSettingsStore(state=>state.penSettings.fingerDraw);
@@ -276,23 +448,42 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    setEditing(null);
   }
  },[content]);
+ const measureTextHeight=(element:TextElement,value:string,width:number)=>{
+  const lines=value.split('\n');
+  const charsPerLine=Math.max(1,Math.floor(width/(element.fontSize*0.55)));
+  const lineCount=lines.reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/charsPerLine)),0);
+  let height=Math.max(element.fontSize*1.25,lineCount*element.fontSize*1.25);
+  if(textFonts&&value.trim()){
+   const builder=Skia.ParagraphBuilder.Make({textAlign:paragraphAlign(element.align)},textFonts);
+   builder.pushStyle({fontFamilies:[skiaFontFamily(element.fontFamily,element.bold),'Inter'],fontSize:element.fontSize,color:Skia.Color(element.color)});
+   builder.addText(value);builder.pop();
+   const paragraph=builder.build();paragraph.layout(width);
+   height=Math.max(element.fontSize*1.25,paragraph.getHeight());
+  }
+  return Math.max(height,element.minHeight??0);
+ };
+ const persistTextGeometry=()=>{
+  const current=editingRef.current;if(!current)return;
+  const value=editValueRef.current;
+  const width=Math.min(current.w,PAGE_WIDTH-current.x);
+  const height=measureTextHeight(current,value,width);
+  const next={...current,w:width,text:value,bbox:[current.x,current.y,current.x+width,current.y+height] as [number,number,number,number]};
+  const exists=content.elements.some(element=>element.id===current.id);
+  if(value.trim()||exists){
+   const elements=content.elements.filter(element=>element.id!==current.id);
+   if(value.trim())elements.push(next);
+   pendingCloseRef.current=null;
+   onChange({...content,elements});
+  }
+  editingRef.current=next;setEditing(next);
+ };
  const finishText=()=>{
   const current=editingRef.current;if(!current)return;
   const value=editValueRef.current;
-   const longest=Math.max(0,...value.split('\n').map(line=>line.length));
-   const width=Math.max(current.w,Math.min(PAGE_WIDTH-current.x,longest*current.fontSize*0.58+16));
-  const lines=value.split('\n');
-  const charsPerLine=Math.max(1,Math.floor(width/(current.fontSize*0.55)));
-  const lineCount=lines.reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/charsPerLine)),0);
-  let height=Math.max(current.fontSize*1.25,lineCount*current.fontSize*1.25);
-  if(textFonts&&value.trim()){
-   const builder=Skia.ParagraphBuilder.Make({textAlign:paragraphAlign(current.align)},textFonts);
-   builder.pushStyle({fontFamilies:[skiaFontFamily(current.fontFamily,current.bold),'Inter'],fontSize:current.fontSize,color:Skia.Color(current.color)});
-   builder.addText(value);builder.pop();
-   const paragraph=builder.build();paragraph.layout(width);
-   height=Math.max(current.fontSize*1.25,paragraph.getHeight());
-  }
-   const next={...current,w:width,text:value,bbox:[current.x,current.y,current.x+width,current.y+height] as [number,number,number,number]};
+  const width=Math.min(current.w,PAGE_WIDTH-current.x);
+  const height=measureTextHeight(current,value,width);
+  const next={...current,w:width,text:value,bbox:[current.x,current.y,current.x+width,current.y+height] as [number,number,number,number]};
+  if(isTauriTextWidthDebugEnabled())console.info('[Notex text-width]',{stage:'save_to_skia',id:current.id,textElementW:current.w,savedWidth:width,paragraphLayoutWidth:width,zoom:zoom.value,scale:fitWidth*zoom.value});
   const elements=content.elements.filter(e=>e.id!==current.id);
   if(value.trim())elements.push(next);
   editingRef.current=null;
@@ -306,7 +497,12 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const beginText=(x:number,y:number)=>{
    if(editingRef.current){finishRef.current();return;}
   const hit=[...content.elements].reverse().find(e=>e.type==='text'&&x>=e.bbox[0]&&x<=e.bbox[2]&&y>=e.bbox[1]&&y<=e.bbox[3]) as TextElement|undefined;
-  const current=hit??{id:Crypto.randomUUID(),type:'text' as const,z:content.elements.length,createdAt:new Date().toISOString(),x,y,w:Math.max(120,Math.min(360,PAGE_WIDTH-x)),text:'',fontSize:textStyle.fontSize,color:textStyle.color,bold:textStyle.bold,align:textStyle.align,fontFamily:'Inter' as const,bbox:[x,y,x+Math.max(120,Math.min(360,PAGE_WIDTH-x)),y+textStyle.fontSize*1.3*3] as [number,number,number,number]};
+  const scale=Math.max(0.01,fitWidth*zoom.value);
+  const initialWidth=Math.min(PAGE_WIDTH,280/scale);
+  const initialHeight=textStyle.fontSize*1.3*3;
+  const initialX=Math.max(0,Math.min(PAGE_WIDTH-initialWidth,x));
+  const initialY=Math.max(0,Math.min(Math.max(0,pageHeight-initialHeight),y));
+  const current=hit??{id:Crypto.randomUUID(),type:'text' as const,z:content.elements.length,createdAt:new Date().toISOString(),x:initialX,y:initialY,w:initialWidth,text:'',fontSize:textStyle.fontSize,color:textStyle.color,bold:textStyle.bold,align:textStyle.align,fontFamily:'Inter' as const,bbox:[initialX,initialY,initialX+initialWidth,initialY+initialHeight] as [number,number,number,number]};
   pendingCloseRef.current=null;
   editingRef.current=current;editValueRef.current=current.text;setEditing(current);
  };
@@ -329,6 +525,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const [imageId,setImageId]=useState<string|null>(null);
  const imageIdRef=useRef<string|null>(null);imageIdRef.current=imageId;
  useEffect(()=>{if(!imageAction||!imageIdRef.current)return;const id=imageIdRef.current;
+  if(imageAction.kind==='clear'){setImageId(null);onImageSelectionChange?.(null);return;}
   if(imageAction.kind==='delete'){onChange({...content,images:(content.images??[]).filter(i=>i.id!==id)});setImageId(null);onImageSelectionChange?.(null);return;}
   const factor=imageAction.kind==='grow'?1.2:1/1.2;
   onChange({...content,images:(content.images??[]).map(i=>i.id!==id?i:{...i,width:Math.max(50,Math.min(PAGE_WIDTH*2,i.width*factor)),height:Math.max(50,Math.min(PAGE_HEIGHT*2,i.height*factor))})});
@@ -361,6 +558,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   onSelectionActionComplete?.(selectionAction.version);
  },[selectionAction?.version]);
  const [size,setSize]=useState({width:300,height:450});
+ const spacePan=useSharedValue(false),handPanActive=useSharedValue(false);
   const eraserCommitRef=useRef<{elements:Element[];generation:number}|null>(null);
  const canvasMountedAt=useRef(__DEV__?perfNow():0),firstCanvasLayoutLogged=useRef(false);
  const strokeTelemetryStart=useRef(0),strokeTelemetryPointer=useRef('unknown');
@@ -645,8 +843,95 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const minY=Math.min(0,size.height-ph),maxY=0;
   return [Math.max(-limitX,Math.min(limitX,x)),Math.max(minY,Math.min(maxY,y))];
  },[size.width,size.height,fitWidth,pageHeight]);
- const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(__DEV__&&!firstCanvasLayoutLogged.current){firstCanvasLayoutLogged.current=true;const dimensions={width:Math.round(width),height:Math.round(height)};requestAnimationFrame(()=>requestAnimationFrame(()=>console.log('[Notex perf] first_canvas_visible',{duration_ms:Math.round((perfNow()-canvasMountedAt.current)*10)/10,...dimensions})))}if(width===size.width&&height===size.height)return;setSize({width,height});zoom.value=1;offsetX.value=0;offsetY.value=0};
+ useEffect(()=>{
+  if(!isTauriDesktop()||typeof window==='undefined')return;
+  const surface=desktopSurfaceRef.current as HTMLElement|null;
+  if(!surface)return;
+  const stopNonPrimaryPointer=(event:PointerEvent)=>{
+   if(event.button===0)return;
+   event.preventDefault();event.stopImmediatePropagation();
+  };
+  const stopContextMenu=(event:MouseEvent)=>event.preventDefault();
+  const wheel=(event:WheelEvent)=>{
+   event.preventDefault();
+   const rect=surface.getBoundingClientRect();
+   const unit=event.deltaMode===WheelEvent.DOM_DELTA_LINE?16:event.deltaMode===WheelEvent.DOM_DELTA_PAGE?rect.height:1;
+   const dx=event.deltaX*unit,dy=event.deltaY*unit;
+   if(event.ctrlKey){
+    const currentZoom=zoom.value;
+    const pointerX=event.clientX-rect.left,pointerY=event.clientY-rect.top;
+    const pageX=(pointerX-originX.value)/(fitWidth*currentZoom);
+    const pageY=(pointerY-originY.value)/(fitWidth*currentZoom);
+    const nextZoom=Math.max(minZoom,Math.min(5,currentZoom*Math.exp(-dy*0.0015)));
+    const nextWidth=PAGE_WIDTH*fitWidth*nextZoom;
+    const nextX=pointerX-pageX*fitWidth*nextZoom-(size.width-nextWidth)/2;
+    const nextY=pointerY-pageY*fitWidth*nextZoom;
+    const [x,y]=clamp(nextZoom,nextX,nextY);
+    zoom.value=nextZoom;offsetX.value=x;offsetY.value=y;
+   }else{
+    const [x,y]=clamp(zoom.value,offsetX.value-dx,offsetY.value-dy);
+    offsetX.value=x;offsetY.value=y;
+   }
+  };
+  const isTextTarget=(target:EventTarget|null)=>target instanceof HTMLElement&&
+   (target.isContentEditable||!!target.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]'));
+  const isControlTarget=(target:EventTarget|null)=>target instanceof HTMLElement&&!!target.closest('button,a,[role="button"],input,textarea,select,[contenteditable="true"]');
+  const keyDown=(event:KeyboardEvent)=>{
+   if(event.code!=='Space'||isTextTarget(event.target)||isControlTarget(event.target))return;
+   if(event.target===document.body||surface.contains(event.target as Node)){
+    event.preventDefault();spacePan.value=true;
+   }
+  };
+  const keyUp=(event:KeyboardEvent)=>{if(event.code==='Space')spacePan.value=false};
+  const blur=()=>{spacePan.value=false;handPanActive.value=false};
+  surface.addEventListener('pointerdown',stopNonPrimaryPointer,true);
+  surface.addEventListener('contextmenu',stopContextMenu,true);
+  surface.addEventListener('wheel',wheel,{passive:false});
+  window.addEventListener('keydown',keyDown);
+  window.addEventListener('keyup',keyUp);
+  window.addEventListener('blur',blur);
+  return()=>{
+   surface.removeEventListener('pointerdown',stopNonPrimaryPointer,true);
+   surface.removeEventListener('contextmenu',stopContextMenu,true);
+   surface.removeEventListener('wheel',wheel);
+   window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);window.removeEventListener('blur',blur);
+   spacePan.value=false;handPanActive.value=false;
+  };
+ },[clamp,fitWidth,minZoom,originX,size.height,size.width]);
+ const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(__DEV__&&!firstCanvasLayoutLogged.current){firstCanvasLayoutLogged.current=true;const dimensions={width:Math.round(width),height:Math.round(height)};requestAnimationFrame(()=>requestAnimationFrame(()=>console.log('[Notex perf] first_canvas_visible',{duration_ms:Math.round((perfNow()-canvasMountedAt.current)*10)/10,...dimensions})))}if(width===size.width&&height===size.height)return;setSize({width,height});if(!isTauriDesktop()){zoom.value=1;offsetX.value=0;offsetY.value=0;return;}const fit=Math.max(0.01,width/PAGE_WIDTH),pageH=Math.max(PAGE_HEIGHT,content.h??PAGE_HEIGHT,Math.ceil(height/fit)),z=zoom.value,limitX=Math.max(0,(PAGE_WIDTH*fit*z-width)/2),minY=Math.min(0,height-pageH*fit*z);offsetX.value=Math.max(-limitX,Math.min(limitX,offsetX.value));offsetY.value=Math.max(minY,Math.min(0,offsetY.value))};
  const pagePoint=(x:number,y:number):Sample=>{ 'worklet';return [(x-originX.value)/(fitWidth*zoom.value),(y-originY.value)/(fitWidth*zoom.value),0.5]};
+ const imageProbeCenter=imageRenderProbe?pagePoint(size.width/2,size.height/2):null;
+ useEffect(()=>{
+  logImageDebug('canvas_received_page_images',{pageId,count:content.images?.length??0,elementIds:(content.images??[]).map(image=>image.id)});
+ },[pageId,content.images]);
+ useEffect(()=>{
+  if(imageRenderProbe&&imageProbeCenter)logImageDebug('isolated_render_probe_canvas_layer_ready',{pageId,persistent:false,coordinateSpace:'page',measurement:'Skia JSX layer prepared; not a physical frame capture'});
+ },[pageId,imageRenderProbe,imageProbeCenter?.[0],imageProbeCenter?.[1]]);
+ const consumedImageRequest=useRef<number|null>(null);
+ useEffect(()=>{
+  if(!imageRequest||consumedImageRequest.current===imageRequest.version)return;
+  consumedImageRequest.current=imageRequest.version;
+  logImageDebug('canvas_received_image_request',{pageId,version:imageRequest.version,width:imageRequest.width,height:imageRequest.height});
+  let active=true;
+  void decodeStoredPageImage(imageRequest.uri).then(()=>{
+   if(!active)return;
+   const center=pagePoint(size.width/2,size.height/2);
+   const x=Math.max(0,Math.min(PAGE_WIDTH-imageRequest.width,center[0]-imageRequest.width/2));
+   const y=Math.max(0,Math.min(Math.max(0,pageHeight-imageRequest.height),center[1]-imageRequest.height/2));
+   const image:PageImage={id:Crypto.randomUUID(),uri:imageRequest.uri,x,y,width:imageRequest.width,height:imageRequest.height};
+   if(!onAddImage){logImageDebug('page_add_callback_missing',{pageId});throw new Error('Sayfaya görsel ekleme bağlantısı hazır değil.')}
+   logImageDebug('image_element_created',{pageId,elementId:image.id,bounds:[x,y,x+image.width,y+image.height]});
+   onAddImage(image);
+  }).catch(error=>{
+   logImageDebug('skia_image_element_decode_failed',{pageId,format:imageRequest.uri.split('.').pop()?.toLowerCase(),errorType:error instanceof Error?error.name:typeof error,error:imageDebugError(error)});
+   console.error('[Notex image] Selected page image could not be decoded',{uri:imageRequest.uri,error});
+   void deleteStoredFile(imageRequest.uri).catch(cleanupError=>console.error('[Notex image] Failed import cleanup failed',{uri:imageRequest.uri,error:cleanupError}));
+   if(active){
+    onImageLoadError?.('Seçilen görsel okunamadı veya desteklenen bir biçimde değil. Lütfen başka bir PNG, JPG ya da WebP dosyası seçin.');
+   }
+  }).finally(()=>{if(active)onImageRequestConsumed?.(imageRequest.version)});
+  return()=>{active=false};
+ },[imageRequest?.version]);
  const endStroke=(points:Sample[],commitGeneration:number)=>{if(!points.length)return;
   if(tool==='select'){
   if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration))awaitingCommit.value=false;
@@ -846,7 +1131,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if((stylusOnly||!fingerDraw)&&!isStylus&&['pen','highlighter','eraser','shape'].includes(tool)&&!imageBounds.value){blocked.value=true;samples.value=emptySampleBuffer();draft.value='';drawing.value=false;return;}
   // A previous two-finger gesture must not disable the next one-finger drag.
   blocked.value=false;
-  if(tool==='hand'){baseX.value=offsetX.value;baseY.value=offsetY.value;return}
+  if(tool==='hand'||spacePan.value){handPanActive.value=true;baseX.value=offsetX.value;baseY.value=offsetY.value;return}
   if(imageBounds.value&&imagePaintBounds.value){
    // Hit-test the actually painted image, not the persisted rectangle.
    // The painted geometry is frozen to prevent jitter, so after a pinch
@@ -957,7 +1242,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   }
   if(imageDragging.value){imageDX.value=e.translationX/(fitWidth*zoom.value);imageDY.value=e.translationY/(fitWidth*zoom.value);return}
   if(blocked.value||imageBounds.value)return;
-  if(tool==='hand'){const [x,y]=clamp(zoom.value,baseX.value+e.translationX,baseY.value+e.translationY);offsetX.value=x;offsetY.value=y;return}
+  if(tool==='hand'||handPanActive.value){const [x,y]=clamp(zoom.value,baseX.value+e.translationX,baseY.value+e.translationY);offsetX.value=x;offsetY.value=y;return}
   if(cornerActive.value){
    const p=pagePoint(e.x,e.y),cx=cornerCenterX.value,cy=cornerCenterY.value;
    const dx=p[0]-cornerStartPageX.value,dy=p[1]-cornerStartPageY.value;
@@ -1012,6 +1297,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   draft.value=startingDrawing?centerlinePathString(flattenSamples(samples.value)):appendPolylinePoint(draft.value,p);
   if(tool==='eraser'){cursorX.value=p[0];cursorY.value=p[1];cursorOn.value=true}
  }).onEnd(()=>{
+  if(handPanActive.value){handPanActive.value=false;return;}
   if(imageRotateHandle.value){const angle=imageAngle.value;imageRotateHandle.value=false;imageCommittedAngle.value+=angle;imageAngle.value=0;if(Math.abs(angle)>0.0001)runOnJS(commitImagePinch)(0,0,1,angle);return;}
   if(imageCorner.value){const scale=imageScale.value;imageCorner.value=false;imageCommittedScale.value*=scale;imageScale.value=1;if(Math.abs(scale-1)>0.0001)runOnJS(commitImagePinch)(0,0,scale,0);return;}
   if(imageDragging.value){const dx=imageDX.value,dy=imageDY.value;imageDragging.value=false;imageDX.value=0;imageDY.value=0;if(!imagePinching.value&&Math.hypot(dx,dy)>0.1){imageCommittedX.value+=dx;imageCommittedY.value+=dy;runOnJS(commitImageMove)(dx,dy);}return;}
@@ -1052,7 +1338,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   // Preserve the points collected so far through the ordinary JS commit path.
   finishInterruptedStroke();
    if(draggingSelection.value&&!dragPending.value){dragX.value=0;dragY.value=0;committedDX.value=0;committedDY.value=0}
-   lassoDrawing.value=false;samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;blocked.value=false;cursorOn.value=false;draggingSelection.value=false;cornerActive.value=false;
+   lassoDrawing.value=false;samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;blocked.value=false;cursorOn.value=false;draggingSelection.value=false;cornerActive.value=false;handPanActive.value=false;
  }).runOnJS(false);
  const pinch=Gesture.Pinch().onBegin(e=>{
   if(imageBounds.value){const action=finishInterruptedStroke();blocked.value=true;samples.value=emptySampleBuffer();if(action==='discard')draft.value='';drawing.value=false;imageGestureLocked.value=true;imagePinching.value=true;imagePinchActive.value=true;imageDragging.value=false;imageDX.value=0;imageDY.value=0;imageScale.value=1;imageFocalDX.value=0;imageFocalDY.value=0;imageFocalX.value=e.focalX;imageFocalY.value=e.focalY;return;}
@@ -1138,11 +1424,12 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  }).runOnJS(false);
  const gestures=Gesture.Simultaneous(pan,pinch,rotation,singleTap);
 
- return <View onLayout={layout} style={{flex:1,overflow:'hidden',touchAction:'none',backgroundColor:paperColor==='krem'?'#FFF5DF':'#FFFFFF'}}>
+ return <View ref={desktopSurfaceRef} onLayout={layout} style={{flex:1,overflow:'hidden',touchAction:'none',backgroundColor:paperColor==='krem'?'#FFF5DF':'#FFFFFF'}}>
  <GestureDetector gesture={gestures}><View style={{flex:1,touchAction:'none'}}><Canvas style={{flex:1}}>
  <Group transform={transform}>
  <StaticPaper template={template} paperColor={paperColor} pageHeight={pageHeight} fitWidth={fitWidth}/>
- {(content.images??[]).map(source=>{const item=source.id===displayImageId&&paintedImage?paintedImage:source;const cx=item.x+item.width/2,cy=item.y+item.height/2;const art=<Group origin={vec(cx,cy)} transform={[{rotate:item.rotation??0}]}><PageImageLayer item={item}/>{item.id===imageId&&<><Rect x={item.x} y={item.y} width={item.width} height={item.height} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/>{Platform.OS==='web'&&<><Line p1={vec(cx,item.y)} p2={imageRotatePoint} color="#3388EE" strokeWidth={imageOutlineWidth}/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></>}{Platform.OS==='web'&&[[item.x,item.y],[item.x+item.width,item.y],[item.x,item.y+item.height],[item.x+item.width,item.y+item.height]].map(([x,y],index)=><Group key={index}><Circle cx={x} cy={y} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={x} cy={y} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></Group>)}</>}</Group>;return item.id===displayImageId?<Group key={item.id} transform={imageTransform}>{art}</Group>:<Group key={item.id}>{art}</Group>})}
+ {(content.images??[]).map(source=>{const item=source.id===displayImageId&&paintedImage?paintedImage:source;const cx=item.x+item.width/2,cy=item.y+item.height/2;const art=<Group origin={vec(cx,cy)} transform={[{rotate:item.rotation??0}]}><PageImageLayer item={item} onLoadError={onImageLoadError}/>{item.id===imageId&&<><Rect x={item.x} y={item.y} width={item.width} height={item.height} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/>{Platform.OS==='web'&&<><Line p1={vec(cx,item.y)} p2={imageRotatePoint} color="#3388EE" strokeWidth={imageOutlineWidth}/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></>}{Platform.OS==='web'&&[[item.x,item.y],[item.x+item.width,item.y],[item.x,item.y+item.height],[item.x+item.width,item.y+item.height]].map(([x,y],index)=><Group key={index}><Circle cx={x} cy={y} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={x} cy={y} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></Group>)}</>}</Group>;return item.id===displayImageId?<Group key={item.id} transform={imageTransform}>{art}</Group>:<Group key={item.id}>{art}</Group>})}
+ {imageRenderProbe&&imageProbeCenter&&<><SkiaImage image={imageRenderProbe} x={imageProbeCenter[0]-24} y={imageProbeCenter[1]-24} width={48} height={48} fit="fill"/><Rect x={imageProbeCenter[0]-27} y={imageProbeCenter[1]-27} width={54} height={54} color="#111111" style="stroke" strokeWidth={2}/></>}
 
  <Group layer={tool==='eraser'}>
   <Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:tool==='select'?[...selectedIds,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts}/>
@@ -1175,7 +1462,33 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    <Path path={draft} color="#3388EE" opacity={0.95} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round"/>
   </>}
  {tool==='eraser'&&<Circle cx={cursorX} cy={cursorY} r={eraserRadius} color="#808080" opacity={cursorOpacity} style="stroke" strokeWidth={1.5}/>}
- </Group></Canvas></View></GestureDetector>{editing&&<InlineTextEditor key={editing.id} item={editing} left={(size.width-PAGE_WIDTH*fitWidth*zoom.value)/2+offsetX.value+editing.x*fitWidth*zoom.value} top={offsetY.value+editing.y*fitWidth*zoom.value} scale={fitWidth*zoom.value} onCommit={value=>{editValueRef.current=value;finishRef.current()}} onValueChange={value=>{editValueRef.current=value}} onMove={(dx,dy)=>{const current=editingRef.current;if(!current)return;const scale=fitWidth*zoom.value;const x=Math.max(0,Math.min(PAGE_WIDTH-current.w,current.x+dx/scale));const y=Math.max(0,current.y+dy/scale);const next={...current,x,y,bbox:[x,y,x+current.w,y+(current.bbox[3]-current.bbox[1])] as [number,number,number,number]};editingRef.current=next;setEditing(next)}}/>}{wordEditing&&<Modal transparent animationType="fade" visible onRequestClose={()=>setWordEditing(null)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#0008'}}><View style={{backgroundColor:'#FFFFFF',borderRadius:16,padding:20,gap:12}}><Text style={{fontSize:17,color:'#202020',fontWeight:'600'}}>TanÄ±nan kelimeyi dÃ¼zelt</Text><TextInput autoFocus value={wordEditing.text} onChangeText={value=>setWordEditing(previous=>previous?{...previous,text:value}:null)} style={{borderWidth:1,borderColor:'#AAAAAA',borderRadius:8,padding:10,color:'#202020',fontSize:17}}/><View style={{flexDirection:'row',justifyContent:'flex-end',gap:20}}><Pressable onPress={()=>setWordEditing(null)}><Text style={{color:'#444444'}}>Ä°ptal</Text></Pressable><Pressable onPress={()=>{
+ </Group></Canvas></View></GestureDetector>{editing&&<InlineTextEditorErrorBoundary key={editing.id} fallbackStyle={{left:12,top:12,right:12}} onClose={()=>finishRef.current()}><InlineTextEditor
+  item={editing}
+  left={(size.width-PAGE_WIDTH*fitWidth*zoom.value)/2+offsetX.value+editing.x*fitWidth*zoom.value}
+  top={offsetY.value+editing.y*fitWidth*zoom.value}
+  scale={fitWidth*zoom.value}
+  canvasZoom={zoom.value}
+  pageHeight={pageHeight}
+  onCommit={value=>{editValueRef.current=value;finishRef.current()}}
+  onValueChange={value=>{editValueRef.current=value}}
+  onGeometryCommit={()=>persistTextGeometry()}
+  onMove={(dx,dy,heightPx)=>{
+   const current=editingRef.current;if(!current)return;
+   const scale=Math.max(0.01,fitWidth*zoom.value);
+   const height=Math.min(Math.max(0,pageHeight),Math.max(0,heightPx/scale));
+   const x=Math.max(0,Math.min(PAGE_WIDTH-current.w,current.x+dx/scale));
+   const y=Math.max(0,Math.min(Math.max(0,pageHeight-height),current.y+dy/scale));
+   const next={...current,x,y,bbox:[x,y,x+current.w,y+height] as [number,number,number,number]};
+   editingRef.current=next;setEditing(next);
+  }}
+  onResize={(width,minHeight,heightPx)=>{
+   const current=editingRef.current;if(!current)return;
+   const nextWidth=Math.max(1,Math.min(PAGE_WIDTH-current.x,width));
+   const height=Math.min(Math.max(0,pageHeight-current.y),Math.max(0,heightPx/Math.max(0.01,fitWidth*zoom.value)));
+   const next={...current,w:nextWidth,minHeight:minHeight??undefined,bbox:[current.x,current.y,current.x+nextWidth,current.y+height] as [number,number,number,number]};
+   editingRef.current=next;setEditing(next);
+  }}
+ /></InlineTextEditorErrorBoundary>}{wordEditing&&<Modal transparent animationType="fade" visible onRequestClose={()=>setWordEditing(null)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#0008'}}><View style={{backgroundColor:'#FFFFFF',borderRadius:16,padding:20,gap:12}}><Text style={{fontSize:17,color:'#202020',fontWeight:'600'}}>TanÄ±nan kelimeyi dÃ¼zelt</Text><TextInput autoFocus value={wordEditing.text} onChangeText={value=>setWordEditing(previous=>previous?{...previous,text:value}:null)} style={{borderWidth:1,borderColor:'#AAAAAA',borderRadius:8,padding:10,color:'#202020',fontSize:17}}/><View style={{flexDirection:'row',justifyContent:'flex-end',gap:20}}><Pressable onPress={()=>setWordEditing(null)}><Text style={{color:'#444444'}}>Ä°ptal</Text></Pressable><Pressable onPress={()=>{
  const value=wordEditing.text.trim();
  if(value){
   const updated=(content.beautifications??[]).map(beautification=>({
