@@ -17,6 +17,7 @@ import {CanvasToolbar} from './CanvasToolbar';
 import {CanvasPageStrip} from './CanvasPageStrip';
 import {parseContent} from '@/features/canvas/engine/content';
 import {useAutosave} from '@/features/canvas/hooks/useAutosave';
+import {useAutoHandwritingOCR} from '@/features/canvas/hooks/useAutoHandwritingOCR';
 import {visibleSaveStatus} from '@/features/canvas/engine/autosavePolicy';
 import {record,undo,redo,historyState} from '@/features/canvas/store/history';
 import type {PageContent,PageImage,ShapeMode} from '@/features/canvas/types';
@@ -336,6 +337,8 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
  const contentRef=useRef(content);contentRef.current=content;
  const {error,saving,retry,flush,setDrawingActive}=useAutosave(page.id,content,(savedPageId,serialized)=>{usePageStore.getState().cacheContent(savedPageId,serialized);const saved=parseContent(serialized);if(saved.images?.length)logImageDebug('page_store_cache_updated',{pageId:savedPageId,imageCount:saved.images.length,elementIds:saved.images.map(image=>image.id)})});
  const change=(next:PageContent)=>{const previous=contentRef.current;record(page.id,previous);contentRef.current=next;setContent(next);onHistory()};
+ const onOcrDrawingActive=useAutoHandwritingOCR(page.id,content,contentRef,change);
+ const handleDrawingActive=(active:boolean)=>{setDrawingActive(active);onOcrDrawingActive(active)};
  const addImage=(image:PageImage)=>{const previous=contentRef.current;const next={...previous,images:[...(previous.images??[]),image]};record(page.id,previous);contentRef.current=next;setContent(next);onHistory();logImageDebug('page_content_updated',{pageId:page.id,elementId:image.id,imageCount:next.images?.length??0,bounds:[image.x,image.y,image.x+image.width,image.y+image.height]})};
  const back=()=>{const next=undo(page.id,contentRef.current);if(next){contentRef.current=next;setContent(next);onHistory()}};
  const forward=()=>{const next=redo(page.id,contentRef.current);if(next){contentRef.current=next;setContent(next);onHistory()}};
@@ -343,5 +346,5 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
  const controller:CanvasController={back,forward,flush,canUndo:h.canUndo,canRedo:h.canRedo,error,saving,retry};
  useEffect(()=>{onController(controller)},[error,saving,h.canUndo,h.canRedo]);
  useEffect(()=>()=>{void flush();onController(null)},[]);
- return <DrawingCanvas pageId={page.id} content={content} template={page.template} paperColor={page.paperColor} tool={tool} brush={tool==='highlighter'?{...brush,width:brush.width*5}:brush} eraserSize={eraserSize} eraserMode={eraserMode} onChange={change} onAddImage={addImage} onDrawingActive={setDrawingActive} onStrokeComplete={onStrokeComplete} onSelectionClipboardChange={onSelectionClipboardChange} onSelectionActionComplete={onSelectionActionComplete} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={ids=>{onSelectionChange(ids);onTextSelectionChange(ids.some(id=>content.elements.some(e=>e.id===id&&e.type==='text')))}} selectionAction={selectionAction} imageAction={imageAction} onImageSelectionChange={onImageSelectionChange} onImageLoadError={onImageLoadError} imageRequest={imageRequest} onImageRequestConsumed={onImageRequestConsumed}/>;
+ return <DrawingCanvas pageId={page.id} content={content} template={page.template} paperColor={page.paperColor} tool={tool} brush={tool==='highlighter'?{...brush,width:brush.width*5}:brush} eraserSize={eraserSize} eraserMode={eraserMode} onChange={change} onAddImage={addImage} onDrawingActive={handleDrawingActive} onStrokeComplete={onStrokeComplete} onSelectionClipboardChange={onSelectionClipboardChange} onSelectionActionComplete={onSelectionActionComplete} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={ids=>{onSelectionChange(ids);onTextSelectionChange(ids.some(id=>content.elements.some(e=>e.id===id&&e.type==='text')))}} selectionAction={selectionAction} imageAction={imageAction} onImageSelectionChange={onImageSelectionChange} onImageLoadError={onImageLoadError} imageRequest={imageRequest} onImageRequestConsumed={onImageRequestConsumed}/>;
 }
