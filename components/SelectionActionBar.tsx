@@ -31,18 +31,18 @@ export function SelectionActionBar({ visible, selectedCount, actions }: {
   }, [opacity, translateY, visible]);
 
   return <Animated.View pointerEvents={visible ? 'auto' : 'none'} accessibilityElementsHidden={!visible}
-    style={[styles.position, { width: Math.min(width - 24, 610), opacity, transform: [{ translateY }] }]}>
+    style={[styles.position, { width: Math.min(width - 32, 760), opacity, transform: [{ translateY }] }]}>
     <View style={[styles.bar, { backgroundColor: colors.surfaceRaised, borderColor: colors.border, shadowColor: colors.ink }]}>
       <View style={[styles.count, { borderRightColor: colors.divider }]}>
         <Text numberOfLines={1} style={[styles.countText, { color: colors.ink }]}>{selectedCount} seçili</Text>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={width < 500} contentContainerStyle={styles.actions}>
+      <ScrollView style={styles.actionsScroll} horizontal showsHorizontalScrollIndicator={width < 500} contentContainerStyle={[styles.actions, { minWidth: Math.min(width - 32, 760) - 116 }]}>
         {actions.map(action => {
           const Icon = action.icon;
           const tint = action.disabled ? colors.muted : action.danger ? '#D94B52' : colors.accent;
           return <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.label}
             disabled={action.disabled} onPress={action.onPress} style={({ pressed }) => [styles.action, pressed && styles.pressed, action.disabled && styles.disabled]}>
-            <Icon size={18} color={tint} strokeWidth={2} />
+            <Icon size={22} color={tint} strokeWidth={2} />
             <Text numberOfLines={1} style={[styles.label, { color: action.danger ? '#D94B52' : colors.ink }]}>{action.label}</Text>
           </Pressable>;
         })}
@@ -53,12 +53,13 @@ export function SelectionActionBar({ visible, selectedCount, actions }: {
 
 const styles = StyleSheet.create({
   position: { position: 'absolute', zIndex: 30, bottom: 9, alignSelf: 'center' },
-  bar: { minHeight: 62, flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 7, paddingVertical: 6, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.13, shadowRadius: 14, elevation: 8 },
-  count: { minWidth: 60, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderRightWidth: StyleSheet.hairlineWidth },
-  countText: { fontFamily: fonts.semibold, fontSize: 10.5 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 4 },
-  action: { minWidth: 54, minHeight: 48, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 5, borderRadius: 12 },
-  label: { fontFamily: fonts.medium, fontSize: 9.5 },
+  bar: { minHeight: 80, flexDirection: 'row', alignItems: 'center', borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingVertical: 9, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.13, shadowRadius: 14, elevation: 8 },
+  count: { width: 94, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderRightWidth: StyleSheet.hairlineWidth },
+  countText: { fontFamily: fonts.semibold, fontSize: 13 },
+  actionsScroll: { flex: 1 },
+  actions: { flexGrow: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', gap: 8, paddingHorizontal: 10 },
+  action: { minWidth: 92, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 12, borderRadius: 14 },
+  label: { fontFamily: fonts.medium, fontSize: 12 },
   pressed: { opacity: 0.65 },
   disabled: { opacity: 0.45 },
 });
