@@ -385,6 +385,63 @@ mod tests {
     }
 }
 
+#[cfg(windows)]
+#[tauri::command(rename_all = "camelCase")]
+async fn notex_recognize_handwriting(png_base64: String) -> Result<Value, String> {
+    use base64::Engine;
+    if png_base64.len() > 8_000_000 {
+        return Err("OCR görseli çok büyük".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&png_base64)
+            .map_err(|error| format!("OCR PNG çözümlenemedi: {error}"))?;
+        if !bytes.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]) {
+            return Err("OCR girdisi PNG olmalı".into());
+        }
+        let mut root = std::env::current_dir()
+            .map_err(|error| error.to_string())?;
+        let mut found = None;
+        for _ in 0..5 {
+            let python = root.join(".venv-ocr").join("Scripts").join("python.exe");
+            let script = root.join("tools").join("handwriting_ocr").join("recognize.py");
+            if python.is_file() && script.is_file() {
+                found = Some((python, script));
+                break;
+            }
+            if !root.pop() { break; }
+        }
+        let (python, script) = found.ok_or_else(|| {
+            "Yerel OCR bulunamadı: Notex proje klasöründe .venv-ocr kurulumu gerekli".to_string()
+        })?;
+        let temp = std::env::temp_dir().join(format!(
+            "notex-ocr-{}-{}.png",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|error| error.to_string())?
+                .as_nanos()
+        ));
+        fs::write(&temp, bytes).map_err(|error| format!("OCR geçici dosyası yazılamadı: {error}"))?;
+        let output = std::process::Command::new(python)
+            .arg(script)
+            .arg(&temp)
+            .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+            .output();
+        let _ = fs::remove_file(&temp);
+        let output = output.map_err(|error| format!("OCR başlatılamadı: {error}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let json_line = stdout.lines().rev().find(|line| line.trim_start().starts_with('{'))
+            .ok_or_else(|| format!("OCR yanıt vermedi: {}", String::from_utf8_lossy(&output.stderr).chars().take(500).collect::<String>()))?;
+        let value: Value = serde_json::from_str(json_line)
+            .map_err(|error| format!("OCR JSON okunamadı: {error}"))?;
+        if value.get("ok").and_then(Value::as_bool) != Some(true) {
+            return Err(value.get("error").and_then(Value::as_str).unwrap_or("OCR tanıma başarısız").to_string());
+        }
+        Ok(value)
+    }).await.map_err(|error| format!("OCR görevi tamamlanamadı: {error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -401,7 +458,8 @@ pub fn run() {
                 notex_db_all,
                 notex_db_begin,
                 notex_db_commit,
-                notex_db_rollback
+                notex_db_rollback,
+                notex_recognize_handwriting
             ]);
     builder
         .setup(|app| {
