@@ -19,14 +19,30 @@ def serve() -> int:
     import os
     try:
         from paddleocr import PaddleOCR
-        engine = PaddleOCR(
+        # Prefer the small PP-OCRv6 models for interactive Windows CPU use.
+        # Fall back to the previous default if this PaddleOCR installation does
+        # not provide the mobile model pair.
+        common = dict(
             lang="tr",
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
             enable_mkldnn=False,
+            cpu_threads=4,
         )
-        print(json.dumps({"ready": True}), flush=True)
+        model_name = "PP-OCRv6_mobile"
+        try:
+            engine = PaddleOCR(
+                **common,
+                text_detection_model_name="PP-OCRv6_mobile_det",
+                text_recognition_model_name="PP-OCRv6_mobile_rec",
+                text_det_limit_side_len=640,
+            )
+        except Exception as exc:
+            print("Mobile OCR models unavailable, using default: " + str(exc), file=sys.stderr, flush=True)
+            engine = PaddleOCR(**common)
+            model_name = "default"
+        print(json.dumps({"ready": True, "model": model_name}), flush=True)
     except Exception as exc:
         print(json.dumps({"ready": False, "error": str(exc)}, ensure_ascii=False), flush=True)
         return 1
