@@ -18,3 +18,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: node --test features/canvas/engine/__tests__/*.test.mjs
+
+  windows-rust-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
