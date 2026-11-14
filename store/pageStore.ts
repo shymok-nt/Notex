@@ -5,40 +5,50 @@ import { useNotebookStore } from '@/store/notebookStore';
 import type { Page } from '@/types/page';
 import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
-import {stagePageContent,pendingPageContent,confirmPageContent,discardPageContent} from '@/features/canvas/store/pageContentStorage';
+import {enqueuePageSave,flushPageSave,finishPageSave,finishManyPageSaves} from '@/features/canvas/store/pagePersistence';
+import {isTauriDesktop} from '@/utils/tauriFiles';
 type State={pages:Page[];notebookId:string|null;loading:boolean;
  load:(id:string)=>Promise<void>;cacheContent:(id:string,content:string)=>boolean;add:(afterPosition:number)=>Promise<string|undefined>;remove:(id:string)=>Promise<void>;move:(id:string,position:number)=>Promise<void>;duplicateMany:(ids:string[])=>Promise<string[]>;removeMany:(ids:string[])=>Promise<Page[]>;restoreMany:(pages:Page[])=>Promise<void>;updateTemplate:(id:string,template:PageTemplate,paperColor:PaperColor)=>Promise<void>};
 const showError=(e:unknown)=>Alert.alert('Sayfa işlemi başarısız',e instanceof Error?e.message:'Tekrar dene.');
 const timed=async<T>(operation:string,run:()=>Promise<T>):Promise<T>=>{if(!__DEV__)return run();const started=perfNow();try{return await run()}finally{console.log('[Notex perf] page_operation',{operation,duration_ms:Math.round((perfNow()-started)*10)/10})}};
 let latestLoadRevision=0;
-// Reconcile only unapplied local drafts. SQLite remains the durable source.
-const recoverPages=async(pages:Page[]):Promise<Page[]>=>{
+/**
+ * One-time bridge for unsaved drafts from versions before the SQLite-only store.
+ * Restore only if the SQLite value still equals the draft's original base;
+ * a newer SQLite edit always wins. Old keys are removed only after verification.
+ */
+const migrateLegacyDrafts=async(pages:Page[]):Promise<Page[]>=>{
+ if(!isTauriDesktop()||typeof window==='undefined')return pages;
  const result:Page[]=[];
  for(const page of pages){
-  const pending=pendingPageContent(page.id,page.content);
-  if(pending===null||pending===page.content){
-   if(pending===page.content)confirmPageContent(page.id,pending);
-   result.push(page);continue;
-  }
-  await pageRepository.updateContent(page.id,pending);
-  if(await pageRepository.getStoredContent(page.id)!==pending)throw new Error('Yerel sayfa kurtarma kaydı doğrulanamadı.');
-  confirmPageContent(page.id,pending);
-  result.push({...page,content:pending});
+  const key='notex:page-content:v1:'+page.id;
+  try{
+   const raw=window.localStorage.getItem(key);
+   if(raw===null){result.push(page);continue}
+   const draft=JSON.parse(raw) as {content?:unknown;base?:unknown;pending?:unknown};
+   if(draft.pending!==true){window.localStorage.removeItem(key);result.push(page);continue}
+   if(typeof draft.content!=='string'||typeof draft.base!=='string'){result.push(page);continue}
+   if(page.content!==draft.base&&page.content!==draft.content){result.push(page);continue}
+   if(page.content!==draft.content){
+    await pageRepository.updateContent(page.id,draft.content);
+    if(await pageRepository.getStoredContent(page.id)!==draft.content)throw new Error('Eski taslak doğrulanamadı.');
+   }
+   window.localStorage.removeItem(key);
+   result.push({...page,content:draft.content});
+  }catch(error){console.error('[Notex migration] Eski sayfa taslağı korunuyor',error);result.push(page)}
  }
  return result;
 };
 export const usePageStore=create<State>((set,get)=>({
  pages:[],notebookId:null,loading:false,
- load:async id=>{const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await recoverPages(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
+ load:async id=>{if(get().notebookId===id&&!get().loading&&get().pages.length>0)return;const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await migrateLegacyDrafts(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
  cacheContent:(pageId,content)=>{
   const current=get().pages.find(page=>page.id===pageId);
   if(!current)return false;
   if(current.content===content)return true;
-  // Write to localStorage before exposing a new snapshot in the editor.
-  if(!stagePageContent(pageId,content,current.content)){
-   showError(new Error('Yerel taslak kaydedilemedi; not değiştirilmedi.'));
-   return false;
-  }
+  // This is the only page-content mutation path.
+  // Immediate state makes ink responsive; queued SQLite writes are serialized.
+  enqueuePageSave(pageId,content);
   set(state=>({pages:state.pages.map(page=>page.id===pageId?{...page,content}:page)}));
   return true;
  },
@@ -62,8 +72,8 @@ export const usePageStore=create<State>((set,get)=>({
   const id=get().notebookId;if(!id)return;
   if(!get().pages.some(page=>page.id===pageId))return;
   try{
+   await finishPageSave(pageId);
    await timed('remove_write',()=>pageRepository.remove(pageId));
-   discardPageContent(pageId);
    if(get().notebookId===id)set(state=>({pages:state.pages.filter(page=>page.id!==pageId).map((page,index)=>({...page,position:index}))}));
    await timed('remove_notebook_refresh',()=>useNotebookStore.getState().refresh());
   }catch(e){showError(e)}
@@ -87,6 +97,7 @@ export const usePageStore=create<State>((set,get)=>({
  duplicateMany:async ids=>{
   const id=get().notebookId;if(!id||!ids.length)return [];
   try{
+   for(const pageId of ids)await flushPageSave(pageId);
    const created=await timed('duplicate_write',()=>pageRepository.duplicateMany(ids));
    const duplicates=await pageRepository.getByIds(created);
    set(state=>{
@@ -107,8 +118,8 @@ export const usePageStore=create<State>((set,get)=>({
   const selected=new Set(ids);
   if(!get().pages.some(page=>selected.has(page.id)))return [];
   try{
+   await finishManyPageSaves(ids);
    const dbRemoved=await timed('remove_many_write',()=>pageRepository.removeMany(ids));
-   ids.forEach(discardPageContent);
    if(get().notebookId===id)set(state=>({pages:state.pages.filter(page=>!selected.has(page.id)).map((page,index)=>({...page,position:index}))}));
    await timed('remove_many_notebook_refresh',()=>useNotebookStore.getState().refresh());
    return dbRemoved;

@@ -1,5 +1,5 @@
 import React,{memo,useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {View,PixelRatio,Platform,TextInput,BackHandler,Keyboard,Animated,Text,Modal,Pressable,type LayoutChangeEvent} from 'react-native';
+import {View,PixelRatio,Platform,TextInput,BackHandler,Keyboard,Animated,Text,Modal,Pressable,type LayoutChangeEvent,type ViewStyle} from 'react-native';
 import {Canvas,Group,Path,Rect,Line,Circle,Image as SkiaImage,Skia,vec,Paragraph,TextAlign} from '@shopify/react-native-skia';
 import {Gesture,GestureDetector,PointerType} from 'react-native-gesture-handler';
 import {useSettingsStore} from '@/store/settingsStore';
@@ -1387,8 +1387,8 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  }).runOnJS(false);
  const gestures=Gesture.Simultaneous(pan,pinch,rotation,singleTap);
 
- return <View ref={desktopSurfaceRef} onLayout={layout} style={{flex:1,overflow:'hidden',touchAction:'none',backgroundColor:paperColor==='krem'?'#FFF5DF':'#FFFFFF'}}>
- <GestureDetector gesture={gestures}><View style={{flex:1,touchAction:'none'}}><Canvas style={{flex:1}}>
+ return <View ref={desktopSurfaceRef} onLayout={layout} style={{flex:1,overflow:'hidden',touchAction:'none',backgroundColor:paperColor==='krem'?'#FFF5DF':'#FFFFFF'} as ViewStyle}>
+ <GestureDetector gesture={gestures}><View style={{flex:1,touchAction:'none'} as ViewStyle}><Canvas style={{flex:1}}>
  <Group transform={transform}>
  <StaticPaper template={template} paperColor={paperColor} pageHeight={pageHeight} fitWidth={fitWidth}/>
  {content.backgroundImage&&<PageImageLayer item={content.backgroundImage} onLoadError={onImageLoadError}/>}

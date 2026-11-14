@@ -17,7 +17,7 @@ import {CanvasToolbar} from './CanvasToolbar';
 import {CanvasPageStrip} from './CanvasPageStrip';
 import {parseContent} from '@/features/canvas/engine/content';
 import {useCanvasPageContent} from '@/features/canvas/hooks/useCanvasPageContent';
-import {visibleSaveStatus} from '@/features/canvas/engine/autosavePolicy';
+import {visibleSaveStatus} from '@/features/canvas/store/pagePersistence';
 import type {ShapeMode} from '@/features/canvas/types';
 import {hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
 import type {Page} from '@/types/page';
