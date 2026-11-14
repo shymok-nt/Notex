@@ -17,6 +17,7 @@ def serve() -> int:
     import base64
     import tempfile
     import os
+    import time
     try:
         from paddleocr import PaddleOCR
         # Prefer the small PP-OCRv6 models for interactive Windows CPU use.
@@ -56,7 +57,9 @@ def serve() -> int:
                 tmp.write(data)
                 name = tmp.name
             try:
+                inference_started = time.perf_counter()
                 results = engine.predict(name)
+                inference_ms = round((time.perf_counter() - inference_started) * 1000)
             finally:
                 os.unlink(name)
             lines = []
@@ -74,7 +77,7 @@ def serve() -> int:
                     lines.append({"text": str(value),
                                   "score": float(scores[index]) if index < len(scores) else None,
                                   "box": box.tolist() if hasattr(box, "tolist") else box})
-            print(json.dumps({"ok": True, "lines": lines}, ensure_ascii=False), flush=True)
+            print(json.dumps({"ok": True, "lines": lines, "inferenceMs": inference_ms, "model": model_name}, ensure_ascii=False), flush=True)
         except Exception as exc:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), flush=True)
     return 0
