@@ -76,7 +76,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--predictions", type=Path, help="JSONL with id, actual, optional inferenceMs; no OCR installation needed")
-    parser.add_argument("--engine", choices=["paddle", "trocr"], help="Run the selected local OCR model")
+    parser.add_argument("--engine", choices=["paddle"], help="Run the selected local OCR model")
     parser.add_argument("--split", choices=["train", "val", "test"], default="test")
     parser.add_argument("--output", type=Path, default=Path("ocr-benchmark-results.json"))
     args = parser.parse_args()
@@ -102,28 +102,24 @@ def main() -> int:
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
         spec.loader.exec_module(module)
-        if args.engine == "trocr":
-            def infer(path: Path) -> dict:
-                return module.recognize_trocr(path.read_bytes())
-        else:
-            from paddleocr import PaddleOCR
-            engine = PaddleOCR(lang="tr", use_doc_orientation_classify=False,
-                               use_doc_unwarping=False, use_textline_orientation=False,
-                               enable_mkldnn=False)
-            def infer(path: Path) -> dict:
-                started = time.perf_counter()
-                result = engine.predict(str(path))
-                texts = []
-                for entry in result:
-                    payload = entry.json
-                    if callable(payload):
-                        payload = payload()
-                    if isinstance(payload, str):
-                        payload = json.loads(payload)
-                    payload = payload.get("res", payload)
-                    texts.extend(payload.get("rec_texts", []))
-                return {"lines": [{"text": str(t)} for t in texts],
-                        "inferenceMs": round((time.perf_counter() - started) * 1000)}
+        from paddleocr import PaddleOCR
+        engine = PaddleOCR(lang="tr", use_doc_orientation_classify=False,
+                           use_doc_unwarping=False, use_textline_orientation=False,
+                           enable_mkldnn=False)
+        def infer(path: Path) -> dict:
+            started = time.perf_counter()
+            result = engine.predict(str(path))
+            texts = []
+            for entry in result:
+                payload = entry.json
+                if callable(payload):
+                    payload = payload()
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                payload = payload.get("res", payload)
+                texts.extend(payload.get("rec_texts", []))
+            return {"lines": [{"text": str(t)} for t in texts],
+                    "inferenceMs": round((time.perf_counter() - started) * 1000)}
     rows = []
     for sample in samples:
         if args.predictions:
