@@ -144,7 +144,7 @@ export default function NoteCanvasScreen(){
  useEffect(()=>{loadingRemovalLogged.current=false;if(__DEV__)loadingStartedAt.current=perfNow()},[id,pageId]);
  useEffect(()=>{if(!pagesReady||!__DEV__||loadingRemovalLogged.current)return;loadingRemovalLogged.current=true;console.log('[Notex perf] loading_overlay_removed',{duration_ms:Math.round((perfNow()-loadingStartedAt.current)*10)/10,page_ready:!!selected,page_count:pages.length})},[id,pagesReady,selected?.id,pages.length]);
  useEffect(()=>{if(readyNotebookId===id&&selectedId)void rememberNotebookPage(id,selectedId).catch(error=>console.error('[Notex PDF] Son sayfa kaydedilemedi',error))},[id,readyNotebookId,selectedId]);
- const select=async(pageId:string)=>{if(pageId===selected?.id)return;if(__DEV__)console.log('[Notex page-trace] navigation_start',{from:selected?.id,to:pageId,hasController:!!controllerRef.current});try{await controllerRef.current?.flush();if(__DEV__)console.log('[Notex page-trace] navigation_flush_complete',{from:selected?.id,to:pageId})}catch(error){Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Sayfayı değiştirmeden önce tekrar dene.');return}const current=usePageStore.getState();if(current.notebookId!==id||!current.pages.some(page=>page.id===pageId))return;setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
+ const select=async(pageId:string)=>{if(pageId===selected?.id)return;try{await controllerRef.current?.flush();}catch(error){Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Sayfayı değiştirmeden önce tekrar dene.');return}const current=usePageStore.getState();if(current.notebookId!==id||!current.pages.some(page=>page.id===pageId))return;setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
  const addingPageRef=useRef(false);
  const isPdfNotebook=notebook?.coverPresetId==='pdf-import'||(!!selected?.thumbnailPath&&!!parseContent(selected.content).backgroundImage);
  const navigatePdfPage=(direction:-1|1)=>{const target=pages[index+direction];if(!target||!pagesReady)return;void select(target.id)};
@@ -334,10 +334,9 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
  useCanvasAwake();const [content,setContent]=useState<PageContent>(()=>{const started=__DEV__?perfNow():0;const parsed=parseContent(page.content);if(__DEV__)console.log('[Notex perf] page_parse',{duration_ms:Math.round((perfNow()-started)*10)/10,element_count:parsed.elements.length,content_characters:page.content.length});return parsed});
  // commitContent updates this ref synchronously; a stale render must not undo it.
  const contentRef=useRef(content);
- useEffect(()=>{if(__DEV__)console.log('[Notex page-trace] canvas_page_mounted',{pageId:page.id,elementCount:content.elements.length,sourceBytes:page.content.length});return()=>{if(__DEV__)console.log('[Notex page-trace] canvas_page_unmounted',{pageId:page.id})}},[page.id]);
  const finishEditingRef=useRef<(()=>void)|null>(null);
  const {error,saving,retry,flush,setDrawingActive,markChanged}=useAutosave(page.id,content,(savedPageId,serialized)=>{if(serializeContent(contentRef.current)===serialized)usePageStore.getState().cacheContent(savedPageId,serialized);const saved=parseContent(serialized);if(saved.images?.length)logImageDebug('page_store_cache_updated',{pageId:savedPageId,imageCount:saved.images.length,elementIds:saved.images.map(image=>image.id)})});
- const commitContent=(next:PageContent)=>{if(__DEV__)console.log('[Notex page-trace] canvas_commit',{pageId:page.id,before:contentRef.current.elements.length,after:next.elements.length});contentRef.current=next;markChanged(next);usePageStore.getState().cacheContent(page.id,serializeContent(next));setContent(next)};
+ const commitContent=(next:PageContent)=>{contentRef.current=next;markChanged(next);usePageStore.getState().cacheContent(page.id,serializeContent(next));setContent(next)};
  const change=(incoming:PageContent)=>{
   const previous=contentRef.current;
   // A queued pen commit can carry props from before another committed stroke.
@@ -360,7 +359,7 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
  const back=()=>{const next=undo(page.id,contentRef.current);if(next){commitContent(next);onHistory()}};
  const forward=()=>{const next=redo(page.id,contentRef.current);if(next){commitContent(next);onHistory()}};
  const h=historyState(page.id);
- const flushPage=async()=>{if(__DEV__)console.log('[Notex page-trace] canvas_flush_start',{pageId:page.id,elementCount:contentRef.current.elements.length});finishEditingRef.current?.();await flush();if(__DEV__)console.log('[Notex page-trace] canvas_flush_complete',{pageId:page.id})};
+ const flushPage=async()=>{finishEditingRef.current?.();await flush();};
  const controller:CanvasController={back,forward,flush:flushPage,canUndo:h.canUndo,canRedo:h.canRedo,error,saving,retry};
  useEffect(()=>{onController(controller)},[error,saving,h.canUndo,h.canRedo]);
  useEffect(()=>()=>{void flush();onController(null)},[]);
