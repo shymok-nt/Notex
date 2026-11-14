@@ -345,13 +345,20 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
   const previousIds=new Set(previous.elements.map(element=>element.id));
   const incomingIds=new Set(incoming.elements.map(element=>element.id));
   const addedPenStroke=incoming.elements.some(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
-  const retainsExistingElements=previous.elements.every(element=>incomingIds.has(element.id));
+  // If the captured canvas props also predate another committed stroke,
+  // merge only the newly added pen strokes onto the latest page snapshot.
+  // This path is strictly for additive pen commits, never erasing/editing.
+  const addedStrokes=incoming.elements.filter(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
+  const isAdditivePenCommit=addedPenStroke&&incoming.elements.every(element=>previousIds.has(element.id)||addedStrokes.includes(element as typeof addedStrokes[number]));
   const incomingBeautifications=incoming.beautifications??[];
   const missingPreviousBeautifications=(previous.beautifications??[]).filter(item=>
     !incomingBeautifications.some(nextItem=>nextItem.sourceIds.length===item.sourceIds.length&&nextItem.sourceIds.every(id=>item.sourceIds.includes(id)))
   );
-  const next=addedPenStroke&&retainsExistingElements&&missingPreviousBeautifications.length
-    ? {...incoming,beautifications:[...incomingBeautifications,...missingPreviousBeautifications]}
+  const next=isAdditivePenCommit
+    ? {...incoming,
+        elements:[...previous.elements,...addedStrokes],
+        beautifications:[...incomingBeautifications,...missingPreviousBeautifications],
+        h:Math.max(previous.h??0,incoming.h??0)}
     : incoming;
   if(next!==incoming)console.info('[Notex OCR] Korunan önceki dönüşümler',{count:missingPreviousBeautifications.length});
   record(page.id,previous);contentRef.current=next;setContent(next);onHistory();
