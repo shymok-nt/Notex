@@ -505,6 +505,18 @@ pub fn run() {
             ]);
     builder
         .setup(|app| {
+            #[cfg(windows)]
+            std::thread::spawn(|| {
+                let lock = OCR_WORKER.get_or_init(|| Mutex::new(None));
+                if let Ok(mut worker) = lock.lock() {
+                    if worker.is_none() {
+                        match start_ocr_worker() {
+                            Ok(ready) => { *worker = Some(ready); log::info!("Notex OCR model preloaded at application startup"); }
+                            Err(error) => log::warn!("Notex OCR preload failed: {error}"),
+                        }
+                    }
+                }
+            });
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
