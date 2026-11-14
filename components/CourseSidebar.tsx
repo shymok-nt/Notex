@@ -19,19 +19,35 @@ export function CourseSidebar({notebooks,onOpenNote,onCreateNote,onDropNote}:{no
  const [error,setError]=useState('');
  const store=useCourseStore.getState;
  const rows=useMemo(()=>{
+  const byCourseDirect=new Map<string,Notebook[]>();
+  const byTopic=new Map<string,Notebook[]>();
+  const unclassified:Notebook[]=[];
+  const knownCourseIds=new Set(courses.map(course=>course.id));
+  for(const notebook of notebooks){
+   if(notebook.courseId===null||!knownCourseIds.has(notebook.courseId)){unclassified.push(notebook);continue}
+   if(notebook.topicId!==null){
+    const items=byTopic.get(notebook.topicId)??[];
+    items.push(notebook);byTopic.set(notebook.topicId,items);
+   }else{
+    const items=byCourseDirect.get(notebook.courseId)??[];
+    items.push(notebook);byCourseDirect.set(notebook.courseId,items);
+   }
+  }
+  const topicsByCourse=new Map<string,typeof topics>();
+  for(const topic of topics){const items=topicsByCourse.get(topic.courseId)??[];items.push(topic);topicsByCourse.set(topic.courseId,items)}
   const result:Row[]=[{key:'all',kind:'all',id:'all',courseId:null,topicId:null,name:'Tüm notlar',level:0}];
   result.push({key:'unclassified',kind:'unclassified',id:'unclassified',courseId:'unclassified',topicId:null,name:'Sınıflandırılmamış',level:0,expandable:true,expanded:expandedIds.includes('unclassified')});
-  if(expandedIds.includes('unclassified'))for(const n of notebooks.filter(n=>n.courseId===null))
+  if(expandedIds.includes('unclassified'))for(const n of unclassified)
    result.push({key:'note-'+n.id,kind:'note',id:n.id,courseId:null,topicId:null,name:n.title,level:1});
   for(const c of courses){
    const expanded=expandedIds.includes('course-'+c.id);
    result.push({key:'course-'+c.id,kind:'course',id:c.id,courseId:c.id,topicId:null,name:c.name,color:c.color,icon:c.icon,level:0,expandable:true,expanded});
    if(!expanded)continue;
-   for(const n of notebooks.filter(n=>n.courseId===c.id&&n.topicId===null))result.push({key:'note-'+n.id,kind:'note',id:n.id,courseId:c.id,topicId:null,name:n.title,level:1});
-   for(const t of topics.filter(t=>t.courseId===c.id)){
+   for(const n of byCourseDirect.get(c.id)??[])result.push({key:'note-'+n.id,kind:'note',id:n.id,courseId:c.id,topicId:null,name:n.title,level:1});
+   for(const t of topicsByCourse.get(c.id)??[]){
     const isExpanded=expandedIds.includes('topic-'+t.id);
     result.push({key:'topic-'+t.id,kind:'topic',id:t.id,courseId:c.id,topicId:t.id,name:t.name,level:1,expandable:true,expanded:isExpanded});
-    if(isExpanded)for(const n of notebooks.filter(n=>n.topicId===t.id))result.push({key:'note-'+n.id,kind:'note',id:n.id,courseId:c.id,topicId:t.id,name:n.title,level:2});
+    if(isExpanded)for(const n of byTopic.get(t.id)??[])result.push({key:'note-'+n.id,kind:'note',id:n.id,courseId:c.id,topicId:t.id,name:n.title,level:2});
    }
   }
   return result;
