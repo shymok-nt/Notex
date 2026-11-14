@@ -15,7 +15,7 @@ function preloadOCR(){
   );
 }
 type OcrLine={text:string;score:number|null;box:number[]|null};
-type OcrResult={ok:boolean;lines:OcrLine[];inferenceMs?:number;model?:string;fallbackReason?:string|null};
+type OcrResult={ok:boolean;lines:OcrLine[];inferenceMs?:number;model?:string;fallbackReason?:string|null;recognitionPass?:'original'|'enhanced'};
 
 type Rasterized={pngBase64:string;left:number;top:number;scale:number;width:number;height:number};
 function rasterize(strokes:StrokeElement[]):Rasterized|null {
@@ -139,7 +139,7 @@ export function useAutoHandwritingOCR(
           console.groupCollapsed('[Notex OCR diagnostic] paddle / '+ids.length+' strokes');
           console.info('Input PNG (open in browser):','data:image/png;base64,'+raster.pngBase64);
           console.info('Raster',{width:raster.width,height:raster.height,scale:raster.scale});
-          console.info('Raw recognition',{model:response.model,lines:response.lines,inferenceMs:response.inferenceMs,fallbackReason:response.fallbackReason});
+          console.info('Raw recognition',{model:response.model,lines:response.lines,inferenceMs:response.inferenceMs,fallbackReason:response.fallbackReason,recognitionPass:response.recognitionPass});
           console.groupEnd();
         }
         if(!alive.current||pageRef.current!==pageId)return;
