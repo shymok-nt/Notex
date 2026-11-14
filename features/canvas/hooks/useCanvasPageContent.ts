@@ -4,18 +4,8 @@ import {parseContent,serializeContent} from '@/features/canvas/engine/content';
 import {flushPageSave,getPageSaveStatus,subscribePageSave} from '@/features/canvas/store/pagePersistence';
 import {record,undo,redo,historyState} from '@/features/canvas/store/history';
 import type {Element,PageContent,PageImage} from '@/features/canvas/types';
+import {reconcileById} from '@/features/canvas/engine/reconcilePageEdit';
 
-function reconcileById<T extends {id:string}>(base:T[],incoming:T[],latest:T[]):T[]{
- const original=new Map(base.map(item=>[item.id,item]));
- const changed=new Map(incoming.filter(item=>original.has(item.id)&&JSON.stringify(original.get(item.id))!==JSON.stringify(item)).map(item=>[item.id,item]));
- const kept=new Set(incoming.map(item=>item.id));
- const updated=latest.filter(item=>!original.has(item.id)||kept.has(item.id)).map(item=>changed.get(item.id)??item);
- const ids=new Set(updated.map(item=>item.id));
- for(const item of incoming){
-  if(!original.has(item.id)&&!ids.has(item.id)){updated.push(item);ids.add(item.id)}
- }
- return updated;
-}
 /** One store owns every page; the canvas has no independent note array. */
 export function useCanvasPageContent(pageId:string,fallbackContent:string,onHistory:()=>void){
  const serialized=usePageStore(s=>s.pages.find(page=>page.id===pageId)?.content??fallbackContent);
