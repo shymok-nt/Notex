@@ -17,7 +17,6 @@ import {CanvasToolbar} from './CanvasToolbar';
 import {CanvasPageStrip} from './CanvasPageStrip';
 import {parseContent} from '@/features/canvas/engine/content';
 import {useAutosave} from '@/features/canvas/hooks/useAutosave';
-import {useAutoHandwritingOCR} from '@/features/canvas/hooks/useAutoHandwritingOCR';
 import {visibleSaveStatus} from '@/features/canvas/engine/autosavePolicy';
 import {record,undo,redo,historyState} from '@/features/canvas/store/history';
 import type {PageContent,PageImage,ShapeMode} from '@/features/canvas/types';
@@ -235,7 +234,6 @@ export default function NoteCanvasScreen(){
      {selectionActionButton('Kopyala',Copy,()=>action('copy'))}
      {selectionActionButton('Çoğalt',Plus,()=>action('duplicate'))}
      {selectionActionButton('Sil',Trash2,()=>action('delete'),'danger')}
-     {selectionActionButton('Görünüm',Eye,()=>action('toggleBeautify'))}
      {selectionActionButton('Kaldır',X,()=>action('clear'))}
     </>}
     {inkClipboardAvailable&&selectionActionButton('Yapıştır',Move,()=>action('paste'),'accent')}
