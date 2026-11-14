@@ -33,7 +33,7 @@ export async function createBackup(progress:Progress){
  const settings=await db.getAllAsync<Setting>('SELECT * FROM settings');
  const courses=await db.getAllAsync<BackupCourse>('SELECT * FROM courses ORDER BY sort_order');
  const topics=await db.getAllAsync<BackupTopic>('SELECT * FROM topics ORDER BY course_id,sort_order');
- const pdfSearchIndex=await db.getAllAsync<BackupPdfIndex>('SELECT * FROM pdf_search_index');
+ const pdfSearchIndex=await db.getAllAsync<BackupPdfIndex>('SELECT i.* FROM pdf_search_index i JOIN pages p ON p.id=i.page_id JOIN notebooks n ON n.id=p.notebook_id WHERE n.deleted_at IS NULL');
  const zip=new JSZip();const filePaths=new Set<string>();
  const transformed:BackupData={folders,notebooks:notebooks.map(n=>({...n})),pages:pages.map(p=>({...p})),settings,courses,topics,pdfSearchIndex};
  for(const n of transformed.notebooks)if(n.cover_image_path){if(!safePath(n.cover_image_path))throw new Error('Geçersiz kapak yolu');filePaths.add(n.cover_image_path)}
