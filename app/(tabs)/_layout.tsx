@@ -1,13 +1,15 @@
 import { Tabs } from 'expo-router';
-import { BookOpen, Home, Search } from 'lucide-react-native';
+import { BookOpen, Home, Search, Layers3 } from 'lucide-react-native';
 import { Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme/ThemeProvider';
 import { fonts } from '@/theme/fonts';
+import {useSettingsStore} from '@/store/settingsStore';
 
 export default function TabLayout() {
   const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const cardsEnabled=useSettingsStore(s=>s.cardsEnabled);
   return <Tabs screenOptions={{
     headerShown: false,
     tabBarActiveTintColor: scheme === 'light' ? '#2F4BFF' : colors.accent,
@@ -20,6 +22,7 @@ export default function TabLayout() {
     <Tabs.Screen name="index" options={{ title: 'Ana sayfa', tabBarIcon: ({ color }) => <Home size={21} color={color}/> }}/>
     <Tabs.Screen name="notebooks" options={{ title: 'Defterler', tabBarIcon: ({ color }) => <BookOpen size={21} color={color}/> }}/>
     <Tabs.Screen name="search" options={{ title: 'Ara', tabBarIcon: ({ color }) => <Search size={21} color={color}/> }}/>
+    <Tabs.Screen name="cards" options={{ title: 'Kartlar', href:cardsEnabled?undefined:null, tabBarIcon: ({ color }) => <Layers3 size={21} color={color}/> }}/>
     <Tabs.Screen name="folders" options={{ href: null }}/>
     <Tabs.Screen name="favorites" options={{ href: null }}/>
   </Tabs>;

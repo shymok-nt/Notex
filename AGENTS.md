@@ -105,3 +105,9 @@ Test **çalıştırılmadıysa** çalıştırılmış gibi raporlama. GitHub Act
 7. Kullanıcının açıkça istediği GitHub iş akışı kapsamında commit/PR/merge yap; aksi halde izinsiz kalıcı değişiklik yapma.
 
 **Öncelik:** Çalışan veri kaydı ve kullanıcı notlarının bütünlüğü > yeni özellik veya küçük performans kazanımı.
+
+## Kartlar özelliği
+
+- Kartlar ayarlardan açılan, defter ve sayfa kayıt akışından bağımsız bir bölümdür. Kalıcı verisi SQLite `card_decks`, `cards`, `card_reviews` tablolarındadır; ikinci bir not deposu değildir.
+- Kaynak defter silinince kart korunur ve `source_note_id` boşaltılır. Kart cevabı ve tekrar kaydı tek transaction içinde yazılır.
+- `.notex` yedek biçimi 2, kartları ve çalışma geçmişini kapsar; biçim 1 yedekleri de açılmalıdır. Yeni migrasyon eklerken sürümü artır ve mevcut tabloları koru.

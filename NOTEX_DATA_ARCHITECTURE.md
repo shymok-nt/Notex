@@ -1,5 +1,9 @@
 # Notex — Veri Mimarisi, Çizim ve Kalıcı Kayıt Rehberi
 
+## Kartlar eklentisi (15 Kasım 2026)
+
+İsteğe bağlı **Kartlar** sekmesi `settings.cardsEnabled` açıkken görünür. Deste, kart ve çalışma geçmişi ayrı SQLite tablolarında (`card_decks`, `cards`, `card_reviews`) saklanır; `db/migrations.ts` sürüm 3 bunları mevcut not şemasına ekler. Kartın `source_note_id` alanı kaynak defter kimliğidir; kaynak defter silinirse SQLite tetikleyicisi yalnızca bu bağlantıyı `NULL` yapar. Kart cevapları `cardRepository.rate` içinde tekrar parametreleri ve çalışma geçmişiyle aynı transaction içinde kalıcılaşır. Yerel takvim günü ve günlük yeni kart sınırı `features/cards/scheduler.ts` tarafından hesaplanır. `.notex` yedek biçimi 2 desteleri, kartları, tekrar kayıtlarını ve kart ayarlarını içerir; eski biçim 1 yedekleri kart listesi boş kabul edilerek okunur. Kart arayüzü `app/(tabs)/cards.tsx`, çalışma ekranı `app/cards-study.tsx`, nottan kart oluşturma eylemi `NoteCanvasScreen.tsx` içindedir. Doğrulama: `node --test features/cards/__tests__/cards.test.mjs`.
+
 > **Durum:** 14 Kasım 2026 · **Dayanak:** `main` dalındaki çalışan tek-SQLite kayıt sistemi (PR #12, merge `241a820`) ve bu belgenin yazıldığı tarihteki kaynak dosyalar.
 >
 > **Saha doğrulaması:** Kullanıcı, Windows/Tauri uygulamasında önceki kaybolan/silindikten sonra geri gelen not sorununun düzeldiğini bildirdi. Bu, bütün platformlarda ve tüm uç durumlarda garanti anlamına gelmez.
