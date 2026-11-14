@@ -11,6 +11,39 @@ import sys
 from pathlib import Path
 
 
+# Optional TrOCR experiment: lazy-load only when explicitly selected.
+_TROCR = None
+_TROCR_MODEL = "microsoft/trocr-small-handwritten"
+
+
+def recognize_trocr(data: bytes) -> dict:
+    """Recognize a single handwriting line; retain PaddleOCR as the default."""
+    global _TROCR
+    import io
+    import time
+    from PIL import Image
+    started = time.perf_counter()
+    if _TROCR is None:
+        import torch
+        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+        processor = TrOCRProcessor.from_pretrained(_TROCR_MODEL)
+        model = VisionEncoderDecoderModel.from_pretrained(_TROCR_MODEL)
+        model.eval()
+        _TROCR = (processor, model, torch)
+    processor, model, torch = _TROCR
+    image = Image.open(io.BytesIO(data)).convert("RGB")
+    with torch.inference_mode():
+        pixels = processor(images=image, return_tensors="pt").pixel_values
+        tokens = model.generate(pixels, max_new_tokens=64, num_beams=1)
+    text = processor.batch_decode(tokens, skip_special_tokens=True)[0].strip()
+    return {
+        "ok": True,
+        "lines": [{"text": text, "score": 1.0, "box": [0, 0, image.width, image.height]}] if text else [],
+        "inferenceMs": round((time.perf_counter() - started) * 1000),
+        "model": _TROCR_MODEL,
+        "fallbackReason": None,
+    }
+
 
 def serve() -> int:
     """Keep PaddleOCR models loaded and accept newline-delimited base64 PNG requests."""
@@ -55,6 +88,15 @@ def serve() -> int:
             data = base64.b64decode(request["pngBase64"], validate=True)
             if len(data) > 6_000_000 or not data.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10])):
                 raise ValueError("Invalid PNG")
+            if request.get("engine") == "trocr":
+                try:
+                    result = recognize_trocr(data)
+                except Exception as trocr_error:
+                    # No silent model switch: return a diagnostic to the UI,
+                    # which may explicitly retry with the existing Paddle engine.
+                    result = {"ok": False, "error": "TrOCR: " + str(trocr_error)}
+                print(json.dumps(result, ensure_ascii=False), flush=True)
+                continue
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 tmp.write(data)
                 name = tmp.name
