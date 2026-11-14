@@ -1,4 +1,6 @@
 import { Stack } from 'expo-router';
+import { Platform } from 'react-native';
+import { notexWindowIconSvg } from '@/components/notexWindowIconSvg';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useEffect,useState } from 'react';
 import { ActivityIndicator,Pressable,Text,View,useColorScheme } from 'react-native';
@@ -11,7 +13,14 @@ import { ThemeProvider,useTheme } from '@/theme/ThemeProvider';
 import { useSettingsStore } from '@/store/settingsStore';
 import { DeleteUndoSnackbar } from '@/components/DeleteUndoSnackbar';
 import {CanvasFontProvider} from '@/features/canvas/components/CanvasFontProvider';
-export default function RootLayout(){const deviceScheme=useColorScheme();const [interLoaded,interError]=useInterFonts({Inter_400Regular,Inter_500Medium,Inter_600SemiBold});const [spaceLoaded,spaceError]=useSpaceFonts({SpaceGrotesk_500Medium,SpaceGrotesk_700Bold});const hydrate=useNotebookStore(s=>s.hydrate);const hydrateSettings=useSettingsStore(s=>s.hydrate);const theme=useSettingsStore(s=>s.theme);const [status,setStatus]=useState<'loading'|'ready'|'error'>('loading');applyColors(theme==='system'?(deviceScheme==='dark'?'dark':'light'):theme);const [errorMessage,setErrorMessage]=useState('');const retry=()=>{
+export default function RootLayout(){
+ useEffect(()=>{
+  if(Platform.OS!=='web'||typeof document==='undefined')return;
+  let icon=document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if(!icon){icon=document.createElement('link');icon.rel='icon';document.head.appendChild(icon)}
+  icon.type='image/svg+xml';icon.href=`data:image/svg+xml,${encodeURIComponent(notexWindowIconSvg)}`;
+ },[]);
+ const deviceScheme=useColorScheme();const [interLoaded,interError]=useInterFonts({Inter_400Regular,Inter_500Medium,Inter_600SemiBold});const [spaceLoaded,spaceError]=useSpaceFonts({SpaceGrotesk_500Medium,SpaceGrotesk_700Bold});const hydrate=useNotebookStore(s=>s.hydrate);const hydrateSettings=useSettingsStore(s=>s.hydrate);const theme=useSettingsStore(s=>s.theme);const [status,setStatus]=useState<'loading'|'ready'|'error'>('loading');applyColors(theme==='system'?(deviceScheme==='dark'?'dark':'light'):theme);const [errorMessage,setErrorMessage]=useState('');const retry=()=>{
  setStatus('loading');setErrorMessage('');
  let timeout:ReturnType<typeof setTimeout>|undefined;
  const loading=Promise.all([hydrate(),hydrateSettings()]);
