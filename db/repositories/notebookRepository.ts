@@ -167,9 +167,14 @@ export const notebookRepository={
   const newPath=original.cover_image_path?await copyCoverFile(resolveCoverUri(original.cover_image_path)!):null;
   try{
    await withSafeTransaction(db,async tx=>{
-    await tx.runAsync(`INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,newId,original.title+' kopyası',original.folder_id,original.cover_type,original.cover_color,newPath,original.cover_preset_id,original.show_title_on_cover,original.template,original.paper_color,original.favorite,date,date);
-    const pages=await tx.getAllAsync<{position:number;template:string;paper_color:string;content:string;thumbnail_path:string|null}>('SELECT position,template,paper_color,content,thumbnail_path FROM pages WHERE notebook_id=? ORDER BY position',id);
-    for(const page of pages)await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',Crypto.randomUUID(),newId,page.position,page.template,page.paper_color,page.content,null,date,date);
+    await tx.runAsync(`INSERT INTO notebooks(id,title,folder_id,course_id,topic_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,newId,original.title+' kopyası',original.folder_id,original.course_id,original.topic_id,original.cover_type,original.cover_color,newPath,original.cover_preset_id,original.show_title_on_cover,original.template,original.paper_color,original.favorite,date,date);
+    const pages=await tx.getAllAsync<{id:string;position:number;template:string;paper_color:string;content:string;thumbnail_path:string|null}>('SELECT id,position,template,paper_color,content,thumbnail_path FROM pages WHERE notebook_id=? ORDER BY position',id);
+    for(const page of pages){
+     const pageId=Crypto.randomUUID();
+     await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',pageId,newId,page.position,page.template,page.paper_color,page.content,null,date,date);
+     const indexed=await tx.getFirstAsync<{search_text:string;extractable:number}>('SELECT search_text,extractable FROM pdf_search_index WHERE page_id=?',page.id);
+     if(indexed)await tx.runAsync('INSERT INTO pdf_search_index(page_id,search_text,extractable) VALUES(?,?,?)',pageId,indexed.search_text,indexed.extractable);
+    }
    });return newId;
   }catch(e){deleteCoverFile(newPath);throw e}
  },
