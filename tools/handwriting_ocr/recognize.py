@@ -32,6 +32,7 @@ def serve() -> int:
             cpu_threads=4,
         )
         model_name = "PP-OCRv6_mobile"
+        fallback_reason = None
         try:
             engine = PaddleOCR(
                 **common,
@@ -43,6 +44,7 @@ def serve() -> int:
             print("Mobile OCR models unavailable, using default: " + str(exc), file=sys.stderr, flush=True)
             engine = PaddleOCR(**common)
             model_name = "default"
+            fallback_reason = str(exc)
         print(json.dumps({"ready": True, "model": model_name}), flush=True)
     except Exception as exc:
         print(json.dumps({"ready": False, "error": str(exc)}, ensure_ascii=False), flush=True)
@@ -77,7 +79,7 @@ def serve() -> int:
                     lines.append({"text": str(value),
                                   "score": float(scores[index]) if index < len(scores) else None,
                                   "box": box.tolist() if hasattr(box, "tolist") else box})
-            print(json.dumps({"ok": True, "lines": lines, "inferenceMs": inference_ms, "model": model_name}, ensure_ascii=False), flush=True)
+            print(json.dumps({"ok": True, "lines": lines, "inferenceMs": inference_ms, "model": model_name, "fallbackReason": fallback_reason}, ensure_ascii=False), flush=True)
         except Exception as exc:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), flush=True)
     return 0
