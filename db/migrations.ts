@@ -40,7 +40,7 @@ export const migrations:Migration[]=[{
   }
  }
 }];
-export const latestMigrationVersion=2;
+export const latestMigrationVersion=4;
 migrations.push({
  version:2,
  run:async db=>{
@@ -48,6 +48,31 @@ migrations.push({
    ALTER TABLE notebooks ADD COLUMN auto_convert_enabled INTEGER NOT NULL DEFAULT 1;
    ALTER TABLE notebooks ADD COLUMN conversion_font TEXT NOT NULL DEFAULT 'Inter';
    ALTER TABLE notebooks ADD COLUMN conversion_delay_ms INTEGER NOT NULL DEFAULT 1000;
+  `);
+ }
+});
+
+// v3 was a short-lived courses/topics/search feature, now removed from the app.
+// v4 cleans only its schema. Existing notebook/page data and the v2 schema survive.
+// Older installations (v0-v2) do not have these objects: this migration is a no-op.
+migrations.push({
+ version:4,
+ run:async db=>{
+  const columns=await db.getAllAsync<{name:string}>('PRAGMA table_info(notebooks)');
+  const names=new Set(columns.map(column=>column.name));
+  await db.execAsync('DROP INDEX IF EXISTS idx_notebooks_course_topic;');
+  // Drop dependent foreign-key columns before removing their parent tables.
+  if(names.has('topic_id'))await db.execAsync('ALTER TABLE notebooks DROP COLUMN topic_id;');
+  if(names.has('course_id'))await db.execAsync('ALTER TABLE notebooks DROP COLUMN course_id;');
+  await db.execAsync(`
+   DROP TABLE IF EXISTS pdf_search_index;
+   DROP TABLE IF EXISTS topics;
+   DROP TABLE IF EXISTS courses;
+   DROP TABLE IF EXISTS migration_v3_notebooks_backup;
+   DROP TABLE IF EXISTS migration_v3_pages_backup;
+   DROP INDEX IF EXISTS idx_topics_course_order;
+   DROP INDEX IF EXISTS idx_notebooks_course_topic;
+   DELETE FROM settings WHERE key='schemaVersion' AND value='3';
   `);
  }
 });
