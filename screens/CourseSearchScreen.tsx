@@ -35,7 +35,7 @@ export default function CourseSearchScreen(){
   const hits=searchIndexedPages(debounced,metadata,selected);
   const pages:Result[]=hits.map(hit=>{
    const note=notebooks.find(n=>n.id===hit.page.notebookId);
-   return {kind:'page',key:'p-'+hit.page.pageId,hit,title:note?.title??'Not',path:[note?.courseId!==null?byCourse.get(note!.courseId!)?.name:'Sınıflandırılmamış',note?.topicId!==null?byTopic.get(note!.topicId!)?.name:undefined].filter(Boolean).join(' › ')};
+   return {kind:'page',key:'p-'+hit.page.pageId,hit,title:note?.title??'Not',path:[note?.courseId!=null?byCourse.get(note.courseId)?.name:'Sınıflandırılmamış',note?.topicId!=null?byTopic.get(note.topicId)?.name:undefined].filter(Boolean).join(' › ')};
   });
   const needle=normalizeSearch(debounced);
   const matchedCourses:Result[]=courses.filter(c=>normalizeSearch(c.name).includes(needle)&&(!onlyCurrent||selectedCourseId===null||selectedCourseId===c.id)).map(course=>({kind:'course',key:'c-'+course.id,course}));
