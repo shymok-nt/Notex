@@ -11,6 +11,60 @@ import sys
 from pathlib import Path
 
 
+def extract_lines(results):
+    """Normalize PaddleOCR 3.x results without changing text or boxes."""
+    lines = []
+    for result in results:
+        payload = getattr(result, "json", {})
+        if callable(payload):
+            payload = payload()
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if not isinstance(payload, dict):
+            continue
+        payload = payload.get("res", payload)
+        scores = payload.get("rec_scores", [])
+        boxes = payload.get("rec_boxes", [])
+        for index, value in enumerate(payload.get("rec_texts", [])):
+            box = boxes[index] if index < len(boxes) else None
+            lines.append({
+                "text": str(value),
+                "score": float(scores[index]) if index < len(scores) else None,
+                "box": box.tolist() if hasattr(box, "tolist") else box,
+            })
+    return lines
+
+
+def needs_second_pass(lines):
+    """Only retry uncertain recognition; do not add latency to clear results."""
+    return not lines or any(
+        not line["text"].strip()
+        or line["score"] is None
+        or line["score"] < 0.80
+        for line in lines
+    )
+
+
+def quality(lines):
+    """Conservative image-variant ranking, not a calibrated accuracy estimate."""
+    if not lines or any(not line["text"].strip() for line in lines):
+        return -1.0
+    scores = [line["score"] for line in lines]
+    if any(score is None for score in scores):
+        return -1.0
+    return min(scores)
+
+
+def enhance_image(source, target):
+    """Preserve geometry/box coordinates while enhancing faint ink locally."""
+    from PIL import Image, ImageOps, ImageFilter
+    with Image.open(source) as image:
+        gray = ImageOps.grayscale(image)
+        enhanced = ImageOps.autocontrast(gray, cutoff=0.5)
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=1.0, percent=110, threshold=3))
+        enhanced.save(target, format="PNG")
+
+
 def serve() -> int:
     """Keep PaddleOCR models loaded and accept newline-delimited base64 PNG requests."""
     import base64
@@ -58,26 +112,28 @@ def serve() -> int:
                 name = tmp.name
             try:
                 inference_started = time.perf_counter()
-                results = engine.predict(name)
+                lines = extract_lines(engine.predict(name))
+                recognition_pass = "original"
+                # A second local image variant can recover small diacritics
+                # without inventing Turkish spellings. Keep pixel dimensions
+                # identical so existing canvas alignment remains unchanged.
+                if needs_second_pass(lines):
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as alt:
+                        enhanced_name = alt.name
+                    try:
+                        enhance_image(name, enhanced_name)
+                        alternative = extract_lines(engine.predict(enhanced_name))
+                        if quality(alternative) > quality(lines) + 0.04:
+                            lines = alternative
+                            recognition_pass = "enhanced"
+                    except Exception as retry_error:
+                        print("OCR enhancement skipped: " + str(retry_error), file=sys.stderr, flush=True)
+                    finally:
+                        os.unlink(enhanced_name)
                 inference_ms = round((time.perf_counter() - inference_started) * 1000)
             finally:
                 os.unlink(name)
-            lines = []
-            for result in results:
-                payload = getattr(result, "json", {})
-                if callable(payload):
-                    payload = payload()
-                if isinstance(payload, str):
-                    payload = json.loads(payload)
-                payload = payload.get("res", payload)
-                for index, value in enumerate(payload.get("rec_texts", [])):
-                    scores = payload.get("rec_scores", [])
-                    boxes = payload.get("rec_boxes", [])
-                    box = boxes[index] if index < len(boxes) else None
-                    lines.append({"text": str(value),
-                                  "score": float(scores[index]) if index < len(scores) else None,
-                                  "box": box.tolist() if hasattr(box, "tolist") else box})
-            print(json.dumps({"ok": True, "lines": lines, "inferenceMs": inference_ms, "model": model_name, "fallbackReason": fallback_reason}, ensure_ascii=False), flush=True)
+            print(json.dumps({"ok": True, "lines": lines, "inferenceMs": inference_ms, "model": model_name, "fallbackReason": fallback_reason, "recognitionPass": recognition_pass}, ensure_ascii=False), flush=True)
         except Exception as exc:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), flush=True)
     return 0
