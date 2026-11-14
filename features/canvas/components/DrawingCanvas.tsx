@@ -375,31 +375,26 @@ const PageImageLayer=memo(function PageImageLayer({item,onLoadError}:{item:impor
  return renderedImage?<SkiaImage image={renderedImage} x={item.x} y={item.y} width={item.width} height={item.height} fit="contain"/>:null;
 });
 const NaturalWord=memo(function NaturalWord({word,fonts}:{word:import('@/features/canvas/types').BeautifiedWord;fonts:CanvasFontManager|null}){
- const glyphs=useMemo(()=>glyphOffsets(word.text),[word.text]);
- const layouts=useMemo(()=>{
-  if(!fonts)return [];
-  return glyphs.map(g=>{
-   const builder=Skia.ParagraphBuilder.Make({},fonts);
-   builder.pushStyle({fontFamilies:[word.font],fontSize:word.fontSize,color:Skia.Color(word.color)});
-   builder.addText(g.char);builder.pop();
-   const paragraph=builder.build();paragraph.layout(Math.max(48,word.fontSize*3));
-   return {paragraph,width:Math.max(1,paragraph.getLongestLine())};
-  });
- },[fonts,glyphs,word.font,word.fontSize,word.color]);
- if(!layouts.length)return null;
- // Each OCR batch owns its original stroke bounds. Fit the entire rendered
- // word inside those bounds; otherwise later words visually collide with it.
- const naturalWidth=layouts.reduce((sum,layout)=>sum+layout.width,0);
- const availableWidth=Math.max(1,word.bbox[2]-word.bbox[0]);
- const fitX=Math.min(1,availableWidth/Math.max(1,naturalWidth));
- let cursor=word.bbox[0];
- return <Group transform={[{translateX:word.bbox[0]},{scaleX:fitX},{translateX:-word.bbox[0]}]}>{layouts.map((layout,index)=>{
-  const glyph=glyphs[index],x=cursor;
-  cursor+=layout.width;
-  const y=word.baseline-word.fontSize+glyph.dy*0.15;
-  const scale=1+Math.sin((glyph.angle+index)*7)*0.02;
-  return <Group key={index} origin={vec(x+layout.width/2,y+word.fontSize/2)} transform={[{rotate:glyph.angle*0.5},{scale}]}><Paragraph paragraph={layout.paragraph} x={x} y={y} width={Math.max(48,word.fontSize*3)}/></Group>;
- })}</Group>;
+ // One paragraph per OCR result, not one Skia paragraph per character.
+ // The former per-glyph widths could overflow the source bounds and collide
+ // with adjacent recognized words on every subsequent canvas render.
+ const layout=useMemo(()=>{
+  if(!fonts||!word.text)return null;
+  const builder=Skia.ParagraphBuilder.Make({},fonts);
+  builder.pushStyle({fontFamilies:[word.font],fontSize:word.fontSize,color:Skia.Color(word.color)});
+  builder.addText(word.text);builder.pop();
+  const paragraph=builder.build();
+  paragraph.layout(Math.max(1000,word.text.length*word.fontSize*2));
+  return {paragraph,width:Math.max(1,paragraph.getLongestLine())};
+ },[fonts,word.text,word.font,word.fontSize,word.color]);
+ if(!layout)return null;
+ const width=Math.max(1,word.bbox[2]-word.bbox[0]);
+ const height=Math.max(1,word.bbox[3]-word.bbox[1]);
+ const scaleX=Math.min(1,width/layout.width);
+ const scaleY=Math.min(1,height/Math.max(1,layout.paragraph.getHeight()));
+ return <Group transform={[{translateX:word.bbox[0]},{translateY:word.bbox[1]},{scaleX},{scaleY}]}>
+  <Paragraph paragraph={layout.paragraph} x={0} y={0} width={Math.max(1000,word.text.length*word.fontSize*2)}/>
+ </Group>;
 });
 const LegacyBeautificationLayer=memo(function LegacyBeautificationLayer({content,fonts}:{content:PageContent;fonts:CanvasFontManager|null}){
  const handwritingFonts=useHandwritingFontFamilies();
