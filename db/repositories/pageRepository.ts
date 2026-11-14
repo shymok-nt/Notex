@@ -12,6 +12,13 @@ export type RecentPageRecord={page:Page;notebookTitle:string};
 const now=()=>new Date().toISOString();
 export const pageRepository={
  async getByNotebook(notebookId:string){const started=__DEV__?perfNow():0;const db=await getDatabase(),queryStarted=__DEV__?perfNow():0;const rows=await db.getAllAsync<PageRow>('SELECT * FROM pages WHERE notebook_id=? AND EXISTS(SELECT 1 FROM notebooks WHERE id=? AND deleted_at IS NULL) ORDER BY position',notebookId,notebookId);const queryFinished=__DEV__?perfNow():0;const pages=rows.map(convert);if(__DEV__)console.log('[Notex perf] sqlite_pages_read',{duration_ms:Math.round((perfNow()-started)*10)/10,db_ready_ms:Math.round((queryStarted-started)*10)/10,query_ms:Math.round((queryFinished-queryStarted)*10)/10,map_ms:Math.round((perfNow()-queryFinished)*10)/10,page_count:pages.length,content_characters:pages.reduce((total,page)=>total+page.content.length,0)});return pages;},
+ async getByIds(ids:string[]):Promise<Page[]>{
+  if(!ids.length)return [];
+  const db=await getDatabase();
+  const placeholders=ids.map(()=>'?').join(',');
+  const rows=await db.getAllAsync<PageRow>(`SELECT * FROM pages WHERE id IN (${placeholders}) ORDER BY position`,...ids);
+  return rows.map(convert);
+ },
  async getRecentAcrossNotebooks(limit=5):Promise<RecentPageRecord[]>{const started=__DEV__?perfNow():0;const db=await getDatabase();const safeLimit=Math.max(0,Math.floor(Number.isFinite(limit)?limit:5));const rows=await db.getAllAsync<PageRow&{notebook_title:string}>('SELECT p.*,n.title AS notebook_title FROM pages p INNER JOIN notebooks n ON n.id=p.notebook_id WHERE n.deleted_at IS NULL ORDER BY p.updated_at DESC LIMIT ?',safeLimit);const pages=rows.map(({notebook_title,...row})=>({page:convert(row),notebookTitle:notebook_title}));if(__DEV__)console.log('[Notex perf] recent_pages_read',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length,content_characters:pages.reduce((total,item)=>total+item.page.content.length,0)});return pages;},
  async add(notebookId:string,afterPosition?:number){
   const db=await getDatabase(),id=Crypto.randomUUID(),date=now();
