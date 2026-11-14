@@ -156,7 +156,9 @@ export function useAutoHandwritingOCR(
         if(!response.ok)throw new Error('OCR returned an unsuccessful response');
         // Do not silently discard a low-confidence word while hiding ALL
         // source strokes: that permanently loses visible text in the result.
-        // Suggestions are informational until the user can explicitly confirm\n        // them in Phase 5. Never silently alter OCR text or its coordinates.\n        const recognized=response.lines.filter(line=>line.text.trim());
+        // Suggestions are informational until the user explicitly confirms them.
+        // Never silently alter OCR text or its coordinates.
+        const recognized=response.lines.filter(line=>line.text.trim());
         if(!recognized.length||recognized.some(line=>line.score==null||line.score<0.72)){
           console.warn('[Notex OCR] Eksik veya düşük güvenli tanıma; orijinal el yazısı korunuyor',response.lines);
           completed=true;
