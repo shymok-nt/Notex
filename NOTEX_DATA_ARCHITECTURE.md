@@ -443,7 +443,3 @@ PR #12 ile şu eski veya mükerrer kayıt yolu dosyaları kaldırıldı:
 ---
 
 **Belge bakım politikası:** Bu rehber **çalışan kodun güncel mimarisini** belgelemek içindir. Veri yapısı, kaydetme kuyruğu, silgi, sayfa yükleme, SQLite migrasyonları, yedek veya platform davranışı değişirse belge güncellenmelidir. Kod ile rehber çeliştiğinde önce güncel kod doğrulanır, ardından rehber düzeltilir.
-
-## 15. Ders, Konu ve Arama (SQLite v3)
-
-Yeni ders/konu katmanının detayları [COURSES_TOPICS_SEARCH.md](./COURSES_TOPICS_SEARCH.md) belgesindedir. `courses/topics` tabloları ve nullable `notebooks.course_id/topic_id` sütunları, çalışan defter/sayfa modelini bozmadan eklenir. `pdf_search_index` yalnızca aranabilir metni saklayan **türetilmiş indeks**tir; kalıcı not içeriği yine `pages.content` üzerinden kaydedilir. Yeni sürüm `.notex` manifest'ine `schemaVersion:3` ekler, ancak `format:1` uyumunu korur. Tauri v3 geçişinde `notex-before-courses-v3.db` dosya yedeği ve SQLite içi snapshot/transaction koruması vardır. Kurs/konu değişikliklerinde `courseRepository` ve `courseStore` kullanılır. **Eski PDF kaynak metin katmanları arşivlenmediğinden önceki raster PDF'ler geriye dönük indekslenemez.**

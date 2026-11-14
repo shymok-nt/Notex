@@ -29,10 +29,6 @@ async function savePng(bytes:Uint8Array,assetPaths:string[]){
 
 async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,assetPaths:string[]):Promise<ImportedPdfPage>{
  const page=await pdfDocument.getPage(pageNumber);
- // Extract selectable text once during import; scanned pages remain visual only.
- let searchText='';
- try{const layer=await page.getTextContent();searchText=layer.items.map(item=>'str' in item&&typeof item.str==='string'?item.str:'').filter(Boolean).join(' ')}
- catch(error){console.warn('[Notex PDF] Metin katmanı okunamadı',pageNumber,error)}
  const baseViewport=page.getViewport({scale:1});
  const scale=Math.min(1.6,PAGE_RENDER_MAX_EDGE/Math.max(baseViewport.width,baseViewport.height));
  const viewport=page.getViewport({scale});
@@ -59,7 +55,7 @@ async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,asse
  await page.cleanup();
 
  const content={v:2 as const,elements:[],images:[],backgroundImage:{id:Crypto.randomUUID(),uri:backgroundPath,x:layout.x,y:layout.y,width:layout.width,height:layout.height},h:Math.max(PAGE_HEIGHT,layout.pageHeight)};
- return {id:Crypto.randomUUID(),content:JSON.stringify(content),thumbnailPath,searchText};
+ return {id:Crypto.randomUUID(),content:JSON.stringify(content),thumbnailPath};
 }
 
 export async function preparePdfImport(onProgress:PdfImportProgress):Promise<PreparedPdfImport>{
