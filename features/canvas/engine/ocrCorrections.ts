@@ -12,9 +12,10 @@ function read():Memory{
     const parsed:unknown=JSON.parse(localStorage.getItem(KEY)||'{}');
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return {};
     const result:Memory={};
-    for(const [source,values] of Object.entries(parsed)){
+    for(const [source,values] of Object.entries(parsed).slice(-MAX_ENTRIES)){
+      if(!source||source.length>100||source==='__proto__'||source==='constructor'||source==='prototype')continue;
       if(!values||typeof values!=='object'||Array.isArray(values))continue;
-      const candidates=Object.entries(values).filter(([word,count])=>word.length<=100&&typeof count==='number'&&Number.isFinite(count)&&count>0);
+      const candidates=Object.entries(values).filter(([word,count])=>!!word&&word.length<=100&&word!=='__proto__'&&word!=='constructor'&&word!=='prototype'&&typeof count==='number'&&Number.isFinite(count)&&count>0);
       if(candidates.length)result[source]=Object.fromEntries(candidates.slice(0,10));
     }
     return result;
@@ -22,11 +23,11 @@ function read():Memory{
 }
 export function rememberOcrCorrection(source:string,corrected:string){
   const key=normalize(source),value=corrected.trim();
-  if(!key||!value||key.length>100||value.length>100||key===normalize(value))return;
+  if(!key||!value||key.length>100||value.length>100||key===normalize(value)||['__proto__','constructor','prototype'].includes(key)||['__proto__','constructor','prototype'].includes(value))return;
   try{
     if(typeof localStorage==='undefined')return;
     const memory=read();
-    memory[key]??={};
+    if(!Object.prototype.hasOwnProperty.call(memory,key))memory[key]={};
     memory[key][value]=Math.min(1000,(memory[key][value]??0)+1);
     const keys=Object.keys(memory);
     for(const old of keys.slice(0,Math.max(0,keys.length-MAX_ENTRIES)))delete memory[old];
@@ -36,7 +37,8 @@ export function rememberOcrCorrection(source:string,corrected:string){
 export function suggestOcrCorrections(source:string):string[]{
   const key=normalize(source);
   if(!key||key.length>100)return [];
-  const learned=Object.entries(read()[key]??{}).sort((a,b)=>b[1]-a[1]).map(([word])=>word);
+  const memory=read();
+  const learned=Object.entries(Object.prototype.hasOwnProperty.call(memory,key)?memory[key]:{}).sort((a,b)=>b[1]-a[1]).map(([word])=>word);
   // A candidate differs only in diacritics; unknown names remain untouched.
   const possible=/^[a-zçğıöşü]+$/i.test(key)
     ?dictionary.filter(word=>word!==key&&word.length===key.length&&[...word].every((char,i)=>related(key[i],char)))
