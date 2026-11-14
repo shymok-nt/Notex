@@ -5,6 +5,7 @@ import { folderRepository,type Folder } from '@/db/repositories/folderRepository
 import { notebookRepository,type NotebookRow,type NotebookInput } from '@/db/repositories/notebookRepository';
 import { settingsRepository } from '@/db/repositories/settingsRepository';
 import { perfNow } from '@/features/canvas/engine/performance';
+import {clearSearchIndex} from '@/features/search/searchIndex';
 import { coverPathFromUri,resolveCoverUri,coverFileExists } from '@/utils/files';
 import type { FolderFilter,Notebook,NotebookDraft,SortBy,ViewMode,NotebookFolder } from '@/types/notebook';
 const folderIds:Record<NotebookFolder,string>={Ders:'ders',İş:'is',Kişisel:'kisisel'};
@@ -35,7 +36,7 @@ export const useNotebookStore=create<State>((set,get)=>({
  refreshDeleted:async()=>{const rows=await notebookRepository.getDeleted();set({deletedNotebooks:deletedNotebooks(rows,get().folders)})},
  restoreNotebook:async id=>{await notebookRepository.restore(id);const [active,deleted]=await Promise.all([notebookRepository.getAll(),notebookRepository.getDeleted()]);const remaining=get().lastDeletedIds.filter(value=>value!==id);set({notebooks:activeNotebooks(active,get().folders),deletedNotebooks:deletedNotebooks(deleted,get().folders),lastDeletedIds:remaining,lastDeletedId:remaining.length===1?remaining[0]:null})},
  restoreNotebooks:async ids=>{try{const restored=await notebookRepository.restoreMany(ids);const remaining=get().lastDeletedIds.filter(id=>!ids.includes(id));if(!restored.length){set({lastDeletedIds:remaining,lastDeletedId:remaining.length===1?remaining[0]:null});return true}const [active,deleted]=await Promise.all([notebookRepository.getAll(),notebookRepository.getDeleted()]);set({notebooks:activeNotebooks(active,get().folders),deletedNotebooks:deletedNotebooks(deleted,get().folders),lastDeletedIds:remaining,lastDeletedId:remaining.length===1?remaining[0]:null});return true}catch(e){alert(e);return false}},
- permanentlyDeleteNotebook:async id=>{await notebookRepository.permanentlyRemove(id);await get().refreshDeleted()},
+ permanentlyDeleteNotebook:async id=>{await notebookRepository.permanentlyRemove(id);clearSearchIndex();await get().refreshDeleted()},
  emptyTrash:async()=>{const rows=await notebookRepository.getDeleted();for(const row of rows)await notebookRepository.permanentlyRemove(row.id);await get().refreshDeleted()},
  refreshFolders:async()=>{const folders=await folderRepository.getAll();set({folders});await get().refresh();if(get().selectedFolder!=='Tümü'&&!folders.some(f=>f.name===get().selectedFolder)){set({selectedFolder:'Tümü'});await settingsRepository.set('selectedFolderId','')}},
  moveNotebook:async(id,folderId)=>{try{await notebookRepository.moveToFolder(id,folderId);await get().refresh()}catch(e){alert(e)}},
@@ -72,7 +73,7 @@ export const useNotebookStore=create<State>((set,get)=>({
    alert(e);return null;
   }
  },
- duplicateNotebook:async id=>{try{const key=await notebookRepository.duplicate(id);await get().refresh();return key}catch(e){alert(e);return null}},
+ duplicateNotebook:async id=>{try{const key=await notebookRepository.duplicate(id);clearSearchIndex();await get().refresh();return key}catch(e){alert(e);return null}},
  toggleFavorite:async id=>{try{await notebookRepository.toggleFavorite(id);await get().refresh();return true}catch(e){alert(e);return false}}
 }));
 export const defaultNotebookDraft:NotebookDraft={title:'Yeni defter',folder:'Kişisel',coverType:'color',coverColor:defaultCoverColor,coverImageUri:null,coverPresetId:null,showTitleOnCover:true,template:'çizgili',paperColor:'beyaz'};
