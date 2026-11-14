@@ -62,55 +62,33 @@ export function useAutoHandwritingOCR(
   const drawing=useRef(false);
   const failures=useRef<Map<string,number>>(new Map());
   const busy=useRef(false);
-  const pendingSince=useRef<number|null>(null);
-  const latestStrokeAt=useRef(0);
+  const queued=useRef<StrokeElement[][]>([]);
+  const reserved=useRef<Set<string>>(new Set());
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const alive=useRef(true);
   const applyRef=useRef(apply);applyRef.current=apply;
   const pageRef=useRef(pageId);
   const startedAt=useRef(0);
   useEffect(()=>()=>{alive.current=false;if(timer.current)clearTimeout(timer.current)},[]);
+  const processRef=useRef<()=>void>(()=>{});
   const scheduleRef=useRef<()=>void>(()=>{});
-  scheduleRef.current=()=>{
-    if(timer.current)clearTimeout(timer.current);
-    if(!isTauri()){console.warn('[Notex OCR] Tauri ortamı algılanmadı');return;}
-    if(drawing.current||busy.current)return;
-    const pending=contentRef.current.elements.filter(
-      (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)
-    );
-    if(!pending.length){pendingSince.current=null;return;}
-    if(pendingSince.current===null)pendingSince.current=Date.now();
-    // Debounce short pen pauses, but cap the wait so a long sentence
-    // cannot postpone OCR indefinitely.
-    const wait=Math.max(0,Math.min(380-(Date.now()-latestStrokeAt.current),1100-(Date.now()-pendingSince.current)));
-    timer.current=setTimeout(async()=>{
-      if(drawing.current||busy.current||!alive.current)return;
-      const pendingStrokes=contentRef.current.elements.filter(
-        (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)
-      );
-      // Process the oldest unrecognized line first. A capped tail of 40
-      // strokes used to strand earlier handwriting during continuous writing.
-      const first=pendingStrokes[0];
-      if(!first)return;
-      const centerY=(first.bbox[1]+first.bbox[3])/2;
-      const lineHeight=Math.max(16,first.bbox[3]-first.bbox[1]);
-      const strokes:StrokeElement[]=[];
-      for(const stroke of pendingStrokes){
-        const y=(stroke.bbox[1]+stroke.bbox[3])/2;
-        if(strokes.length>=48)break;
-        // A line may contain tall capitals, dots and descenders. Keep nearby
-        // strokes but do not let a distant row block the remaining queue.
-        if(Math.abs(y-centerY)>Math.max(46,lineHeight*1.6))continue;
-        strokes.push(stroke);
-      }
-      if(!strokes.length)return;
+  processRef.current=()=>{
+    if(busy.current||!alive.current)return;
+    const strokes=queued.current.shift();
+    if(!strokes)return;
+    busy.current=true;
+    void (async()=>{
       console.info('[Notex OCR] Tanıma başlıyor',{pageId,strokeCount:strokes.length});
-      const raster=rasterize(strokes);
-      if(!raster){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));scheduleRef.current();return;}
-      busy.current=true;
-      pendingSince.current=null;
-      startedAt.current=Date.now();
       const ids=strokes.map(s=>s.id);
+      const raster=rasterize(strokes);
+      if(!raster){
+        console.warn('[Notex OCR] Görsel oluşturulamadı');
+        ids.forEach(id=>{reserved.current.delete(id);known.current.add(id)});
+        busy.current=false;
+        processRef.current();
+        return;
+      }
+      startedAt.current=Date.now();
       let completed=false;
       try{
         const response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64});
@@ -176,15 +154,42 @@ export function useAutoHandwritingOCR(
         }else{
           failures.current.set(batchKey,tries);
         }
+        ids.forEach(id=>reserved.current.delete(id));
         busy.current=false;
-        if(alive.current)scheduleRef.current();
+        if(alive.current){
+          processRef.current();
+          scheduleRef.current();
+        }
       }
-    },wait);
+    })();
+  };
+  scheduleRef.current=()=>{
+    if(timer.current)clearTimeout(timer.current);
+    if(!isTauri()||drawing.current||!alive.current)return;
+    const pending=contentRef.current.elements.filter(
+      (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!reserved.current.has(e.id)
+    );
+    if(!pending.length)return;
+    timer.current=setTimeout(()=>{
+      if(drawing.current||!alive.current)return;
+      const latest=contentRef.current.elements.filter(
+        (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!reserved.current.has(e.id)
+      );
+      if(!latest.length)return;
+      // Freeze the writing session before invoking OCR. New strokes belong
+      // to the next session and never modify an in-flight batch.
+      for(let i=0;i<latest.length;i+=48){
+        const batch=latest.slice(i,i+48);
+        batch.forEach(stroke=>reserved.current.add(stroke.id));
+        queued.current.push(batch);
+      }
+      processRef.current();
+    },1000);
   };
   useEffect(()=>{scheduleRef.current()},[content.elements]);
   return (active:boolean)=>{
     drawing.current=active;
-    if(active){if(timer.current)clearTimeout(timer.current);}
-    else {latestStrokeAt.current=Date.now();scheduleRef.current();}
+    if(active&&timer.current)clearTimeout(timer.current);
+    if(!active)scheduleRef.current();
   };
 }
