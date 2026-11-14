@@ -19,7 +19,7 @@ const convert=(r:NotebookRow):Notebook=>({
 });
 const activeNotebooks=(rows:NotebookRow[],folders:Folder[]):Notebook[]=>rows.map(convert).map(n=>({...n,folder:(folders.find(f=>f.id===n.folderId)?.name??'Klasörsüz') as NotebookFolder}));
 const deletedNotebooks=(rows:NotebookRow[],folders:Folder[])=>rows.filter(r=>!!r.deleted_at).map(r=>({...convert(r),folder:(folders.find(f=>f.id===r.folder_id)?.name??'Klasörsüz') as NotebookFolder,deletedAt:r.deleted_at!}));
-const toInput=(draft:NotebookDraft):NotebookInput=>({...draft,folderId:draft.folder==='Klasörsüz'?null:(useNotebookStore.getState().folders.find(f=>f.name===draft.folder)?.id??folderIds[draft.folder as NotebookFolder]??null),coverImagePath:coverPathFromUri(draft.coverImageUri)});
+const toInput=(draft:NotebookDraft):NotebookInput=>({...draft,folderId:draft.folder==='Klasörsüz'?null:(useNotebookStore.getState().folders.find(f=>f.name===draft.folder)?.id??folderIds[draft.folder as NotebookFolder]??null),coverImagePath:coverPathFromUri(draft.coverImageUri),courseId:draft.courseId??null,topicId:draft.topicId??null});
 type State={
  lastDeletedId:string|null;lastDeletedIds:string[];clearUndo:()=>void;notebooks:Notebook[];deletedNotebooks:(Notebook & {deletedAt:string})[];folders:Folder[];selectedFolder:FolderFilter;sortBy:SortBy;viewMode:ViewMode;hydrated:boolean;
  hydrate:()=>Promise<void>;refresh:()=>Promise<void>;refreshDeleted:()=>Promise<void>;restoreNotebook:(id:string)=>Promise<void>;restoreNotebooks:(ids:string[])=>Promise<boolean>;permanentlyDeleteNotebook:(id:string)=>Promise<void>;emptyTrash:()=>Promise<void>;refreshFolders:()=>Promise<void>;moveNotebook:(id:string,folderId:string|null)=>Promise<void>;
