@@ -34,7 +34,7 @@ def serve() -> int:
         try:
             request = json.loads(raw)
             data = base64.b64decode(request["pngBase64"], validate=True)
-            if len(data) > 6_000_000 or not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            if len(data) > 6_000_000 or not data.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10])):
                 raise ValueError("Invalid PNG")
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 tmp.write(data)
