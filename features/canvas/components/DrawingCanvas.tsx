@@ -977,6 +977,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  };
  const notify=(active:boolean)=>onDrawingActive?.(active);
  const complete=(buffer:SampleBuffer,commitGeneration:number)=>{endStroke(flattenSamples(buffer),commitGeneration);};
+ // Release autosave's drawing barrier only after the JS-side edit is committed.
+ const completeAndNotify=(buffer:SampleBuffer,commitGeneration:number)=>{
+  try{complete(buffer,commitGeneration)}finally{notify(false)}
+ };
  const transferActivePathToHandoff=()=>{'worklet';
   handoffGeneration.value+=1;
   handoffDraft.value=draft.value;handoffColor.value=brush.color;handoffOpacity.value=brush.opacity;handoffWidth.value=brush.width;
@@ -995,8 +999,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    awaitingCommit.value=true;
     const commitGeneration=tool==='eraser'?transferEraserPathToHandoff():transferActivePathToHandoff();
    drawing.value=false;
-   runOnJS(complete)(samples.value,commitGeneration);
-   runOnJS(notify)(false);
+   runOnJS(completeAndNotify)(samples.value,commitGeneration);
   }
   return action;
  };
@@ -1290,8 +1293,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    samples.value=emptySampleBuffer();draft.value='';drawing.value=false;
    return;
   }
-   if(!imageBounds.value&&!blocked.value&&tool!=='hand'&&tool!=='text'&&drawing.value&&samples.value.length){awaitingCommit.value=true;const commitGeneration=tool==='pen'||tool==='highlighter'||tool==='shape'?transferActivePathToHandoff():tool==='eraser'?transferEraserPathToHandoff():handoffGeneration.value;runOnJS(complete)(samples.value,commitGeneration)}
-  samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;cursorOn.value=false;runOnJS(notify)(false);
+   const hasCommit=!imageBounds.value&&!blocked.value&&tool!=='hand'&&tool!=='text'&&drawing.value&&samples.value.length>0;
+  if(hasCommit){awaitingCommit.value=true;const commitGeneration=tool==='pen'||tool==='highlighter'||tool==='shape'?transferActivePathToHandoff():tool==='eraser'?transferEraserPathToHandoff():handoffGeneration.value;runOnJS(completeAndNotify)(samples.value,commitGeneration)}
+  samples.value=emptySampleBuffer();if(!awaitingCommit.value)draft.value='';drawing.value=false;cursorOn.value=false;if(!hasCommit)runOnJS(notify)(false);
  }).onFinalize(()=>{
   // Android can cancel a stylus gesture when its input device is unplugged.
   // Preserve the points collected so far through the ordinary JS commit path.
