@@ -27,13 +27,6 @@ const recoverPages=async(pages:Page[]):Promise<Page[]>=>{
  }
  return result;
 };
-const retainUnsaved=(incoming:Page[],current:Page[]):Page[]=>{
- const currentById=new Map(current.map(page=>[page.id,page]));
- return incoming.map(page=>{
-  const cached=currentById.get(page.id);
-  return cached&&pendingPageContent(page.id,page.content)===cached.content?{...page,content:cached.content}:page;
- });
-};
 export const usePageStore=create<State>((set,get)=>({
  pages:[],notebookId:null,loading:false,
  load:async id=>{const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await recoverPages(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
