@@ -60,8 +60,7 @@ export const usePageStore=create<State>((set,get)=>({
  },
  remove:async pageId=>{
   const id=get().notebookId;if(!id)return;
-  const removed=get().pages.find(page=>page.id===pageId);
-  if(!removed)return;
+  if(!get().pages.some(page=>page.id===pageId))return;
   try{
    await timed('remove_write',()=>pageRepository.remove(pageId));
    discardPageContent(pageId);
@@ -71,10 +70,8 @@ export const usePageStore=create<State>((set,get)=>({
  },
  move:async(pageId,position)=>{
   const id=get().notebookId;if(!id)return;
-  const previous=get().pages;
-  const from=previous.findIndex(page=>page.id===pageId);
-  if(from<0)return;
-   try{
+  if(!get().pages.some(page=>page.id===pageId))return;
+  try{
    await timed('move_write',()=>pageRepository.move(pageId,position));
    if(get().notebookId===id)set(state=>{
     const current=[...state.pages];
@@ -108,8 +105,7 @@ export const usePageStore=create<State>((set,get)=>({
  removeMany:async ids=>{
   const id=get().notebookId;if(!id||!ids.length)return [];
   const selected=new Set(ids);
-  const removed=get().pages.filter(page=>selected.has(page.id));
-  if(!removed.length)return [];
+  if(!get().pages.some(page=>selected.has(page.id)))return [];
   try{
    const dbRemoved=await timed('remove_many_write',()=>pageRepository.removeMany(ids));
    ids.forEach(discardPageContent);
