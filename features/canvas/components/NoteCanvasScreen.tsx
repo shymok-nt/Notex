@@ -343,7 +343,6 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
   // stroke but an older beautifications array. Preserve the latest OCR state
   // instead of reverting already converted words on the next pen stroke.
   const previousIds=new Set(previous.elements.map(element=>element.id));
-  const incomingIds=new Set(incoming.elements.map(element=>element.id));
   const addedPenStroke=incoming.elements.some(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
   // If the captured canvas props also predate another committed stroke,
   // merge only the newly added pen strokes onto the latest page snapshot.
