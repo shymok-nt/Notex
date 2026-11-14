@@ -16,7 +16,13 @@ function read():Memory{
       if(!source||source.length>100||source==='__proto__'||source==='constructor'||source==='prototype')continue;
       if(!values||typeof values!=='object'||Array.isArray(values))continue;
       const candidates=Object.entries(values).filter(([word,count])=>!!word&&word.length<=100&&word!=='__proto__'&&word!=='constructor'&&word!=='prototype'&&typeof count==='number'&&Number.isFinite(count)&&count>0);
-      if(candidates.length)result[source]=Object.fromEntries(candidates.slice(0,10));
+      if(candidates.length){
+        const valid:Record<string,number>={};
+        for(const [word,count] of candidates.slice(0,10)){
+          if(typeof count==='number')valid[word]=count;
+        }
+        result[source]=valid;
+      }
     }
     return result;
   }catch{return {};}
