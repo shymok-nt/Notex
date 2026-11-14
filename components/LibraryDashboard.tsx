@@ -250,7 +250,7 @@ export function LibraryDashboard() {
 function makeStyles(colors: ThemeColors) { return StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, root: { flex: 1, backgroundColor: colors.background },
   topBar: { height: 58, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: -5 }, actions: { flexDirection: 'row', gap: 8 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: -5 }, actions: { flexDirection: 'row', gap: 8 },
   iconButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   content: { paddingHorizontal: 20, paddingBottom: 108 }, headingBlock: { paddingTop: 25, paddingBottom: 24 },
   pageTitle: { fontFamily: fonts.heading, fontSize: 31, lineHeight: 37, letterSpacing: -0.5, color: colors.ink },
