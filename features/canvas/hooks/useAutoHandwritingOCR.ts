@@ -60,7 +60,6 @@ export function useAutoHandwritingOCR(
   useEffect(()=>{preloadOCR()},[]);
   const known=useRef<Set<string>>(new Set(content.elements.map(e=>e.id)));
   const drawing=useRef(false);
-  const lastProgress=useRef(Date.now());
   const failures=useRef<Map<string,number>>(new Map());
   const busy=useRef(false);
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -156,7 +155,6 @@ export function useAutoHandwritingOCR(
         console.info('[Notex OCR] Yazı fonta dönüştürülüyor',words.map(w=>w.text));
         applyRef.current({...current,beautifications:[...(current.beautifications??[]),{sourceIds:ids,words,mode:'beautified'}]});
         completed=true;
-        lastProgress.current=Date.now();
       }catch(error){
         console.warn('[Notex OCR] Tanıma başarısız, orijinal çizgiler korundu:',error);
       }finally{
