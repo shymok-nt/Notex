@@ -83,18 +83,17 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
   if(!firstDirty.current)firstDirty.current=Date.now();
   schedule();
  },[pageId,schedule]);
+ // Canvas edits are committed synchronously via markChanged. The React content
+ // prop can lag one render behind that commit; treating it as a new edit would
+ // overwrite the latest snapshot (including erases) with stale page content.
  useEffect(()=>{
   if(!pageId)return;
+  if(initialized.current)return;
   const compareStarted=__DEV__?perfNow():0;
-  const serialized=serializeContent(content);
+  lastSerialized.current=serializeContent(content);
   if(__DEV__)lastCompareMs.current=perfNow()-compareStarted;
-  if(!initialized.current){initialized.current=true;latest.current={pageId,content};lastSerialized.current=serialized;return}
-  if(serialized===lastSerialized.current)return;
-  lastSerialized.current=serialized;
-  version.current++;dirty.current=true;
-  if(!firstDirty.current)firstDirty.current=Date.now();
-  schedule();
- },[pageId,content,schedule]);
+  initialized.current=true;
+ },[pageId,content]);
  const setDrawingActive=useCallback((value:boolean)=>{
   active.current=value;
   if(!value){const waiters=idleWaiters.current.splice(0);waiters.forEach(resolve=>resolve())}
