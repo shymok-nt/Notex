@@ -3,6 +3,16 @@ import {useEffect,useRef,type MutableRefObject} from 'react';
 import {isTauri,invoke} from '@tauri-apps/api/core';
 import type {PageContent,StrokeElement,BeautifiedWord} from '@/features/canvas/types';
 
+let preloadStarted=false;
+function preloadOCR(){
+  if(preloadStarted||!isTauri())return;
+  preloadStarted=true;
+  console.info('[Notex OCR] Model arka planda hazırlanıyor');
+  void invoke('notex_ocr_preload').then(
+    ()=>console.info('[Notex OCR] Model hazır'),
+    error=>{preloadStarted=false;console.warn('[Notex OCR] Model ön yüklenemedi',error);}
+  );
+}
 type OcrLine={text:string;score:number|null;box:number[]|null};
 type OcrResult={ok:boolean;lines:OcrLine[];inferenceMs?:number;model?:string};
 
@@ -43,6 +53,7 @@ export function useAutoHandwritingOCR(
   contentRef:MutableRefObject<PageContent>,
   apply:(next:PageContent)=>void,
 ){
+  useEffect(()=>{preloadOCR()},[]);
   const known=useRef<Set<string>>(new Set(content.elements.map(e=>e.id)));
   const drawing=useRef(false);
   const busy=useRef(false);
