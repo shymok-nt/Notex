@@ -1,0 +1,29 @@
+name: Update Notex Windows icon
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/generate-tauri-icons.py'
+      - 'components/notexBrandAssets.ts'
+      - '.github/workflows/update-notex-icon.yml'
+permissions:
+  contents: write
+jobs:
+  generate-icon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cairosvg pillow
+      - run: python scripts/generate-tauri-icons.py
+      - name: Commit updated native icons
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/icons/icon.ico src-tauri/icons/icon.png src-tauri/icons/32x32.png src-tauri/icons/128x128.png src-tauri/icons/128x128@2x.png
+          if ! git diff --cached --quiet; then
+            git commit -m "assets: refresh Windows window icon from Notex SVG"
+            git push
+          fi
