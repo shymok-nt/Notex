@@ -11,7 +11,7 @@ const folderIds:Record<NotebookFolder,string>={Ders:'ders',İş:'is',Kişisel:'k
 const folderNames:Record<string,NotebookFolder>={ders:'Ders',is:'İş',kisisel:'Kişisel'};
 const alert=(e:unknown)=>Alert.alert('İşlem tamamlanamadı',e instanceof Error?e.message:'Lütfen tekrar dene.');
 const convert=(r:NotebookRow):Notebook=>({
- id:r.id,title:r.title,folderId:r.folder_id,folder:folderNames[r.folder_id??'']??'Klasörsüz',
+ id:r.id,title:r.title,folderId:r.folder_id,courseId:r.course_id??null,topicId:r.topic_id??null,folder:folderNames[r.folder_id??'']??'Klasörsüz',
  coverType:r.cover_type,coverColor:r.cover_color??defaultCoverColor,coverImagePath:r.cover_image_path,
  coverImageUri:coverFileExists(r.cover_image_path)?resolveCoverUri(r.cover_image_path):null,
  coverPresetId:r.cover_preset_id,showTitleOnCover:!!r.show_title_on_cover,template:r.template,
