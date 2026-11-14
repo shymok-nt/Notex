@@ -98,14 +98,17 @@ export function useAutoHandwritingOCR(
   const pageRef=useRef(pageId);
   pageRef.current=pageId;
   const startedAt=useRef(0);
+  const generation=useRef(0);
   // React StrictMode and development remounts run effect cleanup and setup
   // without recreating refs. A cleanup-only effect left alive=false forever,
   // so OCR worked initially and then silently stopped scheduling new work.
   useEffect(()=>{
     alive.current=true;
+    generation.current++;
     scheduleRef.current();
     return ()=>{
       alive.current=false;
+      generation.current++;
       if(timer.current){clearTimeout(timer.current);timer.current=null;}
       queued.current=[];
       reserved.current.clear();
@@ -118,6 +121,7 @@ export function useAutoHandwritingOCR(
     const strokes=queued.current.shift();
     if(!strokes)return;
     busy.current=true;
+    const requestGeneration=generation.current;
     void (async()=>{
       console.info('[Notex OCR] Tanıma başlıyor',{pageId,strokeCount:strokes.length});
       const ids=strokes.map(s=>s.id);
@@ -126,7 +130,7 @@ export function useAutoHandwritingOCR(
         console.warn('[Notex OCR] Görsel oluşturulamadı');
         ids.forEach(id=>reserved.current.delete(id));
         busy.current=false;
-        processRef.current();
+        scheduleRef.current();
         return;
       }
       startedAt.current=Date.now();
@@ -142,7 +146,7 @@ export function useAutoHandwritingOCR(
           console.info('Raw recognition',{model:response.model,lines:response.lines,inferenceMs:response.inferenceMs,fallbackReason:response.fallbackReason,recognitionPass:response.recognitionPass});
           console.groupEnd();
         }
-        if(!alive.current||pageRef.current!==pageId)return;
+        if(!alive.current||pageRef.current!==pageId||generation.current!==requestGeneration)return;
         const current=contentRef.current;
         const existing=new Set(current.elements.map(e=>e.id));
         if(ids.some(id=>!existing.has(id)))return;
@@ -243,6 +247,10 @@ export function useAutoHandwritingOCR(
       }finally{
         // Transient OCR failures must not permanently discard strokes.
         // Retry a batch twice, then leave its original ink intact.
+        if(generation.current!==requestGeneration){
+          busy.current=false;
+          return;
+        }
         const batchKey=ids.join('|');
         const tries=(failures.current.get(batchKey)??0)+1;
         if(completed||tries>=3){
@@ -341,6 +349,16 @@ export function useAutoHandwritingOCR(
         }
         if(chunk.length)chunks.push(chunk);
         for(const group of chunks){
+          // Skip malformed/oversized groups rather than retrying them forever.
+          const xs=group.flatMap(item=>[item.bbox[0],item.bbox[2]]);
+          const ys=group.flatMap(item=>[item.bbox[1],item.bbox[3]]);
+          const spanX=Math.max(...xs)-Math.min(...xs);
+          const spanY=Math.max(...ys)-Math.min(...ys);
+          if(spanX>2300||spanY>1100){
+            console.warn('[Notex OCR] Grup OCR sınırını aşıyor; orijinal çizgiler korunuyor',{spanX,spanY});
+            group.forEach(item=>known.current.add(item.id));
+            continue;
+          }
           group.forEach(item=>reserved.current.add(item.id));
           queued.current.push(group);
         }
