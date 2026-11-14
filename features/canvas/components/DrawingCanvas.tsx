@@ -6,6 +6,7 @@ import {useSettingsStore} from '@/store/settingsStore';
 import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
 import * as Crypto from 'expo-crypto';
 import {glyphOffsets,fitWordFont} from '@/lib/ink/naturalText';
+import {rememberOcrCorrection,suggestOcrCorrections} from '@/features/canvas/engine/ocrCorrections';
 import {useHandwritingFontFamilies} from '@/lib/ink/handwritingFonts';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
 import {makeStroke,strokePath,strokePathString,cacheFinalizedStrokePath} from '@/features/canvas/engine/geometry';
@@ -506,7 +507,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   pendingCloseRef.current=null;
   editingRef.current=current;editValueRef.current=current.text;setEditing(current);
  };
- const [wordEditing,setWordEditing]=useState<{id:string;text:string}|null>(null);
+ const [wordEditing,setWordEditing]=useState<{id:string;text:string;original:string}|null>(null);
  const [selectedIds,setSelectedIds]=useState<string[]>([]);
  const selectedRef=useRef<string[]>([]);selectedRef.current=selectedIds;
  const traceRef=useRef<{id:number;part:number;ids:string[];gestureEndAt:number|null;events:{t:number;event:string;ids:string[];detail?:unknown}[]}>({id:0,part:0,ids:[],gestureEndAt:null,events:[]});
@@ -938,7 +939,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(points.length<=3){
    const p=points[0];
    const word=(content.beautifications??[]).filter(b=>b.mode==='beautified').flatMap(b=>b.words).find(w=>p[0]>=w.bbox[0]-8&&p[0]<=w.bbox[2]+8&&p[1]>=w.bbox[1]-8&&p[1]<=w.bbox[3]+8);
-   if(word){setWordEditing({id:word.id,text:word.text});return}
+   if(word){setWordEditing({id:word.id,text:word.text,original:word.text});return}
   }
   const poly=points.flatMap(p=>[p[0],p[1]]);
   const ids=lassoSelect(content.elements,poly);
@@ -1489,7 +1490,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    const next={...current,w:nextWidth,minHeight:minHeight??undefined,bbox:[current.x,current.y,current.x+nextWidth,current.y+height] as [number,number,number,number]};
    editingRef.current=next;setEditing(next);
   }}
- /></InlineTextEditorErrorBoundary>}{wordEditing&&<Modal transparent animationType="fade" visible onRequestClose={()=>setWordEditing(null)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#0008'}}><View style={{backgroundColor:'#FFFFFF',borderRadius:16,padding:20,gap:12}}><Text style={{fontSize:17,color:'#202020',fontWeight:'600'}}>TanÄ±nan kelimeyi dÃ¼zelt</Text><TextInput autoFocus value={wordEditing.text} onChangeText={value=>setWordEditing(previous=>previous?{...previous,text:value}:null)} style={{borderWidth:1,borderColor:'#AAAAAA',borderRadius:8,padding:10,color:'#202020',fontSize:17}}/><View style={{flexDirection:'row',justifyContent:'flex-end',gap:20}}><Pressable onPress={()=>setWordEditing(null)}><Text style={{color:'#444444'}}>Ä°ptal</Text></Pressable><Pressable onPress={()=>{
+ /></InlineTextEditorErrorBoundary>}{wordEditing&&<Modal transparent animationType="fade" visible onRequestClose={()=>setWordEditing(null)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#0008'}}><View style={{backgroundColor:'#FFFFFF',borderRadius:16,padding:20,gap:12}}><Text style={{fontSize:17,color:'#202020',fontWeight:'600'}}>Tanınan kelimeyi düzelt</Text>{suggestOcrCorrections(wordEditing.original).length>0&&<View style={{gap:8}}><Text style={{color:'#666666',fontSize:13}}>Öneriler (yalnızca seçersen uygulanır)</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{suggestOcrCorrections(wordEditing.original).map(suggestion=><Pressable key={suggestion} accessibilityRole="button" onPress={()=>setWordEditing(previous=>previous?{...previous,text:suggestion}:null)} style={{borderWidth:1,borderColor:'#D5DCE8',borderRadius:8,paddingHorizontal:12,paddingVertical:8}}><Text style={{color:'#202020'}}>{suggestion}</Text></Pressable>)}</View></View>}<TextInput autoFocus value={wordEditing.text} onChangeText={value=>setWordEditing(previous=>previous?{...previous,text:value}:null)} style={{borderWidth:1,borderColor:'#AAAAAA',borderRadius:8,padding:10,color:'#202020',fontSize:17}}/><View style={{flexDirection:'row',justifyContent:'flex-end',gap:20}}><Pressable onPress={()=>setWordEditing(null)}><Text style={{color:'#444444'}}>İptal</Text></Pressable><Pressable onPress={()=>{
  const value=wordEditing.text.trim();
  if(value){
   const updated=(content.beautifications??[]).map(beautification=>({
@@ -1499,6 +1500,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    }:word)
   }));
   onChange({...content,beautifications:updated});
+  rememberOcrCorrection(wordEditing.original,value);
  }
  setWordEditing(null);
 }}><Text style={{color:'#2466DD',fontWeight:'600'}}>Kaydet</Text></Pressable></View></View></View></Modal>}</View>;
