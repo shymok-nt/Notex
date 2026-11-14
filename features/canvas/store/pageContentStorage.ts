@@ -20,18 +20,19 @@ const read=(id:string):Draft|null=>{
  try{
   const raw=s.getItem(key(id));if(!raw)return null;
   const value=JSON.parse(raw) as Partial<Draft>;
-  return value.version===1&&typeof value.content==='string'&&typeof value.base==='string'&&typeof value.pending==='boolean'&&valid(value.content)&&valid(value.base)
+  return value.version===1&&typeof value.content==='string'&&typeof value.base==='string'&&typeof value.pending==='boolean'&&valid(value.content)&&(value.base===''||valid(value.base))
    ?value as Draft:null;
  }catch{return null}
 };
 /** Synchronous write-ahead draft. Never erase SQLite data on quota/storage errors. */
-export const stagePageContent=(id:string,content:string,base:string):void=>{
- const s=storage();if(!s)return;
+export const stagePageContent=(id:string,content:string,base:string):boolean=>{
+ const s=storage();if(!s)return !isTauriDesktop();
  try{
   const previous=read(id);
   s.setItem(key(id),JSON.stringify({version:1,content,base:previous?.pending?previous.base:base,pending:true} satisfies Draft));
+  return true;
  }
- catch(error){console.warn('[Notex save] Local draft could not be stored',error)}
+ catch(error){console.error('[Notex save] Local draft could not be stored',error);return false}
 };
 export const pendingPageContent=(id:string,sqliteContent?:string):string|null=>{
  const draft=read(id);
