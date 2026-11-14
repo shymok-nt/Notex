@@ -20,7 +20,7 @@ def add_sample(manifest: Path, image: Path, text: str, writer: str, split: str, 
     manifest.parent.mkdir(parents=True, exist_ok=True)
     existing = []
     if manifest.exists():
-        for line in manifest.read_text(encoding="utf-8").splitlines():
+        for line in manifest.read_text(encoding="utf-8-sig").splitlines():
             if line.strip():
                 existing.append(json.loads(line))
     if any(row["id"] == sample_id for row in existing):
