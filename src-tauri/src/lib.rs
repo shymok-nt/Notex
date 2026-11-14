@@ -386,57 +386,87 @@ mod tests {
 }
 
 #[cfg(windows)]
+struct OcrWorker {
+    child: std::process::Child,
+    input: std::process::ChildStdin,
+    output: std::io::BufReader<std::process::ChildStdout>,
+}
+
+#[cfg(windows)]
+static OCR_WORKER: std::sync::OnceLock<Mutex<Option<OcrWorker>>> = std::sync::OnceLock::new();
+
+#[cfg(windows)]
+fn start_ocr_worker() -> Result<OcrWorker, String> {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+    let mut root = std::env::current_dir().map_err(|error| error.to_string())?;
+    let mut found = None;
+    for _ in 0..5 {
+        let python = root.join(".venv-ocr").join("Scripts").join("python.exe");
+        let script = root.join("tools").join("handwriting_ocr").join("recognize.py");
+        if python.is_file() && script.is_file() {
+            found = Some((python, script));
+            break;
+        }
+        if !root.pop() { break; }
+    }
+    let (python, script) = found.ok_or_else(|| "OCR kurulumu bulunamadı (.venv-ocr)".to_string())?;
+    let mut child = Command::new(python)
+        .arg("-u").arg(script).arg("--serve")
+        .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
+        .spawn().map_err(|error| format!("OCR worker başlatılamadı: {error}"))?;
+    let input = child.stdin.take().ok_or("OCR stdin açılamadı")?;
+    let stdout = child.stdout.take().ok_or("OCR stdout açılamadı")?;
+    let mut output = std::io::BufReader::new(stdout);
+    for _ in 0..100 {
+        let mut line = String::new();
+        if output.read_line(&mut line).map_err(|error| error.to_string())? == 0 {
+            return Err("OCR worker başlatılırken kapandı".into());
+        }
+        if let Ok(value) = serde_json::from_str::<Value>(&line) {
+            if value.get("ready").and_then(Value::as_bool) == Some(true) {
+                return Ok(OcrWorker { child, input, output });
+            }
+            if value.get("ready").and_then(Value::as_bool) == Some(false) {
+                return Err(value.get("error").and_then(Value::as_str).unwrap_or("OCR başlatılamadı").to_string());
+            }
+        }
+    }
+    Err("OCR worker hazır yanıtı vermedi".into())
+}
+
+#[cfg(windows)]
 #[tauri::command(rename_all = "camelCase")]
 async fn notex_recognize_handwriting(png_base64: String) -> Result<Value, String> {
-    use base64::Engine;
-    if png_base64.len() > 8_000_000 {
-        return Err("OCR görseli çok büyük".into());
-    }
+    if png_base64.len() > 8_000_000 { return Err("OCR görseli çok büyük".into()); }
     tauri::async_runtime::spawn_blocking(move || {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(&png_base64)
-            .map_err(|error| format!("OCR PNG çözümlenemedi: {error}"))?;
-        if !bytes.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]) {
-            return Err("OCR girdisi PNG olmalı".into());
-        }
-        let mut root = std::env::current_dir()
-            .map_err(|error| error.to_string())?;
-        let mut found = None;
-        for _ in 0..5 {
-            let python = root.join(".venv-ocr").join("Scripts").join("python.exe");
-            let script = root.join("tools").join("handwriting_ocr").join("recognize.py");
-            if python.is_file() && script.is_file() {
-                found = Some((python, script));
-                break;
+        use std::io::{BufRead, Write};
+        let worker_lock = OCR_WORKER.get_or_init(|| Mutex::new(None));
+        let mut guard = worker_lock.lock().map_err(|_| "OCR worker kilidi bozuldu".to_string())?;
+        if guard.is_none() { *guard = Some(start_ocr_worker()?); }
+        let worker = guard.as_mut().ok_or("OCR worker kullanılamıyor")?;
+        let request = serde_json::json!({"pngBase64": png_base64});
+        let result = (|| -> Result<Value, String> {
+            writeln!(worker.input, "{request}").map_err(|error| error.to_string())?;
+            worker.input.flush().map_err(|error| error.to_string())?;
+            for _ in 0..100 {
+                let mut line = String::new();
+                if worker.output.read_line(&mut line).map_err(|error| error.to_string())? == 0 {
+                    return Err("OCR worker yanıt vermeden kapandı".into());
+                }
+                if let Ok(value) = serde_json::from_str::<Value>(&line) {
+                    if value.get("ok").is_some() { return Ok(value); }
+                }
             }
-            if !root.pop() { break; }
+            Err("OCR worker geçerli yanıt döndürmedi".into())
+        })();
+        if result.is_err() {
+            if let Some(mut broken) = guard.take() { let _ = broken.child.kill(); }
         }
-        let (python, script) = found.ok_or_else(|| {
-            "Yerel OCR bulunamadı: Notex proje klasöründe .venv-ocr kurulumu gerekli".to_string()
-        })?;
-        let temp = std::env::temp_dir().join(format!(
-            "notex-ocr-{}-{}.png",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|error| error.to_string())?
-                .as_nanos()
-        ));
-        fs::write(&temp, bytes).map_err(|error| format!("OCR geçici dosyası yazılamadı: {error}"))?;
-        let output = std::process::Command::new(python)
-            .arg(script)
-            .arg(&temp)
-            .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-            .output();
-        let _ = fs::remove_file(&temp);
-        let output = output.map_err(|error| format!("OCR başlatılamadı: {error}"))?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let json_line = stdout.lines().rev().find(|line| line.trim_start().starts_with('{'))
-            .ok_or_else(|| format!("OCR yanıt vermedi: {}", String::from_utf8_lossy(&output.stderr).chars().take(500).collect::<String>()))?;
-        let value: Value = serde_json::from_str(json_line)
-            .map_err(|error| format!("OCR JSON okunamadı: {error}"))?;
+        let value = result?;
         if value.get("ok").and_then(Value::as_bool) != Some(true) {
-            return Err(value.get("error").and_then(Value::as_str).unwrap_or("OCR tanıma başarısız").to_string());
+            return Err(value.get("error").and_then(Value::as_str).unwrap_or("OCR başarısız").to_string());
         }
         Ok(value)
     }).await.map_err(|error| format!("OCR görevi tamamlanamadı: {error}"))?
