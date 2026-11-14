@@ -403,7 +403,7 @@ const LegacyBeautificationLayer=memo(function LegacyBeautificationLayer({content
  return <>{words.map(word=><NaturalWord key={word.id} fonts={word.font==='Inter'||word.font==='InterBold'?fonts:handwritingFonts} word={word}/>)}</>;
 });
 const Completed=memo(function Completed({content,hiddenIds,fonts}:{content:PageContent;hiddenIds?:string[];fonts:CanvasFontManager|null}){
- const elements=useMemo(()=>content.elements.filter(element=>!hiddenIds?.includes(element.id)&&!(content.beautifications??[]).some(b=>b.mode==='beautified'&&b.sourceIds.includes(element.id))),[content.elements,content.beautifications,hiddenIds]);
+ const elements=useMemo(()=>content.elements.filter(element=>!hiddenIds?.includes(element.id)),[content.elements,hiddenIds]);
  useEffect(()=>{
   if(!__DEV__||!pathBuildMetrics.count)return;
   console.log('[Notex perf] stroke_paths',{count:pathBuildMetrics.count,total_ms:Math.round(pathBuildMetrics.totalMs*10)/10,max_ms:Math.round(pathBuildMetrics.maxMs*10)/10});
@@ -1440,8 +1440,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
 
  <Group layer={tool==='eraser'}>
   <Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:tool==='select'?[...selectedIds,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts}/>
-  {content.beautifications?.some(item=>item.mode==='beautified'&&item.words.length>0)&&<LegacyBeautificationLayer content={content} fonts={textFonts}/>}
-  {handoffNeedsReleaseRender&&<Group>{handoff!.elements.filter(element=>!(content.beautifications??[]).some(item=>item.mode==='beautified'&&item.sourceIds.includes(element.id))).map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}</Group>}
+  {handoffNeedsReleaseRender&&<Group>{handoff!.elements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}</Group>}
    {tool==='eraser'&&<>
     <Path path={eraserHandoffDraft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
     <Path path={draft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
