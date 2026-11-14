@@ -8,7 +8,6 @@ import { Pressable,SafeAreaView,ScrollView,Text,View } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useSettingsStore } from '@/store/settingsStore';
 import { PagePreview } from '@/components/PagePreview';
-import { WindowsInkDiagnostic } from '@/features/canvas/components/WindowsInkDiagnostic';
 import type { PageTemplate,PaperColor } from '@/types/notebook';
 export default function SettingsScreen(){
  const [lastBackup,setLastBackup]=useState<string|null>(null);useEffect(()=>{void settingsRepository.get('lastBackupAt').then(setLastBackup).catch(console.error)},[]);
@@ -31,7 +30,6 @@ export default function SettingsScreen(){
  {heading('DÜZEN')}<Pressable accessibilityRole="button" accessibilityLabel="Klasörleri yönet" onPress={()=>router.push('/(tabs)/folders')} style={{minHeight:56,backgroundColor:colors.surfaceRaised,borderRadius:16,paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={{color:colors.ink,fontSize:16}}>Klasörleri yönet</Text><ChevronRight color={colors.muted}/></Pressable>
  <Pressable accessibilityRole="button" accessibilityLabel="Silinenler" onPress={()=>router.push('/trash')} style={{minHeight:56,backgroundColor:colors.surfaceRaised,borderRadius:16,paddingHorizontal:16,marginTop:10,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={{color:colors.ink,fontSize:16}}>Silinenler</Text><View style={{flexDirection:'row',alignItems:'center',gap:12}}><Text style={{color:colors.muted}}>{deletedCount}</Text><ChevronRight color={colors.muted}/></View></Pressable>
  <Pressable accessibilityRole="button" accessibilityLabel="Yedekle ve geri yükle" onPress={()=>router.push('/backup')} style={{minHeight:56,backgroundColor:colors.surfaceRaised,borderRadius:16,paddingHorizontal:16,marginTop:10,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><View><Text style={{color:colors.ink,fontSize:16}}>Yedekle ve geri yükle</Text><Text style={{color:colors.muted,fontSize:12}}>Son yedek: {lastBackup?new Date(lastBackup).toLocaleDateString('tr-TR'):'Henüz yok'}</Text></View><ChevronRight color={colors.muted}/></Pressable>
- {heading('EL YAZISI TANIMA — TANILAMA')}<WindowsInkDiagnostic colors={colors}/>
  {heading('HAKKINDA')}<View style={{backgroundColor:colors.surfaceRaised,borderRadius:16,padding:16,gap:8}}><Text style={{color:colors.ink,fontSize:16,fontWeight:'700'}}>Notex</Text><Text style={{color:colors.muted}}>Sürüm {Constants.expoConfig?.version??'1.0.0'}</Text><Text style={{color:colors.muted}}>Verilerin yalnızca bu cihazda saklanır.</Text></View>
  </ScrollView></SafeAreaView>
 }
