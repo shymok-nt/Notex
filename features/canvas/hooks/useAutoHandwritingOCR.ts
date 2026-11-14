@@ -16,7 +16,8 @@ function preloadOCR(){
 type OcrLine={text:string;score:number|null;box:number[]|null};
 type OcrResult={ok:boolean;lines:OcrLine[];inferenceMs?:number;model?:string;fallbackReason?:string|null};
 
-function rasterize(strokes:StrokeElement[]):string|null {
+type Rasterized={pngBase64:string;left:number;top:number;scale:number;width:number;height:number};
+function rasterize(strokes:StrokeElement[]):Rasterized|null {
   if(typeof document==='undefined'||!strokes.length)return null;
   const left=Math.min(...strokes.map(s=>s.bbox[0]))-18;
   const top=Math.min(...strokes.map(s=>s.bbox[1]))-18;
@@ -43,7 +44,8 @@ function rasterize(strokes:StrokeElement[]):string|null {
     if(p.length===3)ctx.lineTo(p[0]+0.1,p[1]+0.1);
     ctx.stroke();
   }
-  return canvas.toDataURL('image/png').split(',')[1]??null;
+  const pngBase64=canvas.toDataURL('image/png').split(',')[1];
+  return pngBase64?{pngBase64,left,top,scale,width,height}:null;
 }
 
 /** Only strokes created after opening the page are eligible. Existing notes stay untouched. */
@@ -79,13 +81,13 @@ export function useAutoHandwritingOCR(
       ).slice(-40);
       if(!strokes.length)return;
       console.info('[Notex OCR] Tanıma başlıyor',{pageId,strokeCount:strokes.length});
-      const pngBase64=rasterize(strokes);
-      if(!pngBase64){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));return;}
+      const raster=rasterize(strokes);
+      if(!raster){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));return;}
       busy.current=true;
       startedAt.current=Date.now();
       const ids=strokes.map(s=>s.id);
       try{
-        const response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64});
+        const response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64});
         if(!alive.current||pageRef.current!==pageId)return;
         const current=contentRef.current;
         const existing=new Set(current.elements.map(e=>e.id));
@@ -99,13 +101,30 @@ export function useAutoHandwritingOCR(
         const top=Math.min(...strokes.map(s=>s.bbox[1]));
         const right=Math.max(...strokes.map(s=>s.bbox[2]));
         const bottom=Math.max(...strokes.map(s=>s.bbox[3]));
-        const fontSize=Math.max(18,Math.min(100,(bottom-top)/Math.max(1,recognized.length)*0.9));
-        const words:BeautifiedWord[]=recognized.map((line,index)=>({
-          id:ids[0]+'-ocr-'+index,text:line.text.trim(),
-          bbox:[left,top+index*(bottom-top)/recognized.length,right,top+(index+1)*(bottom-top)/recognized.length],
-          baseline:top+(index+1)*(bottom-top)/recognized.length,
-          fontSize,color:strokes[0].color,font:'Caveat'
-        }));
+        // OCR boxes are measured in the cropped raster's pixels. Restore
+        // their original canvas coordinates to preserve placement and gaps.
+        // If the detector omits a box, retain the source-stroke bounds.
+        const validBox=(box:number[]|null):box is number[]=>!!box&&box.length>=4&&box.slice(0,4).every(Number.isFinite)&&box[2]>box[0]&&box[3]>box[1];
+        const words:BeautifiedWord[]=recognized.map((line,index)=>{
+          const box=validBox(line.box)?line.box:null;
+          const bounds:[number,number,number,number]=box
+            ? [raster.left+box[0]/raster.scale,raster.top+box[1]/raster.scale,
+               raster.left+box[2]/raster.scale,raster.top+box[3]/raster.scale]
+            : [left,top+index*(bottom-top)/recognized.length,right,top+(index+1)*(bottom-top)/recognized.length];
+          // Do not let the OCR detector's padding enlarge the writing region.
+          bounds[0]=Math.max(left,bounds[0]);bounds[1]=Math.max(top,bounds[1]);
+          bounds[2]=Math.min(right,bounds[2]);bounds[3]=Math.min(bottom,bounds[3]);
+          if(bounds[2]<=bounds[0]||bounds[3]<=bounds[1]){
+            bounds[0]=left;bounds[1]=top;bounds[2]=right;bounds[3]=bottom;
+          }
+          const height=bounds[3]-bounds[1];
+          return {
+            id:ids[0]+'-ocr-'+index,text:line.text.trim(),
+            bbox:bounds,baseline:bounds[3],
+            fontSize:Math.max(12,Math.min(100,height*0.9)),
+            color:strokes[0].color,font:'Caveat'
+          };
+        });
         console.info('[Notex OCR] Yazı fonta dönüştürülüyor',words.map(w=>w.text));
         applyRef.current({...current,beautifications:[...(current.beautifications??[]),{sourceIds:ids,words,mode:'beautified'}]});
       }catch(error){
