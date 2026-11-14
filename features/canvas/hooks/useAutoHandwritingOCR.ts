@@ -127,8 +127,8 @@ export function useAutoHandwritingOCR(
       const ids=strokes.map(s=>s.id);
       const raster=rasterize(strokes);
       if(!raster){
-        console.warn('[Notex OCR] Görsel oluşturulamadı');
-        ids.forEach(id=>reserved.current.delete(id));
+        console.warn('[Notex OCR] Görsel oluşturulamadı; orijinal çizgiler korunuyor');
+        ids.forEach(id=>{reserved.current.delete(id);known.current.add(id);});
         busy.current=false;
         scheduleRef.current();
         return;
