@@ -11,7 +11,61 @@ import sys
 from pathlib import Path
 
 
+
+def serve() -> int:
+    """Keep PaddleOCR models loaded and accept newline-delimited base64 PNG requests."""
+    import base64
+    import tempfile
+    import os
+    try:
+        from paddleocr import PaddleOCR
+        engine = PaddleOCR(
+            lang="tr",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+            enable_mkldnn=False,
+        )
+        print(json.dumps({"ready": True}), flush=True)
+    except Exception as exc:
+        print(json.dumps({"ready": False, "error": str(exc)}, ensure_ascii=False), flush=True)
+        return 1
+    for raw in sys.stdin:
+        try:
+            request = json.loads(raw)
+            data = base64.b64decode(request["pngBase64"], validate=True)
+            if len(data) > 6_000_000 or not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+                raise ValueError("Invalid PNG")
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp.write(data)
+                name = tmp.name
+            try:
+                results = engine.predict(name)
+            finally:
+                os.unlink(name)
+            lines = []
+            for result in results:
+                payload = getattr(result, "json", {})
+                if callable(payload):
+                    payload = payload()
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                payload = payload.get("res", payload)
+                for index, value in enumerate(payload.get("rec_texts", [])):
+                    scores = payload.get("rec_scores", [])
+                    boxes = payload.get("rec_boxes", [])
+                    box = boxes[index] if index < len(boxes) else None
+                    lines.append({"text": str(value),
+                                  "score": float(scores[index]) if index < len(scores) else None,
+                                  "box": box.tolist() if hasattr(box, "tolist") else box})
+            print(json.dumps({"ok": True, "lines": lines}, ensure_ascii=False), flush=True)
+        except Exception as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), flush=True)
+    return 0
+
 def main() -> int:
+    if "--serve" in sys.argv:
+        return serve()
     parser = argparse.ArgumentParser(description="Offline-capable PaddleOCR handwriting experiment")
     parser.add_argument("image", type=Path, help="PNG/JPEG image containing handwriting")
     parser.add_argument("--lang", default="tr", help="PaddleOCR recognition language (default: tr)")
