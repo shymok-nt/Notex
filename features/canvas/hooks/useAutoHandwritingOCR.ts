@@ -100,6 +100,15 @@ export function useAutoHandwritingOCR(
           console.warn('[Notex OCR] TrOCR kullanılamadı, PaddleOCR deneniyor:',error);
           response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64,engine:'paddle'});
         }
+        if(process.env.EXPO_PUBLIC_NOTEX_OCR_DIAGNOSTICS==='true'){
+          // Opt-in diagnostics: the exact image sent to the model, its raw
+          // output and timings. Never persist handwriting or upload it.
+          console.groupCollapsed('[Notex OCR diagnostic] '+selectedEngine+' / '+ids.length+' strokes');
+          console.info('Input PNG (open in browser):','data:image/png;base64,'+raster.pngBase64);
+          console.info('Raster',{width:raster.width,height:raster.height,scale:raster.scale});
+          console.info('Raw recognition',{model:response.model,lines:response.lines,inferenceMs:response.inferenceMs,fallbackReason:response.fallbackReason});
+          console.groupEnd();
+        }
         if(!alive.current||pageRef.current!==pageId)return;
         const current=contentRef.current;
         const existing=new Set(current.elements.map(e=>e.id));
