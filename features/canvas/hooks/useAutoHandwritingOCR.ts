@@ -275,44 +275,78 @@ export function useAutoHandwritingOCR(
         (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!reserved.current.has(e.id)
       );
       if(!latest.length)return;
-      // Keep a writing row together: fixed 48-stroke slices used to cut words
-      // mid-letter, producing nonsense OCR output and stranded fragments.
-      // Split by vertical overlap, then by wide horizontal gaps only when a
-      // row exceeds the raster width limit. Never split by stroke count.
-      const ordered=[...latest].sort((a,b)=>(a.bbox[1]+a.bbox[3])-(b.bbox[1]+b.bbox[3]));
-      const rows:StrokeElement[][]=[];
-      for(const stroke of ordered){
+      // Phase 2: build complete writing rows, keeping detached diacritics
+      // with their base letters. A small dot's Y center must not create
+      // an independent OCR row.
+      type Row={strokes:StrokeElement[];top:number;bottom:number;left:number;right:number};
+      const bounds=(stroke:StrokeElement)=>stroke.bbox;
+      const height=(stroke:StrokeElement)=>Math.max(0,bounds(stroke)[3]-bounds(stroke)[1]);
+      const sorted=[...latest].sort((a,b)=>height(b)-height(a));
+      const rows:Row[]=[];
+      const add=(row:Row,stroke:StrokeElement)=>{
+        row.strokes.push(stroke);
+        row.top=Math.min(row.top,stroke.bbox[1]);row.bottom=Math.max(row.bottom,stroke.bbox[3]);
+        row.left=Math.min(row.left,stroke.bbox[0]);row.right=Math.max(row.right,stroke.bbox[2]);
+      };
+      const typicalHeight=Math.max(12,Math.min(55,
+        [...sorted].map(height).filter(h=>h>=8).sort((a,b)=>a-b)[Math.floor(sorted.filter(s=>height(s)>=8).length/2)]??25
+      ));
+      const marks:StrokeElement[]=[];
+      for(const stroke of sorted){
+        if(height(stroke)<Math.max(7,typicalHeight*0.24)){marks.push(stroke);continue;}
         const cy=(stroke.bbox[1]+stroke.bbox[3])/2;
-        const row=rows.find(group=>{
-          const ys=group.map(item=>(item.bbox[1]+item.bbox[3])/2);
-          const center=ys.reduce((a,b)=>a+b,0)/ys.length;
-          return Math.abs(center-cy)<42;
-        });
-        if(row)row.push(stroke);else rows.push([stroke]);
+        const match=rows.map(row=>{
+          const rowCy=(row.top+row.bottom)/2;
+          const overlap=Math.min(row.bottom,stroke.bbox[3])-Math.max(row.top,stroke.bbox[1]);
+          const distance=Math.abs(cy-rowCy);
+          return {row,distance,overlap};
+        }).filter(item=>item.overlap>=-typicalHeight*0.2&&item.distance<typicalHeight*0.95)
+          .sort((a,b)=>a.distance-b.distance)[0];
+        if(match)add(match.row,stroke);
+        else rows.push({strokes:[stroke],top:stroke.bbox[1],bottom:stroke.bbox[3],left:stroke.bbox[0],right:stroke.bbox[2]});
       }
+      // Assign punctuation, umlaut dots and i/İ dots by horizontal
+      // proximity to a row's body; their vertical position is secondary.
+      for(const mark of marks){
+        const mx=(mark.bbox[0]+mark.bbox[2])/2;
+        const my=(mark.bbox[1]+mark.bbox[3])/2;
+        const candidate=rows.map(row=>{
+          const horizontal=Math.max(0,row.left-mx,mx-row.right);
+          const vertical=Math.max(0,row.top-my,my-row.bottom);
+          return {row,horizontal,vertical,score:horizontal*2+vertical};
+        }).filter(item=>item.horizontal<typicalHeight*1.5&&item.vertical<typicalHeight*1.7)
+          .sort((a,b)=>a.score-b.score)[0];
+        if(candidate)add(candidate.row,mark);
+        else rows.push({strokes:[mark],top:mark.bbox[1],bottom:mark.bbox[3],left:mark.bbox[0],right:mark.bbox[2]});
+      }
+      rows.sort((a,b)=>a.top-b.top);
       for(const row of rows){
-        const sorted=[...row].sort((a,b)=>a.bbox[0]-b.bbox[0]);
-        let batch:StrokeElement[]=[];
-        let left=Infinity,right=-Infinity;
-        for(const stroke of sorted){
-          const nextLeft=Math.min(left,stroke.bbox[0]);
-          const nextRight=Math.max(right,stroke.bbox[2]);
-          if(batch.length&&nextRight-nextLeft>2200){
-            batch.forEach(item=>reserved.current.add(item.id));
-            queued.current.push(batch);
-            batch=[];left=Infinity;right=-Infinity;
+        // The rasterizer supports up to 2400 page units. Only split a
+        // genuinely oversized row at a wide, explicit space, never at
+        // an arbitrary stroke count or through a character.
+        const ordered=[...row.strokes].sort((a,b)=>a.bbox[0]-b.bbox[0]);
+        const chunks:StrokeElement[][]=[];
+        let chunk:StrokeElement[]=[];
+        let chunkLeft=Infinity,chunkRight=-Infinity;
+        for(let i=0;i<ordered.length;i++){
+          const stroke=ordered[i];
+          const nextRight=Math.max(chunkRight,stroke.bbox[2]);
+          const gap=stroke.bbox[0]-chunkRight;
+          if(chunk.length&&nextRight-chunkLeft>2100&&gap>Math.max(28,typicalHeight*0.75)){
+            chunks.push(chunk);chunk=[];chunkLeft=Infinity;chunkRight=-Infinity;
           }
-          batch.push(stroke);
-          left=Math.min(left,stroke.bbox[0]);
-          right=Math.max(right,stroke.bbox[2]);
+          chunk.push(stroke);
+          chunkLeft=Math.min(chunkLeft,stroke.bbox[0]);
+          chunkRight=Math.max(chunkRight,stroke.bbox[2]);
         }
-        if(batch.length){
-          batch.forEach(item=>reserved.current.add(item.id));
-          queued.current.push(batch);
+        if(chunk.length)chunks.push(chunk);
+        for(const group of chunks){
+          group.forEach(item=>reserved.current.add(item.id));
+          queued.current.push(group);
         }
       }
       processRef.current();
-    },2400);
+    },3200);
   };
   useEffect(()=>{scheduleRef.current()},[content.elements]);
   return (active:boolean)=>{
