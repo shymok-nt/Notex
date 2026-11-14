@@ -414,6 +414,8 @@ fn start_ocr_worker() -> Result<OcrWorker, String> {
     let mut child = Command::new(python)
         .arg("-u").arg(script).arg("--serve")
         .env("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
         .spawn().map_err(|error| format!("OCR worker başlatılamadı: {error}"))?;
     let input = child.stdin.take().ok_or("OCR stdin açılamadı")?;
