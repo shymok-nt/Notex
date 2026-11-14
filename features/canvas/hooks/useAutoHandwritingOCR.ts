@@ -110,30 +110,32 @@ export function useAutoHandwritingOCR(
         // their original canvas coordinates to preserve placement and gaps.
         // If the detector omits a box, retain the source-stroke bounds.
         const validBox=(box:number[]|null):box is number[]=>!!box&&box.length>=4&&box.slice(0,4).every(Number.isFinite)&&box[2]>box[0]&&box[3]>box[1];
+        // Use one consistent text height per writing row. Handwriting
+        // ascenders/capitals must not inflate the displayed font.
+        const rowStep=getPaperGuideMetrics(1,1).stepPage;
+        const targetHeight=Math.min(43,rowStep*0.56);
         const words:BeautifiedWord[]=recognized.map((line,index)=>{
           const box=validBox(line.box)?line.box:null;
-          const bounds:[number,number,number,number]=box
+          const source:[number,number,number,number]=box
             ? [raster.left+box[0]/raster.scale,raster.top+box[1]/raster.scale,
                raster.left+box[2]/raster.scale,raster.top+box[3]/raster.scale]
             : [left,top+index*(bottom-top)/recognized.length,right,top+(index+1)*(bottom-top)/recognized.length];
-          // Do not let the OCR detector's padding enlarge the writing region.
-          bounds[0]=Math.max(left,bounds[0]);bounds[1]=Math.max(top,bounds[1]);
-          bounds[2]=Math.min(right,bounds[2]);bounds[3]=Math.min(bottom,bounds[3]);
-          if(bounds[2]<=bounds[0]||bounds[3]<=bounds[1]){
-            bounds[0]=left;bounds[1]=top;bounds[2]=right;bounds[3]=bottom;
-          }
-          const height=bounds[3]-bounds[1];
-          // Align to the nearest visible ruled/grid guide, never move text
-          // to a different row when the handwriting is far from a guide.
+          source[0]=Math.max(left,source[0]);
+          source[2]=Math.min(right,source[2]);
+          if(source[2]<=source[0]){source[0]=left;source[2]=right;}
+          // Determine the nearest lower guide from the actual handwriting
+          // center. Use the next guide as the writing baseline, not the
+          // previous line's guide when letters extend below it.
+          const sourceCenter=(source[1]+source[3])/2;
           const guide=(template==='çizgili'||template==='kareli')
-            ? nearestPaperGuide(bounds[3],getPaperGuideMetrics(1,1),36)
+            ? nearestPaperGuide(sourceCenter+rowStep*0.35,getPaperGuideMetrics(1,1),rowStep*0.5)
             : null;
-          const baseline=guide?.baseline??bounds[3];
-          if(guide){bounds[1]+=baseline-bounds[3];bounds[3]=baseline;}
+          const baseline=guide?.baseline??source[3];
+          const height=guide?targetHeight:Math.min(targetHeight,Math.max(18,source[3]-source[1]));
           return {
             id:ids[0]+'-ocr-'+index,text:line.text.trim(),
-            bbox:bounds,baseline,
-            fontSize:Math.max(12,Math.min(100,height*0.9)),
+            bbox:[source[0],baseline-height,source[2],baseline],
+            baseline,fontSize:height*0.95,
             color:strokes[0].color,font:'Caveat'
           };
         });
