@@ -31,7 +31,7 @@ def serve() -> int:
             enable_mkldnn=False,
             cpu_threads=4,
         )
-        model_name = "PP-OCRv6_mobile"
+        model_name = "PP-OCRv5_mobile"
         fallback_reason = None
         try:
             engine = PaddleOCR(
