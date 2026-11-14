@@ -70,8 +70,8 @@ export default function CourseSearchScreen(){
   {debounced===''&&recent.length>0?<View style={{padding:18,gap:8}}><Pressable onPress={()=>void clearSearch()}><Text style={{color:colors.accent}}>Son aramaları temizle</Text></Pressable>{recent.slice(0,8).map(item=><Pressable key={item} onPress={()=>setQuery(item)}><Text style={textStyle}>{item}</Text></Pressable>)}</View>:null}
   <FlatList data={results} keyExtractor={item=>item.key} keyboardShouldPersistTaps="handled" initialNumToRender={24} maxToRenderPerBatch={25} windowSize={7}
    contentContainerStyle={{paddingHorizontal:18,paddingBottom:80}}
-   ListHeaderComponent={debounced!==''?<Text style={{color:colors.muted,paddingVertical:12}}>{results.length} sonuç</Text>:null}
-   ListEmptyComponent={ready&&debounced!==''?<Text style={{color:colors.muted,paddingTop:40,textAlign:'center'}}>Sonuç bulunamadı</Text>:null}
+   ListHeaderComponent={debounced!==''?<Text style={{color:colors.muted,paddingVertical:12}}>{results.length} sonuç</Text>:undefined}
+   ListEmptyComponent={ready&&debounced!==''?<Text style={{color:colors.muted,paddingTop:40,textAlign:'center'}}>Sonuç bulunamadı</Text>:undefined}
    renderItem={({item})=><Pressable onPress={()=>open(item)} style={{paddingVertical:13,borderBottomWidth:1,borderBottomColor:colors.divider,gap:3}}>
     {item.kind==='page'?<>
      <Text style={{fontSize:15,fontWeight:'700',color:colors.ink}}>{item.title} · Sayfa {item.hit.page.position+1}</Text>
