@@ -449,7 +449,7 @@ async fn notex_ocr_preload() -> Result<Value, String> {
 
 #[cfg(windows)]
 #[tauri::command(rename_all = "camelCase")]
-async fn notex_recognize_handwriting(png_base64: String) -> Result<Value, String> {
+async fn notex_recognize_handwriting(png_base64: String, engine: Option<String>) -> Result<Value, String> {
     if png_base64.len() > 8_000_000 { return Err("OCR görseli çok büyük".into()); }
     tauri::async_runtime::spawn_blocking(move || {
         use std::io::{BufRead, Write};
@@ -457,7 +457,8 @@ async fn notex_recognize_handwriting(png_base64: String) -> Result<Value, String
         let mut guard = worker_lock.lock().map_err(|_| "OCR worker kilidi bozuldu".to_string())?;
         if guard.is_none() { *guard = Some(start_ocr_worker()?); }
         let worker = guard.as_mut().ok_or("OCR worker kullanılamıyor")?;
-        let request = serde_json::json!({"pngBase64": png_base64});
+        let engine = match engine.as_deref() { Some("trocr") => "trocr", _ => "paddle" };
+        let request = serde_json::json!({"pngBase64": png_base64, "engine": engine});
         let result = (|| -> Result<Value, String> {
             writeln!(worker.input, "{request}").map_err(|error| error.to_string())?;
             worker.input.flush().map_err(|error| error.to_string())?;
