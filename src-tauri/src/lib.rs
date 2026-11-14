@@ -495,6 +495,84 @@ async fn notex_recognize_handwriting(png_base64: String, engine: Option<String>)
     }).await.map_err(|error| format!("OCR görevi tamamlanamadı: {error}"))?
 }
 
+#[cfg(windows)]
+#[derive(serde::Deserialize)]
+struct InkTestPoint { x: f32, y: f32, pressure: f32 }
+#[cfg(windows)]
+#[derive(serde::Deserialize)]
+struct InkTestStroke { id: String, points: Vec<InkTestPoint> }
+#[cfg(windows)]
+#[derive(serde::Deserialize)]
+struct InkTestInput { locale: String, strokes: Vec<InkTestStroke> }
+
+/// Explicit test-only recognition. Does not read/write Notex pages or invoke legacy OCR.
+#[cfg(windows)]
+#[tauri::command]
+async fn notex_windows_ink_recognize_test(input: InkTestInput) -> Result<Value, String> {
+    if input.locale != "tr-TR" { return Err("Yalnızca tr-TR test dili destekleniyor".into()); }
+    if input.strokes.is_empty() || input.strokes.len() > 256 {
+        return Err("Test için 1-256 kalem çizgisi gerekli".into());
+    }
+    let mut total = 0usize;
+    for stroke in &input.strokes {
+        total += stroke.points.len();
+        if stroke.id.len() > 128 || stroke.points.is_empty() || stroke.points.len() > 4096 ||
+           stroke.points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite() ||
+               !p.pressure.is_finite() || p.x.abs() > 100_000.0 || p.y.abs() > 100_000.0) {
+            return Err("Geçersiz kalem koordinatları".into());
+        }
+    }
+    if total > 30_000 { return Err("Test çizgileri çok büyük".into()); }
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+        use windows::Foundation::Point;
+        use windows::UI::Input::Inking::{
+            InkRecognitionTarget, InkRecognizerContainer, InkStrokeBuilder, InkStrokeContainer,
+        };
+        use windows_collections::IIterable;
+        let recognizer = InkRecognizerContainer::new().map_err(|e| e.to_string())?;
+        let installed = recognizer.GetRecognizers().map_err(|e| e.to_string())?;
+        let mut turkish = None;
+        for index in 0..installed.Size().map_err(|e| e.to_string())? {
+            let candidate = installed.GetAt(index).map_err(|e| e.to_string())?;
+            let name = candidate.Name().map_err(|e| e.to_string())?.to_string().to_lowercase();
+            if name.contains("türkiye") || name.contains("turkish") ||
+               name.contains("türkçe") || name.contains("turkce") {
+                turkish = Some(candidate);
+                break;
+            }
+        }
+        let Some(turkish) = turkish else {
+            return Ok(serde_json::json!({"status":"unavailable","reason":"Türkçe Windows Ink tanıyıcısı kurulu değil"}));
+        };
+        recognizer.SetDefaultRecognizer(&turkish).map_err(|e| e.to_string())?;
+        let container = InkStrokeContainer::new().map_err(|e| e.to_string())?;
+        let builder = InkStrokeBuilder::new().map_err(|e| e.to_string())?;
+        for stroke in input.strokes {
+            let mut points: Vec<Point> = stroke.points.into_iter().map(|p| Point { X:p.x, Y:p.y }).collect();
+            // Windows Ink needs a path, including for detached single-point dots.
+            if points.len() == 1 { points.push(Point { X:points[0].X+0.1, Y:points[0].Y+0.1 }); }
+            let iterable = IIterable::<Point>::from(points);
+            let ink_stroke = builder.CreateStroke(&iterable).map_err(|e| e.to_string())?;
+            container.AddStroke(&ink_stroke).map_err(|e| e.to_string())?;
+        }
+        let operation = recognizer.RecognizeAsync(&container, InkRecognitionTarget::All)
+            .map_err(|e| e.to_string())?;
+        let results = operation.join().map_err(|e| e.to_string())?;
+        let mut words = Vec::new();
+        for index in 0..results.Size().map_err(|e| e.to_string())? {
+            let result = results.GetAt(index).map_err(|e| e.to_string())?;
+            let candidates = result.GetTextCandidates().map_err(|e| e.to_string())?;
+            let mut options = Vec::new();
+            for n in 0..candidates.Size().map_err(|e| e.to_string())?.min(5) {
+                options.push(candidates.GetAt(n).map_err(|e| e.to_string())?.to_string());
+            }
+            words.push(serde_json::json!({"candidates":options}));
+        }
+        Ok(serde_json::json!({"status":"recognized","engine":"windows-ink-tr-TR","words":words}))
+    }).await.map_err(|e| format!("Windows Ink tanıma görevi tamamlanamadı: {e}"))?
+}
+
 /// Read-only capability check. Never invokes recognition or changes stored ink.
 #[cfg(windows)]
 #[tauri::command]
@@ -566,7 +644,8 @@ pub fn run() {
                 notex_db_rollback,
                 notex_recognize_handwriting,
                 notex_ocr_preload,
-                notex_windows_ink_capability
+                notex_windows_ink_capability,
+                notex_windows_ink_recognize_test
             ]);
     builder
         .setup(|app| {
