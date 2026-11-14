@@ -239,7 +239,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
 
 function makeStyles(colors: ThemeColors, scheme: 'light' | 'dark') { return StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, body: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 },
-  topBar: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, brand: { flexDirection: 'row', alignItems: 'center', marginLeft: -5 }, topActions: { flexDirection: 'row', gap: 6 },
+  topBar: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, brand: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: -5 }, topActions: { flexDirection: 'row', gap: 6 },
   iconButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: scheme === 'light' ? colors.surface : colors.surfaceRaised },
   headerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.divider, marginHorizontal: -20 }, filters: { marginHorizontal: -20, paddingTop: 10, paddingBottom: 3 }, list: { flex: 1 },
   hero: { paddingTop: 24, paddingBottom: 17 }, heroTitle: { fontFamily: fonts.heading, fontSize: 31, lineHeight: 37, letterSpacing: -0.5, color: colors.ink }, heroSubtitle: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: colors.muted, marginTop: 4 },
