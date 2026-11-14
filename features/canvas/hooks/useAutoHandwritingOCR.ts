@@ -62,6 +62,8 @@ export function useAutoHandwritingOCR(
   const drawing=useRef(false);
   const failures=useRef<Map<string,number>>(new Map());
   const busy=useRef(false);
+  const pendingSince=useRef<number|null>(null);
+  const latestStrokeAt=useRef(0);
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const alive=useRef(true);
   const applyRef=useRef(apply);applyRef.current=apply;
@@ -76,7 +78,11 @@ export function useAutoHandwritingOCR(
     const pending=contentRef.current.elements.filter(
       (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)
     );
-    if(!pending.length)return;
+    if(!pending.length){pendingSince.current=null;return;}
+    if(pendingSince.current===null)pendingSince.current=Date.now();
+    // Debounce short pen pauses, but cap the wait so a long sentence
+    // cannot postpone OCR indefinitely.
+    const wait=Math.max(0,Math.min(380-(Date.now()-latestStrokeAt.current),1100-(Date.now()-pendingSince.current)));
     timer.current=setTimeout(async()=>{
       if(drawing.current||busy.current||!alive.current)return;
       const pendingStrokes=contentRef.current.elements.filter(
@@ -102,6 +108,7 @@ export function useAutoHandwritingOCR(
       const raster=rasterize(strokes);
       if(!raster){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));scheduleRef.current();return;}
       busy.current=true;
+      pendingSince.current=null;
       startedAt.current=Date.now();
       const ids=strokes.map(s=>s.id);
       let completed=false;
@@ -172,8 +179,12 @@ export function useAutoHandwritingOCR(
         busy.current=false;
         if(alive.current)scheduleRef.current();
       }
-    },900);
+    },wait);
   };
   useEffect(()=>{scheduleRef.current()},[content.elements]);
-  return (active:boolean)=>{drawing.current=active;if(active&&timer.current)clearTimeout(timer.current);else if(!active)scheduleRef.current()};
+  return (active:boolean)=>{
+    drawing.current=active;
+    if(active){if(timer.current)clearTimeout(timer.current);}
+    else {latestStrokeAt.current=Date.now();scheduleRef.current();}
+  };
 }
