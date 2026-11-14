@@ -78,7 +78,8 @@ async function openAndMigrate(){
   const current=result?.user_version??0;
   // A verified, independent SQLite copy is required before destructive v3 cleanup.
   // Never silently modify a migrated desktop database without this safety net.
-  if(current===3&&isTauriRuntime()){
+  if(current===3){
+   if(!isTauriRuntime())throw new Error('Eski ders/konu SQLite yapısı için otomatik güvenli temizlik yalnızca Windows masaüstünde destekleniyor. Veriler değiştirilmedi.');
    await invoke('notex_db_backup_before_schema_cleanup');
   }
   for(const migration of migrations.filter(m=>m.version>current&&m.version<=latestMigrationVersion).sort((a,b)=>a.version-b.version)){
