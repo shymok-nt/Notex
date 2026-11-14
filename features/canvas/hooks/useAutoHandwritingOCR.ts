@@ -1,6 +1,7 @@
 /** Experimental, Windows-only offline OCR. Does not alter the live stroke pipeline. */
 import {useEffect,useRef,type MutableRefObject} from 'react';
 import {isTauri,invoke} from '@tauri-apps/api/core';
+import {getPaperGuideMetrics,nearestPaperGuide} from '@/features/canvas/engine/paperGuides';
 import type {PageContent,StrokeElement,BeautifiedWord} from '@/features/canvas/types';
 
 let preloadStarted=false;
@@ -54,10 +55,12 @@ export function useAutoHandwritingOCR(
   content:PageContent,
   contentRef:MutableRefObject<PageContent>,
   apply:(next:PageContent)=>void,
+  template:string,
 ){
   useEffect(()=>{preloadOCR()},[]);
   const known=useRef<Set<string>>(new Set(content.elements.map(e=>e.id)));
   const drawing=useRef(false);
+  const lastProgress=useRef(Date.now());
   const failures=useRef<Map<string,number>>(new Map());
   const busy=useRef(false);
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -89,7 +92,10 @@ export function useAutoHandwritingOCR(
       const strokes:StrokeElement[]=[];
       for(const stroke of pendingStrokes){
         const y=(stroke.bbox[1]+stroke.bbox[3])/2;
-        if(strokes.length>=80||Math.abs(y-centerY)>Math.max(32,lineHeight*0.9))break;
+        if(strokes.length>=48)break;
+        // A line may contain tall capitals, dots and descenders. Keep nearby
+        // strokes but do not let a distant row block the remaining queue.
+        if(Math.abs(y-centerY)>Math.max(46,lineHeight*1.6))continue;
         strokes.push(stroke);
       }
       if(!strokes.length)return;
@@ -109,7 +115,8 @@ export function useAutoHandwritingOCR(
         // New strokes are independent work; they must not invalidate this completed word.
         if((current.beautifications??[]).some(b=>b.sourceIds.some(id=>ids.includes(id))))return;
         console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,inferenceMs:response.inferenceMs,model:response.model,fallbackReason:response.fallbackReason,lines:response.lines});
-        const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.55);
+        if(!response.ok)throw new Error('OCR returned an unsuccessful response');
+        const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.45);
         if(!recognized.length){console.warn('[Notex OCR] Güvenilir metin bulunamadı');return;}
         const left=Math.min(...strokes.map(s=>s.bbox[0]));
         const top=Math.min(...strokes.map(s=>s.bbox[1]));
@@ -132,9 +139,16 @@ export function useAutoHandwritingOCR(
             bounds[0]=left;bounds[1]=top;bounds[2]=right;bounds[3]=bottom;
           }
           const height=bounds[3]-bounds[1];
+          // Align to the nearest visible ruled/grid guide, never move text
+          // to a different row when the handwriting is far from a guide.
+          const guide=(template==='çizgili'||template==='kareli')
+            ? nearestPaperGuide(bounds[3],getPaperGuideMetrics(1,1),36)
+            : null;
+          const baseline=guide?.baseline??bounds[3];
+          if(guide){bounds[1]+=baseline-bounds[3];bounds[3]=baseline;}
           return {
             id:ids[0]+'-ocr-'+index,text:line.text.trim(),
-            bbox:bounds,baseline:bounds[3],
+            bbox:bounds,baseline,
             fontSize:Math.max(12,Math.min(100,height*0.9)),
             color:strokes[0].color,font:'Caveat'
           };
@@ -142,6 +156,7 @@ export function useAutoHandwritingOCR(
         console.info('[Notex OCR] Yazı fonta dönüştürülüyor',words.map(w=>w.text));
         applyRef.current({...current,beautifications:[...(current.beautifications??[]),{sourceIds:ids,words,mode:'beautified'}]});
         completed=true;
+        lastProgress.current=Date.now();
       }catch(error){
         console.warn('[Notex OCR] Tanıma başarısız, orijinal çizgiler korundu:',error);
       }finally{
@@ -150,6 +165,7 @@ export function useAutoHandwritingOCR(
         const batchKey=ids.join('|');
         const tries=(failures.current.get(batchKey)??0)+1;
         if(completed||tries>=3){
+          if(!completed)console.warn('[Notex OCR] Grup üç denemede tanınamadı, sonraki gruba geçiliyor',{strokeCount:ids.length});
           ids.forEach(id=>known.current.add(id));
           failures.current.delete(batchKey);
         }else{
