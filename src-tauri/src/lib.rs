@@ -437,6 +437,17 @@ fn start_ocr_worker() -> Result<OcrWorker, String> {
 }
 
 #[cfg(windows)]
+#[tauri::command]
+async fn notex_ocr_preload() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let lock = OCR_WORKER.get_or_init(|| Mutex::new(None));
+        let mut guard = lock.lock().map_err(|_| "OCR worker kilidi bozuldu".to_string())?;
+        if guard.is_none() { *guard = Some(start_ocr_worker()?); }
+        Ok(serde_json::json!({"ready": true}))
+    }).await.map_err(|error| format!("OCR hazırlama görevi başarısız: {error}"))?
+}
+
+#[cfg(windows)]
 #[tauri::command(rename_all = "camelCase")]
 async fn notex_recognize_handwriting(png_base64: String) -> Result<Value, String> {
     if png_base64.len() > 8_000_000 { return Err("OCR görseli çok büyük".into()); }
@@ -489,7 +500,8 @@ pub fn run() {
                 notex_db_begin,
                 notex_db_commit,
                 notex_db_rollback,
-                notex_recognize_handwriting
+                notex_recognize_handwriting,
+                notex_ocr_preload
             ]);
     builder
         .setup(|app| {
