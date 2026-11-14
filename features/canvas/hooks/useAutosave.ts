@@ -31,7 +31,6 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
    idleWaiters.current.push(done);
   });
   const {pageId:id,content:value}=latest.current;
-  if(__DEV__)console.log('[Notex page-trace] flush_requested',{pageId:id,dirty:dirty.current,active:active.current,version:version.current,savedVersion:savedVersion.current,elementCount:value.elements.length});
   if(!id||!dirty.current)return queues.get(id??'')??Promise.resolve();
   const snapshot=version.current;
   if(snapshot===savedVersion.current)return queues.get(id)??Promise.resolve();
@@ -47,10 +46,8 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
    try{
     const writeStarted=__DEV__?perfNow():0;
     if(imageIds.length)logImageDebug('sqlite_save_started',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
-    if(__DEV__)console.log('[Notex page-trace] sqlite_write_start',{pageId:id,version:snapshot,elementCount:value.elements.length,bytes:data.length});
     await pageRepository.updateContent(id,data);
     const stored=await pageRepository.getStoredContent(id);
-    if(__DEV__)console.log('[Notex page-trace] sqlite_write_verified',{pageId:id,version:snapshot,matches:stored===data,storedBytes:stored?.length??0});
     if(stored!==data)throw new Error('Sayfa kaydı doğrulanamadı. Tekrar dene.');
     onSavedRef.current?.(id,data);
     if(imageIds.length)logImageDebug('sqlite_save_succeeded',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
@@ -59,7 +56,6 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
     if(canResetDirtyWindow(version.current,snapshot,dirty.current))firstDirty.current=0;
     if(mounted.current)setError(false);
    }catch(e){
-    if(__DEV__)console.error('[Notex page-trace] sqlite_write_error',{pageId:id,version:snapshot,error:e instanceof Error?e.message:String(e)});
     if(imageIds.length)logImageDebug('sqlite_save_failed',{pageId:id,imageCount:imageIds.length,errorType:e instanceof Error?e.name:typeof e});
     dirty.current=true;
     if(mounted.current)setError(true);
@@ -85,7 +81,6 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
   if(serialized===lastSerialized.current)return;
   lastSerialized.current=serialized;
   version.current++;dirty.current=true;
-  if(__DEV__)console.log('[Notex page-trace] edit_marked',{pageId,version:version.current,elementCount:next.elements.length});
   if(!firstDirty.current)firstDirty.current=Date.now();
   schedule();
  },[pageId,schedule]);
