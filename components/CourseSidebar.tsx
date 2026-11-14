@@ -11,7 +11,7 @@ type Deletion={kind:'course'|'topic';id:string;name:string};
 const palette=['#3347D9','#1C9A8E','#3E8E5A','#F2B632','#FF6B5A','#7B5CD6'];
 const icons=['📘','📚','🧪','📐','🌎','💻','🎨'];
 
-export function CourseSidebar({notebooks,onOpenNote,onCreateNote}:{notebooks:Notebook[];onOpenNote:(id:string)=>void;onCreateNote:()=>void}){
+export function CourseSidebar({notebooks,onOpenNote,onCreateNote,onDropNote}:{notebooks:Notebook[];onOpenNote:(id:string)=>void;onCreateNote:()=>void;onDropNote?:(noteId:string,courseId:string|null,topicId:string|null)=>void}){
  const {colors}=useTheme();
  const courses=useCourseStore(s=>s.courses),topics=useCourseStore(s=>s.topics),expandedIds=useCourseStore(s=>s.expandedIds);
  const selectedCourseId=useCourseStore(s=>s.selectedCourseId),selectedTopicId=useCourseStore(s=>s.selectedTopicId);
@@ -66,7 +66,10 @@ export function CourseSidebar({notebooks,onOpenNote,onCreateNote}:{notebooks:Not
   else if(r.kind==='unclassified')store().select('unclassified');
   else store().select(r.courseId,r.topicId);
  };
- const rowView=({item:r}:{item:Row})=><View style={{flexDirection:'row',alignItems:'center',minHeight:42,paddingLeft:8+r.level*14,paddingRight:6,backgroundColor:selected(r)?colors.surfaceRaised:'transparent'}}>
+ const rowView=({item:r}:{item:Row})=><View {...(Platform.OS==='web'&&r.kind!=='note'?{
+  onDragOver:(event:any)=>event.preventDefault(),
+  onDrop:(event:any)=>{event.preventDefault();const id=event.dataTransfer?.getData('application/x-notex-notebook');if(id)onDropNote?.(id,r.kind==='unclassified'||r.kind==='all'?null:r.courseId,r.kind==='topic'?r.topicId:null)}
+ } as any:{})} style={{flexDirection:'row',alignItems:'center',minHeight:42,paddingLeft:8+r.level*14,paddingRight:6,backgroundColor:selected(r)?colors.surfaceRaised:'transparent'}}>
   {r.expandable?<Pressable accessibilityLabel={r.expanded?'Daralt':'Genişlet'} onPress={()=>void run(()=>store().toggleExpanded(r.kind==='unclassified'?'unclassified':r.kind+'-'+r.id))} style={{width:28,padding:5}}><Text style={{color:colors.muted}}>{r.expanded?'▾':'▸'}</Text></Pressable>:<View style={{width:28}}/>}
   <Pressable onPress={()=>activate(r)} onLongPress={()=>{if(r.kind==='course')setEditor({kind:'course',id:r.id,name:r.name,color:r.color??palette[0],icon:r.icon??icons[0]});else if(r.kind==='topic')setEditor({kind:'topic',id:r.id,courseId:r.courseId??undefined,name:r.name,color:palette[0],icon:icons[0]})}} style={{flex:1,paddingVertical:9}}>
    <Text numberOfLines={1} style={{fontSize:13,color:colors.ink,fontWeight:selected(r)?'700':'400'}}>{r.icon??(r.kind==='topic'?'📄':r.kind==='note'?'•':'')} {r.name}</Text>
