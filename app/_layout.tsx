@@ -1,7 +1,7 @@
-import { Stack } from 'expo-router';
+import { Stack,router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useEffect,useState } from 'react';
-import { ActivityIndicator,Pressable,Text,View,useColorScheme } from 'react-native';
+import { ActivityIndicator,Pressable,Text,View,useColorScheme,Platform } from 'react-native';
 import { useNotebookStore } from '@/store/notebookStore';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts as useInterFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
@@ -12,7 +12,19 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { DeleteUndoSnackbar } from '@/components/DeleteUndoSnackbar';
 import {CanvasFontProvider} from '@/features/canvas/components/CanvasFontProvider';
 import {useCourseStore} from '@/store/courseStore';
-export default function RootLayout(){const deviceScheme=useColorScheme();const [interLoaded,interError]=useInterFonts({Inter_400Regular,Inter_500Medium,Inter_600SemiBold});const [spaceLoaded,spaceError]=useSpaceFonts({SpaceGrotesk_500Medium,SpaceGrotesk_700Bold});const hydrate=useNotebookStore(s=>s.hydrate);const hydrateSettings=useSettingsStore(s=>s.hydrate);const theme=useSettingsStore(s=>s.theme);const [status,setStatus]=useState<'loading'|'ready'|'error'>('loading');applyColors(theme==='system'?(deviceScheme==='dark'?'dark':'light'):theme);const [errorMessage,setErrorMessage]=useState('');const retry=()=>{
+export default function RootLayout(){
+ // Ctrl+K opens local search without interfering with browser Ctrl+F.
+ useEffect(()=>{
+  if(Platform.OS!=='web'||typeof window==='undefined')return;
+  const keydown=(event:KeyboardEvent)=>{
+   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){
+    event.preventDefault();router.navigate('/(tabs)/search');
+   }
+  };
+  window.addEventListener('keydown',keydown);
+  return ()=>window.removeEventListener('keydown',keydown);
+ },[]);
+ const deviceScheme=useColorScheme();const [interLoaded,interError]=useInterFonts({Inter_400Regular,Inter_500Medium,Inter_600SemiBold});const [spaceLoaded,spaceError]=useSpaceFonts({SpaceGrotesk_500Medium,SpaceGrotesk_700Bold});const hydrate=useNotebookStore(s=>s.hydrate);const hydrateSettings=useSettingsStore(s=>s.hydrate);const theme=useSettingsStore(s=>s.theme);const [status,setStatus]=useState<'loading'|'ready'|'error'>('loading');applyColors(theme==='system'?(deviceScheme==='dark'?'dark':'light'):theme);const [errorMessage,setErrorMessage]=useState('');const retry=()=>{
  setStatus('loading');setErrorMessage('');
  let timeout:ReturnType<typeof setTimeout>|undefined;
  const loading=Promise.all([hydrate(),hydrateSettings(),useCourseStore.getState().hydrate()]);
