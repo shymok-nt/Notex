@@ -336,7 +336,26 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
  useCanvasAwake();const [content,setContent]=useState<PageContent>(()=>{const started=__DEV__?perfNow():0;const parsed=parseContent(page.content);if(__DEV__)console.log('[Notex perf] page_parse',{duration_ms:Math.round((perfNow()-started)*10)/10,element_count:parsed.elements.length,content_characters:page.content.length});return parsed});
  const contentRef=useRef(content);contentRef.current=content;
  const {error,saving,retry,flush,setDrawingActive}=useAutosave(page.id,content,(savedPageId,serialized)=>{usePageStore.getState().cacheContent(savedPageId,serialized);const saved=parseContent(serialized);if(saved.images?.length)logImageDebug('page_store_cache_updated',{pageId:savedPageId,imageCount:saved.images.length,elementIds:saved.images.map(image=>image.id)})});
- const change=(next:PageContent)=>{const previous=contentRef.current;record(page.id,previous);contentRef.current=next;setContent(next);onHistory()};
+ const change=(incoming:PageContent)=>{
+  const previous=contentRef.current;
+  // DrawingCanvas may complete a stroke using props captured before an
+  // asynchronous OCR result. In that case its next content contains the new
+  // stroke but an older beautifications array. Preserve the latest OCR state
+  // instead of reverting already converted words on the next pen stroke.
+  const previousIds=new Set(previous.elements.map(element=>element.id));
+  const incomingIds=new Set(incoming.elements.map(element=>element.id));
+  const addedPenStroke=incoming.elements.some(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
+  const retainsExistingElements=previous.elements.every(element=>incomingIds.has(element.id));
+  const incomingBeautifications=incoming.beautifications??[];
+  const missingPreviousBeautifications=(previous.beautifications??[]).filter(item=>
+    !incomingBeautifications.some(nextItem=>nextItem.sourceIds.length===item.sourceIds.length&&nextItem.sourceIds.every(id=>item.sourceIds.includes(id)))
+  );
+  const next=addedPenStroke&&retainsExistingElements&&missingPreviousBeautifications.length
+    ? {...incoming,beautifications:[...incomingBeautifications,...missingPreviousBeautifications]}
+    : incoming;
+  if(next!==incoming)console.info('[Notex OCR] Korunan önceki dönüşümler',{count:missingPreviousBeautifications.length});
+  record(page.id,previous);contentRef.current=next;setContent(next);onHistory();
+ };
  const onOcrDrawingActive=useAutoHandwritingOCR(page.id,content,contentRef,change);
  const handleDrawingActive=(active:boolean)=>{setDrawingActive(active);onOcrDrawingActive(active)};
  const addImage=(image:PageImage)=>{const previous=contentRef.current;const next={...previous,images:[...(previous.images??[]),image]};record(page.id,previous);contentRef.current=next;setContent(next);onHistory();logImageDebug('page_content_updated',{pageId:page.id,elementId:image.id,imageCount:next.images?.length??0,bounds:[image.x,image.y,image.x+image.width,image.y+image.height]})};
