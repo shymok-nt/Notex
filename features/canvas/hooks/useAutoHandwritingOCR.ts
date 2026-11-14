@@ -14,7 +14,8 @@ function rasterize(strokes:StrokeElement[]):string|null {
   const bottom=Math.max(...strokes.map(s=>s.bbox[3]))+18;
   const width=right-left,height=bottom-top;
   if(width<12||height<5||width>2400||height>1200)return null;
-  const scale=Math.min(2,1200/width,600/height);
+  // OCR detector runs on CPU: avoid enlarging already legible handwriting.
+  const scale=Math.min(1.25,960/width,320/height);
   const canvas=document.createElement('canvas');
   canvas.width=Math.max(1,Math.ceil(width*scale));
   canvas.height=Math.max(1,Math.ceil(height*scale));
@@ -103,7 +104,7 @@ export function useAutoHandwritingOCR(
         busy.current=false;
         if(alive.current)scheduleRef.current();
       }
-    },1100);
+    },450);
   };
   useEffect(()=>{scheduleRef.current()},[content.elements]);
   return (active:boolean)=>{drawing.current=active;if(active&&timer.current)clearTimeout(timer.current);else if(!active)scheduleRef.current()};
