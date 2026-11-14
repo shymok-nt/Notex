@@ -158,6 +158,72 @@ fn query_rows(
     Ok(result)
 }
 
+
+#[cfg(windows)]
+#[tauri::command]
+fn notex_cleanup_removed_feature(
+    app: AppHandle,
+    state: State<'_, NativeSqliteState>,
+) -> Result<bool, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    ensure_connection(&app, &state)?;
+    let mut inner = state.0.lock().map_err(|_| "Notex SQLite kilidi kullanılamıyor".to_string())?;
+    if inner.transaction_id.is_some() {
+        return Err("SQLite işlemi devam ederken temizlik yapılamaz".to_string());
+    }
+    let connection = inner.connection.as_mut().ok_or("Notex SQLite bağlantısı bulunamadı")?;
+    let has_feature_table: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('courses','topics','pdf_search_index','migration_v3_notebooks_backup','migration_v3_pages_backup')",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| format!("SQLite şeması okunamadı: {e}"))?;
+    let mut stmt = connection.prepare("PRAGMA table_info(notebooks)")
+        .map_err(|e| format!("Not defteri şeması okunamadı: {e}"))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("Not defteri alanları okunamadı: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Not defteri alanları okunamadı: {e}"))?;
+    drop(stmt);
+    let has_course = columns.iter().any(|c| c == "course_id");
+    let has_topic = columns.iter().any(|c| c == "topic_id");
+    if has_feature_table == 0 && !has_course && !has_topic {
+        return Ok(false);
+    }
+
+    // VACUUM INTO creates a consistent independent SQLite backup even in WAL mode.
+    // Never overwrite an earlier backup; leave it available for manual recovery.
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Yedek zaman damgası alınamadı: {e}"))?.as_nanos();
+    let backup = database_path(&app)?.with_file_name(format!("notex-before-feature-cleanup-{stamp}.db"));
+    let escaped = backup.to_string_lossy().replace('\'', "''");
+    connection.execute_batch(&format!("VACUUM INTO '{escaped}'"))
+        .map_err(|e| format!("Temizlik öncesi SQLite yedeği oluşturulamadı; hiçbir veri silinmedi: {e}"))?;
+
+    // Every schema change is atomic. If any step fails, SQLite rolls back.
+    let tx = connection.transaction()
+        .map_err(|e| format!("SQLite temizlik işlemi başlatılamadı: {e}"))?;
+    let result = (|| -> rusqlite::Result<()> {
+        tx.execute_batch(
+            "DROP TABLE IF EXISTS pdf_search_index;
+             DROP INDEX IF EXISTS idx_notebooks_course_topic;
+             DROP INDEX IF EXISTS idx_topics_course_order;
+             DROP TABLE IF EXISTS topics;
+             DROP TABLE IF EXISTS courses;
+             DROP TABLE IF EXISTS migration_v3_notebooks_backup;
+             DROP TABLE IF EXISTS migration_v3_pages_backup;",
+        )?;
+        if has_topic { tx.execute_batch("ALTER TABLE notebooks DROP COLUMN topic_id;")?; }
+        if has_course { tx.execute_batch("ALTER TABLE notebooks DROP COLUMN course_id;")?; }
+        tx.execute("DELETE FROM settings WHERE key='schemaVersion' AND value='3'", [])?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        return Err(format!("SQLite temizlik işlemi geri alındı; notlar korunuyor. Yedek: {}. Hata: {error}", backup.display()));
+    }
+    tx.commit().map_err(|e| format!("SQLite temizliği kaydedilemedi: {e}"))?;
+    Ok(true)
+}
+
 #[cfg(windows)]
 #[tauri::command]
 fn notex_db_open(app: AppHandle, state: State<'_, NativeSqliteState>) -> Result<String, String> {
@@ -396,6 +462,7 @@ pub fn run() {
             .manage(NativeSqliteState::default())
             .invoke_handler(tauri::generate_handler![
                 notex_db_open,
+                notex_cleanup_removed_feature,
                 notex_db_exec,
                 notex_db_run,
                 notex_db_all,
