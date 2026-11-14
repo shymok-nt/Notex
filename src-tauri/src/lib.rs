@@ -420,16 +420,20 @@ fn start_ocr_worker() -> Result<OcrWorker, String> {
     let stdout = child.stdout.take().ok_or("OCR stdout açılamadı")?;
     let mut output = std::io::BufReader::new(stdout);
     for _ in 0..100 {
-        let mut line = String::new();
-        if output.read_line(&mut line).map_err(|error| error.to_string())? == 0 {
+        let mut bytes = Vec::new();
+        if output.read_until(b'\n', &mut bytes).map_err(|error| error.to_string())? == 0 {
             return Err("OCR worker başlatılırken kapandı".into());
         }
-        if let Ok(value) = serde_json::from_str::<Value>(&line) {
-            if value.get("ready").and_then(Value::as_bool) == Some(true) {
-                return Ok(OcrWorker { child, input, output });
-            }
-            if value.get("ready").and_then(Value::as_bool) == Some(false) {
-                return Err(value.get("error").and_then(Value::as_str).unwrap_or("OCR başlatılamadı").to_string());
+        // Paddle/Python dependencies can emit non-UTF-8 console diagnostics.
+        // Ignore those lines; only JSON protocol messages are authoritative.
+        if let Ok(line) = std::str::from_utf8(&bytes) {
+            if let Ok(value) = serde_json::from_str::<Value>(line) {
+                if value.get("ready").and_then(Value::as_bool) == Some(true) {
+                    return Ok(OcrWorker { child, input, output });
+                }
+                if value.get("ready").and_then(Value::as_bool) == Some(false) {
+                    return Err(value.get("error").and_then(Value::as_str).unwrap_or("OCR başlatılamadı").to_string());
+                }
             }
         }
     }
@@ -464,13 +468,17 @@ async fn notex_recognize_handwriting(png_base64: String, engine: Option<String>)
             writeln!(worker.input, "{request}").map_err(|error| error.to_string())?;
             worker.input.flush().map_err(|error| error.to_string())?;
             for _ in 0..100 {
-                let mut line = String::new();
-                if worker.output.read_line(&mut line).map_err(|error| error.to_string())? == 0 {
+                let mut bytes = Vec::new();
+                if worker.output.read_until(b'\n', &mut bytes).map_err(|error| error.to_string())? == 0 {
                     return Err("OCR worker yanıt vermeden kapandı".into());
                 }
-                if let Ok(value) = serde_json::from_str::<Value>(&line) {
-                    if value.get("ok").is_some() { return Ok(value); }
+                if let Ok(line) = std::str::from_utf8(&bytes) {
+                    if let Ok(value) = serde_json::from_str::<Value>(line) {
+                        if value.get("ok").is_some() { return Ok(value); }
+                    }
                 }
+                // Non-JSON or non-UTF-8 diagnostic output must not kill OCR.
+                // Keep reading until the actual JSON result arrives.
             }
             Err("OCR worker geçerli yanıt döndürmedi".into())
         })();
