@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, FlatList, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Copy, Heart, LayoutGrid, List, MoreHorizontal, Pencil, Search, Settings2, Trash2, X } from 'lucide-react-native';
+import { Copy, Heart, LayoutGrid, List, MoreHorizontal, Search, Settings2, Trash2, X } from 'lucide-react-native';
+import {CreateNotebookIcon} from '@/components/CreateNotebookIcon';
 import { BackupReminder } from '@/components/BackupReminder';
 import { EmptyState } from '@/components/EmptyState';
 import { FolderChips } from '@/components/FolderChips';
@@ -191,7 +192,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         ListEmptyComponent={<EmptyState colorsOverride={colors} />}
       />
 
-      {!favorites && !multiSelect && <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => openEditor()} style={styles.fab}><Pencil size={21} strokeWidth={2.3} color={colors.onAccent} /></Pressable>}
+      {!favorites && !multiSelect && <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => openEditor()} style={styles.fab}><CreateNotebookIcon/></Pressable>}
     </View>
 
     <SelectionActionBar visible={multiSelect} selectedCount={checked.length} actions={selectionActions} />
@@ -245,6 +246,6 @@ function makeStyles(colors: ThemeColors, scheme: 'light' | 'dark') { return Styl
   section: { marginTop: 3, marginBottom: 12 }, sectionHeading: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontFamily: fonts.heading, fontSize: 21, letterSpacing: -0.3, color: colors.ink }, count: { fontFamily: fonts.medium, fontSize: 12, color: colors.muted },
   sectionTools: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, resultLabel: { fontFamily: fonts.body, fontSize: 12, color: colors.muted }, sortButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 5 }, sortText: { fontFamily: fonts.medium, fontSize: 14, color: colors.accent },
   selectionBar: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 5 }, selectedCount: { maxWidth: 68, fontFamily: fonts.semibold, fontSize: 12, color: colors.ink }, selectionActions: { alignItems: 'center', gap: 2 }, slimAction: { minHeight: 42, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }, slimText: { fontFamily: fonts.medium, fontSize: 13, color: colors.ink }, accentText: { color: colors.accent }, dangerText: { fontFamily: fonts.medium, color: colors.coral }, clearSelection: { width: 38, height: 44, alignItems: 'center', justifyContent: 'center' },
-  gridRow: { gap: 20 }, listItem: { flex: 1 }, listContent: { paddingBottom: 108 }, emptyContent: { flexGrow: 1, justifyContent: 'center', paddingBottom: 100 }, fab: { position: 'absolute', bottom: 18, right: 18, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: colors.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
+  gridRow: { gap: 20 }, listItem: { flex: 1 }, listContent: { paddingBottom: 108 }, emptyContent: { flexGrow: 1, justifyContent: 'center', paddingBottom: 100 }, fab: { position: 'absolute', bottom: 14, right: 14, width: 66, height: 66, alignItems: 'center', justifyContent: 'center' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay }, sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 30 }, modalTitle: { fontFamily: fonts.heading, fontSize: 19, color: colors.ink, marginBottom: 8 }, modalCopy: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.ink }, confirmCard: { margin: 20, padding: 22, gap: 12, backgroundColor: colors.surface, borderRadius: 20 }, confirmActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 4 }, confirmButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 }, option: { minHeight: 48, justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }, optionText: { fontFamily: fonts.medium, fontSize: 15, color: colors.ink }, sheetSubheading: { fontFamily: fonts.semibold, fontSize: 13, color: colors.muted, marginTop: 14, marginBottom: 2 }, activeText: { color: colors.accent, fontFamily: fonts.semibold },
 }); }

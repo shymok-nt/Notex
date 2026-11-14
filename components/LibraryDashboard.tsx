@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { LayoutGrid, List, Pencil, Settings2, ChevronRight, Trash2, X, FileUp } from 'lucide-react-native';
+import { LayoutGrid, List, Settings2, ChevronRight, Trash2, X, FileUp } from 'lucide-react-native';
+import {CreateNotebookIcon} from '@/components/CreateNotebookIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotebookCover } from '@/components/NotebookCover';
 import { NotebookSelectionMark } from '@/components/NotebookSelectionMark';
@@ -227,7 +228,7 @@ export function LibraryDashboard() {
         </View> : <View style={styles.emptyNotes}><Text style={styles.emptyCopy}>Henüz açılmış defter yok. Bir defter açtığında burada görünecek.</Text></View>}
         </ScrollView>
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter olu\u015ftur" onPress={() => router.push('/notebook-editor')} style={[styles.fab, selectionKind !== null && { display: 'none' }]}><Pencil size={21} color="#FFFFFF" strokeWidth={2.3}/></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => router.push('/notebook-editor')} style={[styles.fab, selectionKind !== null && { display: 'none' }]}><CreateNotebookIcon/></Pressable>
       <SelectionActionBar visible={selectionKind !== null} selectedCount={selectedNotebookIds.length} actions={selectionActions} />
       <Modal visible={confirmNotebookDeleteVisible} transparent animationType="fade" onRequestClose={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}>
         <View style={styles.deleteBackdrop}>
@@ -277,5 +278,5 @@ function makeStyles(colors: ThemeColors) { return StyleSheet.create({
   deleteCancel: { fontFamily: fonts.medium, color: colors.ink },
   deleteConfirm: { fontFamily: fonts.semibold, color: colors.coral },
   undoBanner: { position: 'absolute', bottom: 9, left: 20, right: 20, minHeight: 48, backgroundColor: colors.surfaceRaised, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 4, shadowColor: colors.ink, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 8 }, undoBannerAboveToolbar: { bottom: 80 }, undoText: { fontFamily: fonts.medium, fontSize: 13, color: colors.ink }, undoAction: { fontFamily: fonts.semibold, fontSize: 13, color: colors.accent },
-  fab: { position: 'absolute', right: 20, bottom: 17, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', shadowColor: colors.accent, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.25, shadowRadius: 9, elevation: 5 },
+  fab: { position: 'absolute', right: 16, bottom: 13, width: 66, height: 66, alignItems: 'center', justifyContent: 'center' },
 }); }
