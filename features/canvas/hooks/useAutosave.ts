@@ -6,6 +6,7 @@ import {autosaveDelay,AUTOSAVE_RETRY_DELAY_MS,canResetDirtyWindow} from '@/featu
 import {perfNow} from '@/features/canvas/engine/performance';
 import type {PageContent} from '@/features/canvas/types';
 import {logImageDebug} from '@/utils/tauriFiles';
+import {confirmPageContent} from '@/features/canvas/store/pageContentStorage';
 
 const queues=new Map<string,Promise<void>>();
 export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pageId:string,serializedContent:string)=>void){
@@ -49,6 +50,7 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
     await pageRepository.updateContent(id,data);
     const stored=await pageRepository.getStoredContent(id);
     if(stored!==data)throw new Error('Sayfa kaydı doğrulanamadı. Tekrar dene.');
+    confirmPageContent(id,data);
     onSavedRef.current?.(id,data);
     if(imageIds.length)logImageDebug('sqlite_save_succeeded',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
     if(__DEV__)console.log('[Notex perf] autosave_flush',{compare_ms:Math.round(lastCompareMs.current*10)/10,serialize_ms:Math.round(serializeMs*10)/10,sqlite_write_ms:Math.round((perfNow()-writeStarted)*10)/10,content_characters:data.length});
