@@ -91,7 +91,15 @@ export function useAutoHandwritingOCR(
       startedAt.current=Date.now();
       let completed=false;
       try{
-        const response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64});
+        const selectedEngine=process.env.EXPO_PUBLIC_NOTEX_OCR_ENGINE==='trocr'?'trocr':'paddle';
+        let response:OcrResult;
+        try{
+          response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64,engine:selectedEngine});
+        }catch(error){
+          if(selectedEngine!=='trocr')throw error;
+          console.warn('[Notex OCR] TrOCR kullanılamadı, PaddleOCR deneniyor:',error);
+          response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64,engine:'paddle'});
+        }
         if(!alive.current||pageRef.current!==pageId)return;
         const current=contentRef.current;
         const existing=new Set(current.elements.map(e=>e.id));
