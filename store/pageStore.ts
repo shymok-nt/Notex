@@ -7,6 +7,7 @@ import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
 import {enqueuePageSave,flushPageSave,finishPageSave,finishManyPageSaves} from '@/features/canvas/store/pagePersistence';
 import {isTauriDesktop} from '@/utils/tauriFiles';
+import {queueIndexedPageChange,indexNewPage,removeIndexedPages} from '@/features/search/searchIndex';
 type State={pages:Page[];notebookId:string|null;loading:boolean;
  load:(id:string)=>Promise<void>;cacheContent:(id:string,content:string)=>boolean;add:(afterPosition:number)=>Promise<string|undefined>;remove:(id:string)=>Promise<void>;move:(id:string,position:number)=>Promise<void>;duplicateMany:(ids:string[])=>Promise<string[]>;removeMany:(ids:string[])=>Promise<Page[]>;restoreMany:(pages:Page[])=>Promise<void>;updateTemplate:(id:string,template:PageTemplate,paperColor:PaperColor)=>Promise<void>};
 const showError=(e:unknown)=>Alert.alert('Sayfa işlemi başarısız',e instanceof Error?e.message:'Tekrar dene.');
@@ -49,6 +50,7 @@ export const usePageStore=create<State>((set,get)=>({
   // This is the only page-content mutation path.
   // Immediate state makes ink responsive; queued SQLite writes are serialized.
   enqueuePageSave(pageId,content);
+  queueIndexedPageChange(pageId,content);
   set(state=>({pages:state.pages.map(page=>page.id===pageId?{...page,content}:page)}));
   return true;
  },
@@ -58,6 +60,7 @@ export const usePageStore=create<State>((set,get)=>({
    const created=await timed('add_write',()=>pageRepository.add(id,position));
    const added=(await pageRepository.getByIds([created]))[0];
    if(!added)throw new Error('Yeni sayfa yüklenemedi.');
+   indexNewPage(added);
    set(state=>{
     if(state.notebookId!==id)return state;
     const pages=[...state.pages,added].sort((a,b)=>a.position-b.position)
@@ -74,6 +77,7 @@ export const usePageStore=create<State>((set,get)=>({
   try{
    await finishPageSave(pageId);
    await timed('remove_write',()=>pageRepository.remove(pageId));
+   removeIndexedPages([pageId]);
    if(get().notebookId===id)set(state=>({pages:state.pages.filter(page=>page.id!==pageId).map((page,index)=>({...page,position:index}))}));
    await timed('remove_notebook_refresh',()=>useNotebookStore.getState().refresh());
   }catch(e){showError(e)}
@@ -100,6 +104,7 @@ export const usePageStore=create<State>((set,get)=>({
    for(const pageId of ids)await flushPageSave(pageId);
    const created=await timed('duplicate_write',()=>pageRepository.duplicateMany(ids));
    const duplicates=await pageRepository.getByIds(created);
+   duplicates.forEach(indexNewPage);
    set(state=>{
     if(state.notebookId!==id)return state;
     const selected=new Set(ids);
@@ -120,6 +125,7 @@ export const usePageStore=create<State>((set,get)=>({
   try{
    await finishManyPageSaves(ids);
    const dbRemoved=await timed('remove_many_write',()=>pageRepository.removeMany(ids));
+   removeIndexedPages(ids);
    if(get().notebookId===id)set(state=>({pages:state.pages.filter(page=>!selected.has(page.id)).map((page,index)=>({...page,position:index}))}));
    await timed('remove_many_notebook_refresh',()=>useNotebookStore.getState().refresh());
    return dbRemoved;
