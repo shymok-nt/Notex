@@ -5,9 +5,6 @@ import {Gesture,GestureDetector,PointerType} from 'react-native-gesture-handler'
 import {useSettingsStore} from '@/store/settingsStore';
 import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
 import * as Crypto from 'expo-crypto';
-import {glyphOffsets,fitWordFont} from '@/lib/ink/naturalText';
-import {rememberOcrCorrection,suggestOcrCorrections} from '@/features/canvas/engine/ocrCorrections';
-import {useHandwritingFontFamilies} from '@/lib/ink/handwritingFonts';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
 import {makeStroke,strokePath,strokePathString,cacheFinalizedStrokePath} from '@/features/canvas/engine/geometry';
 import {appendPolylinePoint,centerlinePathString} from '@/features/canvas/engine/centerlinePath';
@@ -375,33 +372,6 @@ const PageImageLayer=memo(function PageImageLayer({item,onLoadError}:{item:impor
  useEffect(()=>{if(renderedImage)logImageDebug('skia_canvas_layer_ready',{elementId:item.id,x:item.x,y:item.y,width:item.width,height:item.height})},[renderedImage,item.id,item.x,item.y,item.width,item.height]);
  return renderedImage?<SkiaImage image={renderedImage} x={item.x} y={item.y} width={item.width} height={item.height} fit="contain"/>:null;
 });
-const NaturalWord=memo(function NaturalWord({word,fonts}:{word:import('@/features/canvas/types').BeautifiedWord;fonts:CanvasFontManager|null}){
- // One paragraph per OCR result, not one Skia paragraph per character.
- // The former per-glyph widths could overflow the source bounds and collide
- // with adjacent recognized words on every subsequent canvas render.
- const layout=useMemo(()=>{
-  if(!fonts||!word.text)return null;
-  const builder=Skia.ParagraphBuilder.Make({},fonts);
-  builder.pushStyle({fontFamilies:[word.font],fontSize:word.fontSize,color:Skia.Color(word.color)});
-  builder.addText(word.text);builder.pop();
-  const paragraph=builder.build();
-  paragraph.layout(Math.max(1000,word.text.length*word.fontSize*2));
-  return {paragraph,width:Math.max(1,paragraph.getLongestLine())};
- },[fonts,word.text,word.font,word.fontSize,word.color]);
- if(!layout)return null;
- const width=Math.max(1,word.bbox[2]-word.bbox[0]);
- const height=Math.max(1,word.bbox[3]-word.bbox[1]);
- const scaleX=Math.min(1,width/layout.width);
- const scaleY=Math.min(1,height/Math.max(1,layout.paragraph.getHeight()));
- return <Group transform={[{translateX:word.bbox[0]},{translateY:word.bbox[1]},{scaleX},{scaleY}]}>
-  <Paragraph paragraph={layout.paragraph} x={0} y={0} width={Math.max(1000,word.text.length*word.fontSize*2)}/>
- </Group>;
-});
-const LegacyBeautificationLayer=memo(function LegacyBeautificationLayer({content,fonts}:{content:PageContent;fonts:CanvasFontManager|null}){
- const handwritingFonts=useHandwritingFontFamilies();
- const words=useMemo(()=>content.beautifications?.filter(item=>item.mode==='beautified').flatMap(item=>item.words)??[],[content.beautifications]);
- return <>{words.map(word=><NaturalWord key={word.id} fonts={word.font==='Inter'||word.font==='InterBold'?fonts:handwritingFonts} word={word}/>)}</>;
-});
 const Completed=memo(function Completed({content,hiddenIds,fonts}:{content:PageContent;hiddenIds?:string[];fonts:CanvasFontManager|null}){
  const elements=useMemo(()=>content.elements.filter(element=>!hiddenIds?.includes(element.id)),[content.elements,hiddenIds]);
  useEffect(()=>{
@@ -507,7 +477,6 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   pendingCloseRef.current=null;
   editingRef.current=current;editValueRef.current=current.text;setEditing(current);
  };
- const [wordEditing,setWordEditing]=useState<{id:string;text:string;original:string}|null>(null);
  const [selectedIds,setSelectedIds]=useState<string[]>([]);
  const selectedRef=useRef<string[]>([]);selectedRef.current=selectedIds;
  const traceRef=useRef<{id:number;part:number;ids:string[];gestureEndAt:number|null;events:{t:number;event:string;ids:string[];detail?:unknown}[]}>({id:0,part:0,ids:[],gestureEndAt:null,events:[]});
@@ -516,13 +485,6 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const flushTrace=()=>{if(!__DEV__||Platform.OS!=='android')return;const current=traceRef.current;if(current.events.length){console.log('[Notex lasso-trace] '+JSON.stringify({operation:current.id,part:++current.part,pageId,measurement:'React commit and JS events; not presented Skia frames',events:current.events}));current.events=[]}};
  const beginTrace=(kind:string,bounds:readonly number[])=>{if(!__DEV__||Platform.OS!=='android')return;flushTrace();traceRef.current={id:++traceSequence.current,part:0,ids:selectedRef.current.slice(0,12),gestureEndAt:null,events:[]};trace('gesture_begin',{kind,bounds})};
 
- useEffect(()=>{
-  if(!selectionAction||selectionAction.pageId!==pageId||selectionAction.kind!=='toggleBeautify')return;
-  const selected=new Set(selectedRef.current);
-  const matching=(content.beautifications??[]).filter(item=>item.sourceIds.some(id=>selected.has(id)));
-  if(matching.length)onChange({...content,beautifications:(content.beautifications??[]).map(item=>matching.includes(item)?{...item,mode:item.mode==='original'?'beautified':'original'}:item)});
-  onSelectionActionComplete?.(selectionAction.version);
- },[selectionAction?.version]);
  const [imageId,setImageId]=useState<string|null>(null);
  const imageIdRef=useRef<string|null>(null);imageIdRef.current=imageId;
  useEffect(()=>{if(!imageAction||!imageIdRef.current)return;const id=imageIdRef.current;
@@ -719,11 +681,6 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(!keepPendingHandoff){trace('handoff_clear',{reason:'selection_clear'});setHandoff(null);}
  };
  const selectAt=(x:number,y:number)=>{
-  if(tool==='select'){
-   const word=(content.beautifications??[]).filter(item=>item.mode==='beautified').flatMap(item=>item.words)
-     .find(item=>x>=item.bbox[0]-8&&x<=item.bbox[2]+8&&y>=item.bbox[1]-8&&y<=item.bbox[3]+8);
-   if(word){setWordEditing({id:word.id,text:word.text,original:word.text});return;}
-  }
   const image=[...(content.images??[])].reverse().find(i=>{const cx=i.x+i.width/2,cy=i.y+i.height/2,a=-(i.rotation??0),dx=x-cx,dy=y-cy,px=dx*Math.cos(a)-dy*Math.sin(a)+cx,py=dx*Math.sin(a)+dy*Math.cos(a)+cy;return px>=i.x&&px<=i.x+i.width&&py>=i.y&&py<=i.y+i.height});
   if(image){setImageId(image.id);onImageSelectionChange?.(image.id);clearElementSelection();return;}
   setImageId(null);onImageSelectionChange?.(null);
@@ -941,11 +898,6 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const endStroke=(points:Sample[],commitGeneration:number)=>{if(!points.length)return;
   if(tool==='select'){
   if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration))awaitingCommit.value=false;
-  if(points.length<=3){
-   const p=points[0];
-   const word=(content.beautifications??[]).filter(b=>b.mode==='beautified').flatMap(b=>b.words).find(w=>p[0]>=w.bbox[0]-8&&p[0]<=w.bbox[2]+8&&p[1]>=w.bbox[1]-8&&p[1]<=w.bbox[3]+8);
-   if(word){setWordEditing({id:word.id,text:word.text,original:word.text});return}
-  }
   const poly=points.flatMap(p=>[p[0],p[1]]);
   const ids=lassoSelect(content.elements,poly);
   if(!ids.length&&points.length<=3){const p=points[0];const hit=content.elements.filter(e=>p[0]>=e.bbox[0]-12&&p[0]<=e.bbox[2]+12&&p[1]>=e.bbox[1]-12&&p[1]<=e.bbox[3]+12).at(-1);if(hit)ids.push(hit.id)}
@@ -1494,18 +1446,5 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    const next={...current,w:nextWidth,minHeight:minHeight??undefined,bbox:[current.x,current.y,current.x+nextWidth,current.y+height] as [number,number,number,number]};
    editingRef.current=next;setEditing(next);
   }}
- /></InlineTextEditorErrorBoundary>}{wordEditing&&<Modal transparent animationType="fade" visible onRequestClose={()=>setWordEditing(null)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#0008'}}><View style={{backgroundColor:'#FFFFFF',borderRadius:16,padding:20,gap:12}}><Text style={{fontSize:17,color:'#202020',fontWeight:'600'}}>Tanınan kelimeyi düzelt</Text>{suggestOcrCorrections(wordEditing.original).length>0&&<View style={{gap:8}}><Text style={{color:'#666666',fontSize:13}}>Öneriler (yalnızca seçersen uygulanır)</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{suggestOcrCorrections(wordEditing.original).map(suggestion=><Pressable key={suggestion} accessibilityRole="button" onPress={()=>setWordEditing(previous=>previous?{...previous,text:suggestion}:null)} style={{borderWidth:1,borderColor:'#D5DCE8',borderRadius:8,paddingHorizontal:12,paddingVertical:8}}><Text style={{color:'#202020'}}>{suggestion}</Text></Pressable>)}</View></View>}<TextInput autoFocus value={wordEditing.text} onChangeText={value=>setWordEditing(previous=>previous?{...previous,text:value}:null)} style={{borderWidth:1,borderColor:'#AAAAAA',borderRadius:8,padding:10,color:'#202020',fontSize:17}}/><View style={{flexDirection:'row',justifyContent:'flex-end',gap:20}}><Pressable onPress={()=>setWordEditing(null)}><Text style={{color:'#444444'}}>İptal</Text></Pressable><Pressable onPress={()=>{
- const value=wordEditing.text.trim();
- if(value){
-  const updated=(content.beautifications??[]).map(beautification=>({
-   ...beautification,
-   words:beautification.words.map(word=>word.id===wordEditing.id?{
-    ...word,text:value,fontSize:fitWordFont(value,word)
-   }:word)
-  }));
-  onChange({...content,beautifications:updated});
-  rememberOcrCorrection(wordEditing.original,value);
- }
- setWordEditing(null);
-}}><Text style={{color:'#2466DD',fontWeight:'600'}}>Kaydet</Text></Pressable></View></View></View></Modal>}</View>;
+ /></InlineTextEditorErrorBoundary>}</View>;
 }
