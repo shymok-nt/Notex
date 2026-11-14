@@ -62,7 +62,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     ? Math.min(170, (width - 40 - (columns - 1) * 20) / columns)
     : Math.max(0, width - 40);
   const data = useMemo(() => sortNotebooks(
-    all.filter(notebook => (!favorites || notebook.favorite) && (favorites || folder === 'Tümü' || notebook.folder === folder) && (favorites || (selectedCourseId===null || (selectedCourseId==='unclassified'?notebook.courseId===null:notebook.courseId===selectedCourseId && (selectedTopicId===null?notebook.topicId===null:notebook.topicId===selectedTopicId))))),
+    all.filter(notebook => (!favorites || notebook.favorite) && (favorites || folder === 'Tümü' || notebook.folder === folder) && (favorites || (selectedCourseId===null || (selectedCourseId==='unclassified'?notebook.courseId===null:notebook.courseId===selectedCourseId && (selectedTopicId===null||notebook.topicId===selectedTopicId))))),
     sortBy,
   ), [all, favorites, folder, sortBy, selectedCourseId, selectedTopicId]);
 
