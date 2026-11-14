@@ -19,10 +19,9 @@ def serve() -> int:
     import time
     try:
         from paddleocr import PaddleOCR
-        # Prefer the lightweight PP-OCRv5 mobile detector and recognizer on CPU.
+        # Prefer the lightweight PP-OCRv5 mobile detector and recognizer on CPU.\n        # Explicit model names determine the recognition vocabulary; lang is ignored.
         # Unsupported model versions fall back to the installed default.
         common = dict(
-            lang="tr",
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
@@ -36,12 +35,12 @@ def serve() -> int:
                 **common,
                 text_detection_model_name="PP-OCRv5_mobile_det",
                 text_recognition_model_name="PP-OCRv5_mobile_rec",
-                text_det_limit_side_len=640,
+                text_det_limit_side_len=1280,
                 text_det_limit_type="max",
             )
         except Exception as exc:
             print("Mobile OCR models unavailable, using default: " + str(exc), file=sys.stderr, flush=True)
-            engine = PaddleOCR(**common)
+            engine = PaddleOCR(**common, lang="tr")
             model_name = "default"
             fallback_reason = str(exc)
         print(json.dumps({"ready": True, "model": model_name}), flush=True)
