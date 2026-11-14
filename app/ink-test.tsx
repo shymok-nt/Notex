@@ -24,8 +24,13 @@ export default function InkTestScreen(){
  const getPoint=(event:any):Sample=>({x:event.nativeEvent.locationX,y:event.nativeEvent.locationY,pressure:0.5});
  const finish=()=>{
   if(!active.current.length)return;
-  setStrokes(prev=>[...prev,active.current]);
-  active.current=[];setLive([]);setResult(null);
+  // Snapshot the finished stroke before resetting the mutable ref.
+  // React may execute the functional state updater after this handler exits.
+  const completed=active.current.map(point=>({...point}));
+  active.current=[];
+  setStrokes(prev=>[...prev,completed]);
+  setLive([]);
+  setResult(null);
  };
  const recognize=async()=>{
   if(busy||!strokes.length)return;
