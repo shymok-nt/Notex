@@ -1,18 +1,7 @@
-import Svg,{G,Path,Rect} from 'react-native-svg';
+import { SvgXml } from 'react-native-svg';
+
+const createNotebookSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 120 120\" width=\"120\" height=\"120\">\n  <defs>\n    <linearGradient id=\"notexBtnGrad\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\">\n      <stop offset=\"0%\" stop-color=\"#5B46E8\" />\n      <stop offset=\"50%\" stop-color=\"#2B6DE8\" />\n      <stop offset=\"100%\" stop-color=\"#22B8CF\" />\n    </linearGradient>\n    <linearGradient id=\"btnRimLight\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n      <stop offset=\"0%\" stop-color=\"#FFFFFF\" stop-opacity=\"0.45\" />\n      <stop offset=\"100%\" stop-color=\"#FFFFFF\" stop-opacity=\"0\" />\n    </linearGradient>\n    <filter id=\"btnShadow\" x=\"-20%\" y=\"-20%\" width=\"140%\" height=\"150%\">\n      <feDropShadow dx=\"0\" dy=\"8\" stdDeviation=\"10\" flood-color=\"#1E3A8A\" flood-opacity=\"0.32\" />\n    </filter>\n  </defs>\n  <g filter=\"url(#btnShadow)\">\n    <rect x=\"16\" y=\"12\" width=\"88\" height=\"88\" rx=\"28\" fill=\"url(#notexBtnGrad)\" />\n    <rect x=\"17\" y=\"13\" width=\"86\" height=\"86\" rx=\"27\" fill=\"none\" stroke=\"url(#btnRimLight)\" stroke-width=\"1.5\" />\n  </g>\n  <g transform=\"translate(60, 56) rotate(45) translate(-24, -24)\" fill=\"none\" stroke=\"#FFFFFF\" stroke-width=\"3.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n    <path d=\"M 19 8 L 29 8 L 29 33 L 24 42 L 19 33 Z\" fill=\"#FFFFFF\" fill-opacity=\"0.15\" />\n    <line x1=\"19\" y1=\"14\" x2=\"29\" y2=\"14\" />\n    <line x1=\"19\" y1=\"33\" x2=\"29\" y2=\"33\" />\n  </g>\n</svg>";
 
 export function CreateNotebookIcon({size=66}:{size?:number}){
- return <Svg width={size} height={size} viewBox="18 18 84 84" fill="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-  <Rect x="18" y="18" width="84" height="84" rx="20" fill="#000000"/>
-  <Path d="M32 85C41 85 45 77 53 79C61 81 65 87 75 83" stroke="#EC4899" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
-  <Path d="M75 83C81 81 85 77 89 75" stroke="#06B6D4" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
-  <G>
-   <Path d="M72.5 31.5L87.5 46.5L51.5 82.5L34.5 84.5L36.5 67.5L72.5 31.5Z" fill="#9333EA" stroke="#C4B5FD" strokeWidth="1.5"/>
-   <Path d="M72.5 31.5L78 37L42 73L36.5 67.5L72.5 31.5Z" fill="#4F46E5"/>
-   <Path d="M82 41L87.5 46.5L51.5 82.5L45.5 83.2L82 41Z" fill="#EC4899"/>
-   <Path d="M77.5 26.5C79.7091 24.2909 83.2909 24.2909 85.5 26.5L92.5 33.5C94.7091 35.7091 94.7091 39.2909 92.5 41.5L87.5 46.5L72.5 31.5L77.5 26.5Z" fill="#FFFFFF" stroke="#A5B4FC" strokeWidth="1.8"/>
-   <Path d="M36.5 67.5L51.5 82.5L34.5 84.5L36.5 67.5Z" fill="#FEF3C7"/>
-   <Path d="M35.2 78.5L40.5 83.8L34.5 84.5L35.2 78.5Z" fill="#312E81"/>
-   <Rect x="65.5" y="38.5" width="4" height="12" rx="2" rotation="45" origin="65.5, 38.5" fill="#FFFFFF"/>
-  </G>
- </Svg>;
+ return <SvgXml xml={createNotebookSvg} width={size} height={size} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"/>;
 }
