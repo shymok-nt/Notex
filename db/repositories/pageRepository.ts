@@ -103,7 +103,7 @@ export const pageRepository={
     for(const item of result){
      if(!item.source)continue;
      const source=item.source;
-     const content=JSON.parse(source.content) as {elements?:{id:string}[];images?:{id:string;uri:string}[]};
+     const content=source.content===''?{v:2 as const,elements:[] as {id:string}[],images:[] as {id:string;uri:string}[]}:JSON.parse(source.content) as {elements?:{id:string}[];images?:{id:string;uri:string}[]};
      if(Array.isArray(content.elements))content.elements=content.elements.map(e=>({...e,id:Crypto.randomUUID()}));
      if(Array.isArray(content.images))content.images=content.images.map(image=>({...image,id:Crypto.randomUUID()}));
      const thumbnail=await duplicateFile(source.thumbnail_path);

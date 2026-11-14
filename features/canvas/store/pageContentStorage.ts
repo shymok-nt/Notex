@@ -1,5 +1,4 @@
 import {isTauriDesktop} from '@/utils/tauriFiles';
-import {parseContent,serializeContent} from '@/features/canvas/engine/content';
 
 type Draft={version:1;content:string;base:string;pending:boolean};
 const prefix='notex:page-content:v1:';
@@ -9,18 +8,23 @@ const storage=():Storage|null=>{
  try{return window.localStorage}catch{return null}
 };
 const valid=(content:string):boolean=>{
+ // SQLite may contain an empty string for a pristine/cleared page.
+ if(content==='')return true;
  try{
-  const value=JSON.parse(content) as {v?:unknown;elements?:unknown};
-  return value!==null&&value.v===2&&Array.isArray(value.elements)&&
-   serializeContent(parseContent(content))===content;
+  const value:unknown=JSON.parse(content);
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const data=value as {v?:unknown;elements?:unknown};
+  // Do not compare to reserialized parseContent: parsing normalizes optional
+  // fields (e.g. images: []) and otherwise rejects valid empty-page drafts.
+  return data.v===2&&Array.isArray(data.elements);
  }catch{return false}
 };
 const read=(id:string):Draft|null=>{
  const s=storage();if(!s)return null;
  try{
-  const raw=s.getItem(key(id));if(!raw)return null;
+  const raw=s.getItem(key(id));if(raw===null)return null;
   const value=JSON.parse(raw) as Partial<Draft>;
-  return value.version===1&&typeof value.content==='string'&&typeof value.base==='string'&&typeof value.pending==='boolean'&&valid(value.content)&&(value.base===''||valid(value.base))
+  return value.version===1&&typeof value.content==='string'&&typeof value.base==='string'&&typeof value.pending==='boolean'&&valid(value.content)&&valid(value.base)
    ?value as Draft:null;
  }catch{return null}
 };

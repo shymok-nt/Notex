@@ -1,6 +1,7 @@
 import {emptyContent,type PageContent,type Element} from '@/features/canvas/types';
 import {isStoredImagePath} from './storedImagePath';
 export function parseContent(raw:string):PageContent{
+ if(raw==='')return emptyContent();
  try{const data:unknown=JSON.parse(raw);if(!data||typeof data!=='object')return emptyContent();
  const obj=data as Record<string,unknown>;
  if(obj.v!==2||!Array.isArray(obj.elements))return emptyContent();
