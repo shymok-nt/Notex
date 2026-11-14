@@ -33,8 +33,9 @@ export default function CourseSearchScreen(){
   if(!ready||debounced==='')return [];
   const selected=onlyCurrent?(selectedCourseId==='unclassified'?null:selectedCourseId??undefined):undefined;
   const hits=searchIndexedPages(debounced,metadata,selected);
+  const notebookById=new Map(notebooks.map(note=>[note.id,note]));
   const pages:Result[]=hits.map(hit=>{
-   const note=notebooks.find(n=>n.id===hit.page.notebookId);
+   const note=notebookById.get(hit.page.notebookId);
    return {kind:'page',key:'p-'+hit.page.pageId,hit,title:note?.title??'Not',path:[note?.courseId!=null?byCourse.get(note.courseId)?.name:'Sınıflandırılmamış',note?.topicId!=null?byTopic.get(note.topicId)?.name:undefined].filter(Boolean).join(' › ')};
   });
   const needle=normalizeSearch(debounced);
