@@ -385,6 +385,37 @@ mod tests {
     }
 }
 
+
+#[cfg(windows)]
+#[tauri::command]
+fn notex_db_backup_before_schema_cleanup(
+    app: AppHandle,
+    state: State<'_, NativeSqliteState>,
+) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let inner = state.0.lock().map_err(|_| "Notex SQLite kilidi alınamadı".to_string())?;
+    if inner.transaction_id.is_some() {
+        return Err("SQLite işlemi devam ederken yedek alınamaz".into());
+    }
+    let connection = inner.connection.as_ref().ok_or("Notex SQLite henüz açılmadı")?;
+    let directory = database_path(&app)?.parent().ok_or("SQLite dizini bulunamadı")?.to_path_buf();
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?.as_millis();
+    let backup = directory.join(format!("notex-before-schema-cleanup-{stamp}.db"));
+    let backup_path = backup.to_string_lossy().into_owned();
+    connection.execute("VACUUM INTO ?1", [&backup_path])
+        .map_err(|e| format!("Temizlik öncesi SQLite yedeği oluşturulamadı: {e}"))?;
+    let copy = Connection::open_with_flags(
+        &backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+    ).map_err(|e| format!("Yedek açılamadı: {e}"))?;
+    let integrity: String = copy.query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|e| format!("Yedek doğrulanamadı: {e}"))?;
+    if integrity != "ok" {
+        return Err(format!("Yedek bütünlük denetimi başarısız: {integrity}"));
+    }
+    Ok(backup_path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -401,7 +432,8 @@ pub fn run() {
                 notex_db_all,
                 notex_db_begin,
                 notex_db_commit,
-                notex_db_rollback
+                notex_db_rollback,
+                notex_db_backup_before_schema_cleanup
             ]);
     builder
         .setup(|app| {
