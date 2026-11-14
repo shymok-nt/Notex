@@ -94,5 +94,5 @@ test('eraser deletion applied to stale canvas props never restores older ink',()
  assert.deepEqual(reconcileById([a,b],[b],[a,b,c]).map(x=>x.id),['b','c']);
  assert.deepEqual(reconcileById([a,b],[],[a,b]).map(x=>x.id),[]);
  // A second delayed edit referring to an already erased item cannot restore it.
- assert.deepEqual(reconcileById([a,b],[a],[b,c]).map(x=>x.id),['a','c']);
+ assert.deepEqual(reconcileById([a,b],[a],[b,c]).map(x=>x.id),['c']);
 });
