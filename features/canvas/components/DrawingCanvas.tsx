@@ -866,7 +866,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const pagePoint=(x:number,y:number):Sample=>{ 'worklet';return [(x-originX.value)/(fitWidth*zoom.value),(y-originY.value)/(fitWidth*zoom.value),0.5]};
  const imageProbeCenter=imageRenderProbe?pagePoint(size.width/2,size.height/2):null;
  useEffect(()=>{
-  logImageDebug('canvas_received_page_images',{pageId,count:content.images?.length??0,elementIds:(content.images??[]).map(image=>image.id)});
+  if(content.images?.length)logImageDebug('canvas_received_page_images',{pageId,count:content.images.length,elementIds:content.images.map(image=>image.id)});
  },[pageId,content.images]);
  useEffect(()=>{
   if(imageRenderProbe&&imageProbeCenter)logImageDebug('isolated_render_probe_canvas_layer_ready',{pageId,persistent:false,coordinateSpace:'page',measurement:'Skia JSX layer prepared; not a physical frame capture'});
