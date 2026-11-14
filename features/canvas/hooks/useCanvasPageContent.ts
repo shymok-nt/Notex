@@ -16,10 +16,12 @@ export function useCanvasPageContent(pageId:string,fallbackContent:string,onHist
  const content=useMemo<PageContent>(()=>parseContent(raw),[raw]);
  const latest=useRef(content);
  const {error,saving,retry,flush,setDrawingActive,markChanged}=useAutosave(pageId,content);
- const commit=(next:PageContent)=>{
+ const commit=(next:PageContent):boolean=>{
+  // Stage in Tauri localStorage first; never publish an unsaved snapshot.
+  if(!usePageStore.getState().cacheContent(pageId,serializeContent(next)))return false;
   latest.current=next;
-  markChanged(next);
-  usePageStore.getState().cacheContent(pageId,serializeContent(next));
+  markChanged(next); // Debounced SQLite save follows the durable local draft.
+  return true;
  };
  const change=(incoming:PageContent)=>{
   const previous=latest.current;
@@ -29,15 +31,15 @@ export function useCanvasPageContent(pageId:string,fallbackContent:string,onHist
   const next=isAdditivePenCommit
    ? {...incoming,elements:[...previous.elements,...addedStrokes],h:Math.max(previous.h??0,incoming.h??0)}
    : incoming;
-  record(pageId,previous);commit(next);onHistory();
+  if(commit(next)){record(pageId,previous);onHistory()}
  };
  const addImage=(image:PageImage)=>{
   const previous=latest.current;
   const next={...previous,images:[...(previous.images??[]),image]};
-  record(pageId,previous);commit(next);onHistory();
+  if(commit(next)){record(pageId,previous);onHistory()}
  };
- const back=()=>{const next=undo(pageId,latest.current);if(next){commit(next);onHistory()}};
- const forward=()=>{const next=redo(pageId,latest.current);if(next){commit(next);onHistory()}};
+ const back=()=>{const next=undo(pageId,latest.current);if(next&&commit(next))onHistory()};
+ const forward=()=>{const next=redo(pageId,latest.current);if(next&&commit(next))onHistory()};
  const h=historyState(pageId);
  return {content,change,addImage,back,forward,error,saving,retry,flush,setDrawingActive,canUndo:h.canUndo,canRedo:h.canRedo};
 }
