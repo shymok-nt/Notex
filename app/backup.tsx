@@ -7,6 +7,8 @@ import * as LegacyFileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { createBackup,inspectBackup,importBackup,webDownload } from '@/services/notexBackup';
+import {useCourseStore} from '@/store/courseStore';
+import {clearSearchIndex} from '@/features/search/searchIndex';
 import {isTauriDesktop,pickDesktopBackup,saveDesktopBackup} from '@/utils/tauriFiles';
 import { settingsRepository } from '@/db/repositories/settingsRepository';
 import { useNotebookStore } from '@/store/notebookStore';
@@ -129,7 +131,7 @@ export default function BackupScreen(){
   openedFromShortcut.current=true;
   pick();
  },[open]);
- const restore=()=>{if(!pending)return;const bytes=pending.bytes;setPending(null);void run(async()=>{await importBackup(bytes,progress);await refreshFolders();await refresh();Alert.alert('Tamamlandı','Defterler mevcut verilere eklendi.')})};
+ const restore=()=>{if(!pending)return;const bytes=pending.bytes;setPending(null);void run(async()=>{await importBackup(bytes,progress);clearSearchIndex();await refreshFolders();await refresh();await useCourseStore.getState().refresh();Alert.alert('Tamamlandı','Defterler mevcut verilere eklendi.')})};
  const button=(text:string,onPress:()=>void,disabled=false)=><Pressable accessibilityRole="button" disabled={disabled||busy} onPress={onPress} style={{backgroundColor:colors.surfaceRaised,borderRadius:14,padding:18,marginTop:12,opacity:(disabled||busy)?0.5:1}}><Text style={{color:colors.ink,fontSize:16,fontWeight:'600'}}>{text}</Text></Pressable>;
  return <SafeAreaView style={{flex:1,backgroundColor:colors.background}}><View style={{height:60,flexDirection:'row',alignItems:'center',paddingHorizontal:16,gap:8}}><Pressable accessibilityRole="button" accessibilityLabel="Geri dön" onPress={()=>router.back()} style={{width:44,height:44,justifyContent:'center'}}><ArrowLeft color={colors.ink}/></Pressable><Text style={{fontSize:22,fontWeight:'700',color:colors.ink}}>Yedekle ve geri yükle</Text></View><ScrollView contentContainerStyle={{padding:20}}>
   <Text style={{color:colors.muted}}>Defterler, sayfalar, çizimler ve resimler tek bir .notex dosyasına kaydedilir. Silinenler yedeğe dahil edilmez.</Text>
