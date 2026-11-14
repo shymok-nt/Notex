@@ -61,6 +61,11 @@ export default function CourseSearchScreen(){
   router.push({pathname:'/note/[id]',params:{id:item.hit.page.notebookId,pageId:item.hit.page.pageId}});
  };
  const textStyle={color:colors.ink};
+ const highlight=(value:string)=>{
+  const position=normalizeSearch(value).indexOf(normalizeSearch(debounced));
+  if(position<0||debounced==='')return <Text>{value}</Text>;
+  return <Text>{value.slice(0,position)}<Text style={{color:colors.accent,fontWeight:'700'}}>{value.slice(position,position+debounced.length)}</Text>{value.slice(position+debounced.length)}</Text>;
+ };
  return <SafeAreaView style={{flex:1,backgroundColor:colors.background}}>
   <View style={{padding:18,borderBottomWidth:1,borderBottomColor:colors.divider,gap:12}}>
    <Text style={{fontSize:26,fontWeight:'700',color:colors.ink}}>Ara</Text>
@@ -83,13 +88,13 @@ export default function CourseSearchScreen(){
    ListEmptyComponent={ready&&debounced!==''?<Text style={{color:colors.muted,paddingTop:40,textAlign:'center'}}>Sonuç bulunamadı</Text>:undefined}
    renderItem={({item})=><Pressable onPress={()=>open(item)} style={{paddingVertical:13,borderBottomWidth:1,borderBottomColor:colors.divider,gap:3}}>
     {item.kind==='notebook'?<>
-     <Text style={{fontSize:15,fontWeight:'700',color:colors.ink}}>{item.notebook.title}</Text>
+     <Text style={{fontSize:15,fontWeight:'700',color:colors.ink}}>{highlight(item.notebook.title)}</Text>
      <Text style={{color:colors.muted,fontSize:12}}>{item.path} · Defter başlığı</Text>
     </>:item.kind==='page'?<>
      <Text style={{fontSize:15,fontWeight:'700',color:colors.ink}}>{item.title} · Sayfa {item.hit.page.position+1}</Text>
      <Text style={{color:colors.muted,fontSize:12}}>{item.path}{item.hit.source==='pdf'?' · PDF':''}</Text>
      <Text numberOfLines={2} style={{color:colors.ink,fontSize:13}}>{item.hit.before}<Text style={{fontWeight:'700',color:colors.accent}}>{item.hit.match}</Text>{item.hit.after}</Text>
-    </>:item.kind==='course'?<><Text style={{fontWeight:'700',color:colors.ink}}>📘 {item.course.name}</Text><Text style={{color:colors.muted,fontSize:12}}>Ders</Text></>:<><Text style={{fontWeight:'700',color:colors.ink}}>{item.topic.name}</Text><Text style={{color:colors.muted,fontSize:12}}>{item.course.name} › Konu</Text></>}
+    </>:item.kind==='course'?<><Text style={{fontWeight:'700',color:colors.ink}}>📘 {highlight(item.course.name)}</Text><Text style={{color:colors.muted,fontSize:12}}>Ders</Text></>:<><Text style={{fontWeight:'700',color:colors.ink}}>{highlight(item.topic.name)}</Text><Text style={{color:colors.muted,fontSize:12}}>{item.course.name} › Konu</Text></>}
    </Pressable>}
   />
  </SafeAreaView>;
