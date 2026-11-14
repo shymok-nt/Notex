@@ -10,7 +10,9 @@ import {logImageDebug} from '@/utils/tauriFiles';
 const queues=new Map<string,Promise<void>>();
 export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pageId:string,serializedContent:string)=>void){
  const [error,setError]=useState(false),[saving,setSaving]=useState(false);
- const latest=useRef({pageId,content});latest.current={pageId,content};
+ // Keep the last synchronously committed edit until React has rendered it.
+ // Replacing this ref on every render can restore stale props before a page-switch flush.
+ const latest=useRef({pageId,content});
  const onSavedRef=useRef(onSaved);onSavedRef.current=onSaved;
  const initialized=useRef(false),dirty=useRef(false),active=useRef(false);
  const version=useRef(0),savedVersion=useRef(0),firstDirty=useRef(0);
@@ -86,7 +88,7 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
   const compareStarted=__DEV__?perfNow():0;
   const serialized=serializeContent(content);
   if(__DEV__)lastCompareMs.current=perfNow()-compareStarted;
-  if(!initialized.current){initialized.current=true;lastSerialized.current=serialized;return}
+  if(!initialized.current){initialized.current=true;latest.current={pageId,content};lastSerialized.current=serialized;return}
   if(serialized===lastSerialized.current)return;
   lastSerialized.current=serialized;
   version.current++;dirty.current=true;
