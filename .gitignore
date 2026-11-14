@@ -41,3 +41,9 @@ reanimated-error.txt
 .venv-ocr/
 __pycache__/
 *.pyc
+
+# Private handwriting evaluation samples and generated reports
+tools/handwriting_ocr/data/
+ocr-benchmark-results.json
+paddle-results.json
+trocr-results.json
