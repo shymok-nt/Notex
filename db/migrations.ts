@@ -60,6 +60,7 @@ migrations.push({
  run:async db=>{
   const columns=await db.getAllAsync<{name:string}>('PRAGMA table_info(notebooks)');
   const names=new Set(columns.map(column=>column.name));
+  await db.execAsync('DROP INDEX IF EXISTS idx_notebooks_course_topic;');
   // Drop dependent foreign-key columns before removing their parent tables.
   if(names.has('topic_id'))await db.execAsync('ALTER TABLE notebooks DROP COLUMN topic_id;');
   if(names.has('course_id'))await db.execAsync('ALTER TABLE notebooks DROP COLUMN course_id;');
