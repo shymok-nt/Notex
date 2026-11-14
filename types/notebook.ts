@@ -10,4 +10,4 @@ export type Notebook={
  showTitleOnCover:boolean;template:PageTemplate;paperColor:PaperColor;pageCount:number;
  createdAt:string;updatedAt:string;favorite:boolean;
 };
-export type NotebookDraft=Pick<Notebook,'title'|'folder'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'|'template'|'paperColor'>;
+export type NotebookDraft=Pick<Notebook,'title'|'folder'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'|'template'|'paperColor'> & {courseId?:string|null;topicId?:string|null};
