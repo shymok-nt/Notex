@@ -1,7 +1,7 @@
 import {SafeAreaView} from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
-import React,{useEffect,useMemo,useRef,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Alert,Animated,AppState,BackHandler,Modal,Pressable,ScrollView,Text,TextInput,View,useWindowDimensions} from 'react-native';
 import {router,useLocalSearchParams} from 'expo-router';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
@@ -16,9 +16,8 @@ import {DrawingCanvas,type Tool,type Brush} from './DrawingCanvas';
 import {CanvasToolbar} from './CanvasToolbar';
 import {CanvasPageStrip} from './CanvasPageStrip';
 import {parseContent,serializeContent} from '@/features/canvas/engine/content';
-import {useAutosave} from '@/features/canvas/hooks/useAutosave';
+import {useCanvasPageContent} from '@/features/canvas/hooks/useCanvasPageContent';
 import {visibleSaveStatus} from '@/features/canvas/engine/autosavePolicy';
-import {record,undo,redo,historyState} from '@/features/canvas/store/history';
 import type {PageContent,PageImage,ShapeMode} from '@/features/canvas/types';
 import {hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
 import type {Page} from '@/types/page';
@@ -332,39 +331,13 @@ export default function NoteCanvasScreen(){
 }
 function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistory,onDrawStart,onStrokeComplete,shapeKind,shapeFill,textStyle,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,onTextSelectionChange,selectionAction,imageRequest,onImageRequestConsumed,imageAction,onImageSelectionChange,onImageLoadError}:{page:Page;tool:Tool;brush:Brush;eraserSize:number;eraserMode:'pixel'|'stroke';onController:(value:CanvasController|null)=>void;onHistory:()=>void;onDrawStart:()=>void;onStrokeComplete:(tool:PenTool,color:string)=>void;shapeKind:ShapeMode;shapeFill:boolean;textStyle:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'};onSelectionChange:(ids:string[])=>void;onSelectionClipboardChange:(hasItems:boolean)=>void;onSelectionActionComplete:(version:number)=>void;onTextSelectionChange:(selected:boolean)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}>;version:number};imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};onImageSelectionChange:(id:string|null)=>void;onImageLoadError?:(message:string)=>void}){
  useCanvasAwake();
- // One shared source: the page store owns the content; this component only renders it.
- const storedContent=usePageStore(s=>s.pages.find(item=>item.id===page.id)?.content??page.content);
- const content=useMemo<PageContent>(()=>parseContent(storedContent),[storedContent]);
- // commitContent updates this ref synchronously; a stale render must not undo it.
- const contentRef=useRef(content);
  const finishEditingRef=useRef<(()=>void)|null>(null);
- const {error,saving,retry,flush,setDrawingActive,markChanged}=useAutosave(page.id,content,(savedPageId,serialized)=>{const saved=parseContent(serialized);if(saved.images?.length)logImageDebug('page_store_cache_updated',{pageId:savedPageId,imageCount:saved.images.length,elementIds:saved.images.map(image=>image.id)})});
- const commitContent=(next:PageContent)=>{contentRef.current=next;markChanged(next);usePageStore.getState().cacheContent(page.id,serializeContent(next))};
- const change=(incoming:PageContent)=>{
-  const previous=contentRef.current;
-  // A queued pen commit can carry props from before another committed stroke.
-  const previousIds=new Set(previous.elements.map(element=>element.id));
-  const addedPenStroke=incoming.elements.some(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
-  // If the captured canvas props also predate another committed stroke,
-  // merge only the newly added pen strokes onto the latest page snapshot.
-  // This path is strictly for additive pen commits, never erasing/editing.
-  const addedStrokes=incoming.elements.filter(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
-  const isAdditivePenCommit=addedPenStroke&&incoming.elements.every(element=>previousIds.has(element.id)||addedStrokes.includes(element as typeof addedStrokes[number]));
-  const next=isAdditivePenCommit
-    ? {...incoming,
-        elements:[...previous.elements,...addedStrokes],
-        h:Math.max(previous.h??0,incoming.h??0)}
-    : incoming;
-  record(page.id,previous);commitContent(next);onHistory();
- };
- const handleDrawingActive=(active:boolean)=>{setDrawingActive(active)};
- const addImage=(image:PageImage)=>{const previous=contentRef.current;const next={...previous,images:[...(previous.images??[]),image]};record(page.id,previous);commitContent(next);onHistory();logImageDebug('page_content_updated',{pageId:page.id,elementId:image.id,imageCount:next.images?.length??0,bounds:[image.x,image.y,image.x+image.width,image.y+image.height]})};
- const back=()=>{const next=undo(page.id,contentRef.current);if(next){commitContent(next);onHistory()}};
- const forward=()=>{const next=redo(page.id,contentRef.current);if(next){commitContent(next);onHistory()}};
- const h=historyState(page.id);
+ const {content,change,addImage,back,forward,error,saving,retry,flush,setDrawingActive,canUndo,canRedo}=
+  useCanvasPageContent(page.id,page.content,onHistory);
+ const handleDrawingActive=(active:boolean)=>setDrawingActive(active);
  const flushPage=async()=>{finishEditingRef.current?.();await flush();};
- const controller:CanvasController={back,forward,flush:flushPage,canUndo:h.canUndo,canRedo:h.canRedo,error,saving,retry};
- useEffect(()=>{onController(controller)},[error,saving,h.canUndo,h.canRedo]);
+ const controller:CanvasController={back,forward,flush:flushPage,canUndo,canRedo,error,saving,retry};
+ useEffect(()=>{onController(controller)},[error,saving,canUndo,canRedo]);
  useEffect(()=>()=>{void flush();onController(null)},[]);
  return <DrawingCanvas pageId={page.id} content={content} template={page.template} paperColor={page.paperColor} tool={tool} brush={tool==='highlighter'?{...brush,width:brush.width*5}:brush} eraserSize={eraserSize} eraserMode={eraserMode} onChange={change} onAddImage={addImage} onDrawingActive={handleDrawingActive} onFinishEditingReady={finish=>{finishEditingRef.current=finish}} onStrokeComplete={onStrokeComplete} onSelectionClipboardChange={onSelectionClipboardChange} onSelectionActionComplete={onSelectionActionComplete} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={ids=>{onSelectionChange(ids);onTextSelectionChange(ids.some(id=>content.elements.some(e=>e.id===id&&e.type==='text')))}} selectionAction={selectionAction} imageAction={imageAction} onImageSelectionChange={onImageSelectionChange} onImageLoadError={onImageLoadError} imageRequest={imageRequest} onImageRequestConsumed={onImageRequestConsumed}/>;
 }
