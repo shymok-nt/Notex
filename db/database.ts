@@ -76,6 +76,10 @@ async function openAndMigrate(){
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   const result=await db.getFirstAsync<{user_version:number}>('PRAGMA user_version');
   const current=result?.user_version??0;
+  if(isTauriRuntime()&&current<3&&latestMigrationVersion>=3&&current>0){
+   // Must succeed before any schema alteration; never touch the original on backup failure.
+   await invoke<string>('notex_db_backup_before_migration');
+  }
   for(const migration of migrations.filter(m=>m.version>current&&m.version<=latestMigrationVersion).sort((a,b)=>a.version-b.version)){
    await withSafeTransaction(db,async tx=>{
     await migration.run(tx);
