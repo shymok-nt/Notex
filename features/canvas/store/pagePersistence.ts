@@ -92,3 +92,8 @@ export async function finishPageSave(id:string){
 export async function finishManyPageSaves(ids:string[]){
  for(const id of ids)await finishPageSave(id);
 }
+
+/** Compact save indicator; no fullscreen loading overlay for edits. */
+export function visibleSaveStatus(error:boolean,saving:boolean):'error'|'saving'|null{
+ return error?'error':saving?'saving':null;
+}
