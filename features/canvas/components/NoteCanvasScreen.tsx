@@ -43,7 +43,7 @@ export default function NoteCanvasScreen(){
  const {colors,scheme}=useTheme();const {id,pageId}=useLocalSearchParams<{id:string;pageId?:string}>();const {width,height}=useWindowDimensions();const tablet=width>=600||width>height;
  const notebook=useNotebookStore(s=>s.notebooks.find(n=>n.id===id));
  const notebookExists=useNotebookStore(s=>s.notebooks.some(n=>n.id===id));
- const pages=usePageStore(s=>s.pages),pageStoreNotebookId=usePageStore(s=>s.notebookId),pagesLoading=usePageStore(s=>s.loading),load=usePageStore(s=>s.load),add=usePageStore(s=>s.add),remove=usePageStore(s=>s.remove),move=usePageStore(s=>s.move),changeTemplate=usePageStore(s=>s.updateTemplate),duplicateMany=usePageStore(s=>s.duplicateMany),removeMany=usePageStore(s=>s.removeMany),restoreMany=usePageStore(s=>s.restoreMany);
+ const pages=usePageStore(s=>s.pages),pageStoreNotebookId=usePageStore(s=>s.notebookId),load=usePageStore(s=>s.load),add=usePageStore(s=>s.add),remove=usePageStore(s=>s.remove),move=usePageStore(s=>s.move),changeTemplate=usePageStore(s=>s.updateTemplate),duplicateMany=usePageStore(s=>s.duplicateMany),removeMany=usePageStore(s=>s.removeMany),restoreMany=usePageStore(s=>s.restoreMany);
  const [readyNotebookId,setReadyNotebookId]=useState<string|null>(null);
  const [multiSelect,setMultiSelect]=useState(false),[selectedPageIds,setSelectedPageIds]=useState<string[]>([]),[pendingDelete,setPendingDelete]=useState<Page[]|null>(null);
  const deleteTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
