@@ -70,7 +70,19 @@ export function useAutoHandwritingOCR(
   const pageRef=useRef(pageId);
   pageRef.current=pageId;
   const startedAt=useRef(0);
-  useEffect(()=>()=>{alive.current=false;if(timer.current)clearTimeout(timer.current)},[]);
+  // React StrictMode and development remounts run effect cleanup and setup
+  // without recreating refs. A cleanup-only effect left alive=false forever,
+  // so OCR worked initially and then silently stopped scheduling new work.
+  useEffect(()=>{
+    alive.current=true;
+    scheduleRef.current();
+    return ()=>{
+      alive.current=false;
+      if(timer.current){clearTimeout(timer.current);timer.current=null;}
+      queued.current=[];
+      reserved.current.clear();
+    };
+  },[]);
   const processRef=useRef<()=>void>(()=>{});
   const scheduleRef=useRef<()=>void>(()=>{});
   processRef.current=()=>{
@@ -84,7 +96,7 @@ export function useAutoHandwritingOCR(
       const raster=rasterize(strokes);
       if(!raster){
         console.warn('[Notex OCR] Görsel oluşturulamadı');
-        ids.forEach(id=>{reserved.current.delete(id);known.current.add(id)});
+        ids.forEach(id=>reserved.current.delete(id));
         busy.current=false;
         processRef.current();
         return;
@@ -223,6 +235,7 @@ export function useAutoHandwritingOCR(
     );
     if(!pending.length)return;
     timer.current=setTimeout(()=>{
+      timer.current=null;
       if(drawing.current||!alive.current)return;
       const latest=contentRef.current.elements.filter(
         (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!reserved.current.has(e.id)
@@ -270,7 +283,7 @@ export function useAutoHandwritingOCR(
   useEffect(()=>{scheduleRef.current()},[content.elements]);
   return (active:boolean)=>{
     drawing.current=active;
-    if(active&&timer.current)clearTimeout(timer.current);
+    if(active&&timer.current){clearTimeout(timer.current);timer.current=null;}
     if(!active)scheduleRef.current();
   };
 }
