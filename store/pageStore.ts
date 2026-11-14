@@ -74,13 +74,16 @@ export const usePageStore=create<State>((set,get)=>({
   const previous=get().pages;
   const from=previous.findIndex(page=>page.id===pageId);
   if(from<0)return;
-  const pages=[...previous];
-  const [page]=pages.splice(from,1);
-  const target=Math.max(0,Math.min(pages.length,position));
-  pages.splice(target,0,page);
-  try{
+   try{
    await timed('move_write',()=>pageRepository.move(pageId,position));
-   if(get().notebookId===id)set({pages:pages.map((p,index)=>({...p,position:index}))});
+   if(get().notebookId===id)set(state=>{
+    const current=[...state.pages];
+    const currentFrom=current.findIndex(item=>item.id===pageId);
+    if(currentFrom<0)return state;
+    const [moved]=current.splice(currentFrom,1);
+    current.splice(Math.max(0,Math.min(current.length,position)),0,moved);
+    return {pages:current.map((item,index)=>({...item,position:index}))};
+   });
    await timed('move_notebook_refresh',()=>useNotebookStore.getState().refresh());
   }catch(e){showError(e)}
  },
