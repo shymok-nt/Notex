@@ -362,7 +362,7 @@ function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistor
   if(next!==incoming)console.info('[Notex OCR] Korunan önceki dönüşümler',{count:missingPreviousBeautifications.length});
   record(page.id,previous);contentRef.current=next;setContent(next);onHistory();
  };
- const onOcrDrawingActive=useAutoHandwritingOCR(page.id,content,contentRef,change);
+ const onOcrDrawingActive=useAutoHandwritingOCR(page.id,content,contentRef,change,page.template);
  const handleDrawingActive=(active:boolean)=>{setDrawingActive(active);onOcrDrawingActive(active)};
  const addImage=(image:PageImage)=>{const previous=contentRef.current;const next={...previous,images:[...(previous.images??[]),image]};record(page.id,previous);contentRef.current=next;setContent(next);onHistory();logImageDebug('page_content_updated',{pageId:page.id,elementId:image.id,imageCount:next.images?.length??0,bounds:[image.x,image.y,image.x+image.width,image.y+image.height]})};
  const back=()=>{const next=undo(page.id,contentRef.current);if(next){contentRef.current=next;setContent(next);onHistory()}};
