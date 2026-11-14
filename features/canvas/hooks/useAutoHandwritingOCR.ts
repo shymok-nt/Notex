@@ -154,15 +154,18 @@ export function useAutoHandwritingOCR(
         if((current.beautifications??[]).some(b=>b.sourceIds.some(id=>ids.includes(id))))return;
         console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,inferenceMs:response.inferenceMs,model:response.model,fallbackReason:response.fallbackReason,lines:response.lines});
         if(!response.ok)throw new Error('OCR returned an unsuccessful response');
-        // Do not silently discard a low-confidence word while hiding ALL
-        // source strokes: that permanently loses visible text in the result.
-        // Suggestions are informational until the user explicitly confirms them.
-        // Never silently alter OCR text or its coordinates.
-        const recognized=response.lines.filter(line=>line.text.trim());
-        if(!recognized.length||recognized.some(line=>line.score==null||line.score<0.72)){
-          console.warn('[Notex OCR] Eksik veya düşük güvenli tanıma; orijinal el yazısı korunuyor',response.lines);
+        // Convert any nonempty OCR output, even when PaddleOCR reports a low
+        // confidence score. Confidence is diagnostic, not a hard gate.
+        // Original pen strokes remain stored and can be restored, and the
+        // user can correct a mistaken word with the selection tool.
+        const recognized=response.lines.filter(line=>typeof line.text==='string'&&line.text.trim());
+        if(!recognized.length){
+          console.warn('[Notex OCR] Tanınan metin yok; orijinal el yazısı korunuyor');
           completed=true;
           return;
+        }
+        if(recognized.some(line=>line.score==null||line.score<0.72)){
+          console.info('[Notex OCR] Düşük güvenli sonuç da dönüştürülüyor; orijinal çizgiler saklı');
         }
         const left=Math.min(...strokes.map(s=>s.bbox[0]));
         const top=Math.min(...strokes.map(s=>s.bbox[1]));
