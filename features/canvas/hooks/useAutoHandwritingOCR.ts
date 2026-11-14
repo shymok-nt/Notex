@@ -68,6 +68,7 @@ export function useAutoHandwritingOCR(
   const alive=useRef(true);
   const applyRef=useRef(apply);applyRef.current=apply;
   const pageRef=useRef(pageId);
+  pageRef.current=pageId;
   const startedAt=useRef(0);
   useEffect(()=>()=>{alive.current=false;if(timer.current)clearTimeout(timer.current)},[]);
   const processRef=useRef<()=>void>(()=>{});
@@ -95,7 +96,7 @@ export function useAutoHandwritingOCR(
         if(process.env.EXPO_PUBLIC_NOTEX_OCR_DIAGNOSTICS==='true'){
           // Opt-in diagnostics: the exact image sent to the model, its raw
           // output and timings. Never persist handwriting or upload it.
-          console.groupCollapsed('[Notex OCR diagnostic] paddle / '+' / '+ids.length+' strokes');
+          console.groupCollapsed('[Notex OCR diagnostic] paddle / '+ids.length+' strokes');
           console.info('Input PNG (open in browser):','data:image/png;base64,'+raster.pngBase64);
           console.info('Raster',{width:raster.width,height:raster.height,scale:raster.scale});
           console.info('Raw recognition',{model:response.model,lines:response.lines,inferenceMs:response.inferenceMs,fallbackReason:response.fallbackReason});
@@ -109,8 +110,8 @@ export function useAutoHandwritingOCR(
         if((current.beautifications??[]).some(b=>b.sourceIds.some(id=>ids.includes(id))))return;
         console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,inferenceMs:response.inferenceMs,model:response.model,fallbackReason:response.fallbackReason,lines:response.lines});
         if(!response.ok)throw new Error('OCR returned an unsuccessful response');
-        const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.45);
-        if(!recognized.length){console.warn('[Notex OCR] Güvenilir metin bulunamadı');return;}
+        const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.65);
+        if(!recognized.length){console.warn('[Notex OCR] Güvenilir metin bulunamadı; orijinal el yazısı korunuyor');completed=true;return;}
         const left=Math.min(...strokes.map(s=>s.bbox[0]));
         const top=Math.min(...strokes.map(s=>s.bbox[1]));
         const right=Math.max(...strokes.map(s=>s.bbox[2]));
@@ -227,12 +228,41 @@ export function useAutoHandwritingOCR(
         (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!reserved.current.has(e.id)
       );
       if(!latest.length)return;
-      // Freeze the writing session before invoking OCR. New strokes belong
-      // to the next session and never modify an in-flight batch.
-      for(let i=0;i<latest.length;i+=48){
-        const batch=latest.slice(i,i+48);
-        batch.forEach(stroke=>reserved.current.add(stroke.id));
-        queued.current.push(batch);
+      // Keep a writing row together: fixed 48-stroke slices used to cut words
+      // mid-letter, producing nonsense OCR output and stranded fragments.
+      // Split by vertical overlap, then by wide horizontal gaps only when a
+      // row exceeds the raster width limit. Never split by stroke count.
+      const ordered=[...latest].sort((a,b)=>(a.bbox[1]+a.bbox[3])-(b.bbox[1]+b.bbox[3]));
+      const rows:StrokeElement[][]=[];
+      for(const stroke of ordered){
+        const cy=(stroke.bbox[1]+stroke.bbox[3])/2;
+        const row=rows.find(group=>{
+          const ys=group.map(item=>(item.bbox[1]+item.bbox[3])/2);
+          const center=ys.reduce((a,b)=>a+b,0)/ys.length;
+          return Math.abs(center-cy)<42;
+        });
+        if(row)row.push(stroke);else rows.push([stroke]);
+      }
+      for(const row of rows){
+        const sorted=[...row].sort((a,b)=>a.bbox[0]-b.bbox[0]);
+        let batch:StrokeElement[]=[];
+        let left=Infinity,right=-Infinity;
+        for(const stroke of sorted){
+          const nextLeft=Math.min(left,stroke.bbox[0]);
+          const nextRight=Math.max(right,stroke.bbox[2]);
+          if(batch.length&&nextRight-nextLeft>2200){
+            batch.forEach(item=>reserved.current.add(item.id));
+            queued.current.push(batch);
+            batch=[];left=Infinity;right=-Infinity;
+          }
+          batch.push(stroke);
+          left=Math.min(left,stroke.bbox[0]);
+          right=Math.max(right,stroke.bbox[2]);
+        }
+        if(batch.length){
+          batch.forEach(item=>reserved.current.add(item.id));
+          queued.current.push(batch);
+        }
       }
       processRef.current();
     },1000);
