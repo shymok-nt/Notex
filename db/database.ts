@@ -59,6 +59,9 @@ export async function withSafeTransaction<T>(db:SQLite.SQLiteDatabase,run:(tx:SQ
 async function invokeTauriOpen(){
  const appDataDirectory=await invoke<string>('notex_db_open');
  await initializeTauriFiles(appDataDirectory);
+ // Remove the reverted course/topic/search schema only after the native layer
+ // creates an independent SQLite backup and verifies atomic cleanup.
+ await invoke<boolean>('notex_cleanup_removed_feature');
  return new TauriDatabaseAdapter();
 }
 async function openAndMigrate(){
