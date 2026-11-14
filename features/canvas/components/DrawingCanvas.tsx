@@ -387,8 +387,13 @@ const NaturalWord=memo(function NaturalWord({word,fonts}:{word:import('@/feature
   });
  },[fonts,glyphs,word.font,word.fontSize,word.color]);
  if(!layouts.length)return null;
+ // Each OCR batch owns its original stroke bounds. Fit the entire rendered
+ // word inside those bounds; otherwise later words visually collide with it.
+ const naturalWidth=layouts.reduce((sum,layout)=>sum+layout.width,0);
+ const availableWidth=Math.max(1,word.bbox[2]-word.bbox[0]);
+ const fitX=Math.min(1,availableWidth/Math.max(1,naturalWidth));
  let cursor=word.bbox[0];
- return <Group>{layouts.map((layout,index)=>{
+ return <Group transform={[{translateX:word.bbox[0]},{scaleX:fitX},{translateX:-word.bbox[0]}]}>{layouts.map((layout,index)=>{
   const glyph=glyphs[index],x=cursor;
   cursor+=layout.width;
   const y=word.baseline-word.fontSize+glyph.dy*0.15;
