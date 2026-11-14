@@ -1,1 +1,1 @@
-export { default } from '@/screens/SearchScreen';
+export { default } from '@/screens/CourseSearchScreen';
