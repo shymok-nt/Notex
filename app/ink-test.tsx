@@ -5,7 +5,8 @@ import {Pressable,SafeAreaView,ScrollView,Text,View} from 'react-native';
 import Svg,{Path} from 'react-native-svg';
 import {isTauri,invoke} from '@tauri-apps/api/core';
 import {useTheme} from '@/theme/ThemeProvider';
-import {preprocessInk,inputFromInkLine} from '@/features/canvas/engine/inkPreprocessor';
+import {preprocessInk} from '@/features/canvas/engine/inkPreprocessor';
+import {inputFromInkLine} from '@/features/canvas/engine/inkRecognizer';
 import type {StrokeElement} from '@/features/canvas/types';
 
 type Recognition={status:string;reason?:string;words?:{candidates:string[]}[];engine?:string};
