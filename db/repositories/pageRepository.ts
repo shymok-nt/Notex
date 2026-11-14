@@ -5,7 +5,6 @@ import { getDatabase,withSafeTransaction } from '@/db/database';
 import type { Page } from '@/types/page';
 import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
-import {parseContent} from '@/features/canvas/engine/content';
 import {copyStoredFile,deleteStoredFile,isTauriDesktop} from '@/utils/tauriFiles';
 type PageRow={id:string;notebook_id:string;position:number;template:PageTemplate;paper_color:PaperColor;content:string;thumbnail_path:string|null;created_at:string;updated_at:string};
 const convert=(r:PageRow):Page=>({id:r.id,notebookId:r.notebook_id,position:r.position,template:r.template,paperColor:r.paper_color,content:r.content,thumbnailPath:r.thumbnail_path,createdAt:r.created_at,updatedAt:r.updated_at});
@@ -104,7 +103,7 @@ export const pageRepository={
     for(const item of result){
      if(!item.source)continue;
      const source=item.source;
-     const content=parseContent(source.content);
+     const content=source.content===''?{v:2 as const,elements:[] as {id:string}[],images:[] as {id:string;uri:string}[]}:JSON.parse(source.content) as {elements?:{id:string}[];images?:{id:string;uri:string}[]};
      if(Array.isArray(content.elements))content.elements=content.elements.map(e=>({...e,id:Crypto.randomUUID()}));
      if(Array.isArray(content.images))content.images=content.images.map(image=>({...image,id:Crypto.randomUUID()}));
      const thumbnail=await duplicateFile(source.thumbnail_path);
