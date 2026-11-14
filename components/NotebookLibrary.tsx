@@ -46,6 +46,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   const selectedCourseId=useCourseStore(s=>s.selectedCourseId),selectedTopicId=useCourseStore(s=>s.selectedTopicId);
   const moveCourse=useCourseStore(s=>s.moveNotebook);
   const [courseMoveTarget,setCourseMoveTarget]=useState<Notebook|null>(null);
+  const [sidebarOpen,setSidebarOpen]=useState(false);
   const moveNotebook = useNotebookStore(state => state.moveNotebook);
 
   const [checked, setChecked] = useState<string[]>([]);
@@ -174,6 +175,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     <View style={styles.body}>
       <View style={styles.topBar}>
         <View style={styles.brand}><NotexIcon compact /><NotexWordmark compact dark={scheme==='dark'} /></View>
+        {!favorites&&width<860?<Pressable onPress={()=>setSidebarOpen(true)} style={{paddingHorizontal:10,paddingVertical:8}}><Text style={{color:colors.accent,fontWeight:'700'}}>📚 Dersler</Text></Pressable>:null}
         <View style={styles.topActions}>
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
@@ -241,6 +243,12 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
       </View></View>
     </Modal>
 
+    <Modal visible={sidebarOpen} transparent animationType="slide" onRequestClose={()=>setSidebarOpen(false)}>
+     <View style={{flex:1,flexDirection:'row',backgroundColor:colors.overlay}}>
+      <CourseSidebar notebooks={all} onOpenNote={id=>{setSidebarOpen(false);openNotebook(id)}} onCreateNote={()=>{setSidebarOpen(false);openEditor()}} onDropNote={(noteId,courseId,topicId)=>void moveCourse(noteId,courseId,topicId).catch(error=>Alert.alert('Taşıma başarısız',String(error)))}/>
+      <Pressable accessibilityLabel="Ders menüsünü kapat" onPress={()=>setSidebarOpen(false)} style={{flex:1}}/>
+     </View>
+    </Modal>
     <Modal visible={!!courseMoveTarget} transparent animationType="slide" onRequestClose={()=>setCourseMoveTarget(null)}>
      <View style={styles.modalBackdrop}><View style={styles.sheet}><Text style={styles.modalTitle}>Derse / konuya taşı</Text>
       {[{id:'unclassified',name:'Sınıflandırılmamış',courseId:null,topicId:null},...courses.flatMap(course=>[{id:course.id,name:course.name,courseId:course.id,topicId:null},...topics.filter(topic=>topic.courseId===course.id).map(topic=>({id:topic.id,name:course.name+' › '+topic.name,courseId:course.id,topicId:topic.id}))])].map(target=><Pressable key={target.id} style={styles.option} onPress={()=>{const id=courseMoveTarget?.id;setCourseMoveTarget(null);if(id)void moveCourse(id,target.courseId,target.topicId).catch(error=>Alert.alert('Taşıma başarısız',String(error)))}}><Text style={styles.optionText}>{target.name}</Text></Pressable>)}
