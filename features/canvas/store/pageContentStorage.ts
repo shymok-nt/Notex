@@ -1,7 +1,7 @@
 import {isTauriDesktop} from '@/utils/tauriFiles';
 import {parseContent,serializeContent} from '@/features/canvas/engine/content';
 
-type Draft={version:1;content:string;pending:boolean};
+type Draft={version:1;content:string;base:string;pending:boolean};
 const prefix='notex:page-content:v1:';
 const key=(id:string)=>prefix+id;
 const storage=():Storage|null=>{
@@ -20,18 +20,25 @@ const read=(id:string):Draft|null=>{
  try{
   const raw=s.getItem(key(id));if(!raw)return null;
   const value=JSON.parse(raw) as Partial<Draft>;
-  return value.version===1&&typeof value.content==='string'&&typeof value.pending==='boolean'&&valid(value.content)
+  return value.version===1&&typeof value.content==='string'&&typeof value.base==='string'&&typeof value.pending==='boolean'&&valid(value.content)&&valid(value.base)
    ?value as Draft:null;
  }catch{return null}
 };
 /** Synchronous write-ahead draft. Never erase SQLite data on quota/storage errors. */
-export const stagePageContent=(id:string,content:string):void=>{
+export const stagePageContent=(id:string,content:string,base:string):void=>{
  const s=storage();if(!s)return;
- try{s.setItem(key(id),JSON.stringify({version:1,content,pending:true} satisfies Draft))}
+ try{
+  const previous=read(id);
+  s.setItem(key(id),JSON.stringify({version:1,content,base:previous?.pending?previous.base:base,pending:true} satisfies Draft));
+ }
  catch(error){console.warn('[Notex save] Local draft could not be stored',error)}
 };
-export const pendingPageContent=(id:string):string|null=>{
- const draft=read(id);return draft?.pending?draft.content:null;
+export const pendingPageContent=(id:string,sqliteContent?:string):string|null=>{
+ const draft=read(id);
+ if(!draft?.pending)return null;
+ // Never replace a SQLite value changed after this draft's base snapshot.
+ if(sqliteContent!==undefined&&sqliteContent!==draft.base&&sqliteContent!==draft.content)return null;
+ return draft.content;
 };
 /** Clear pending only when SQLite has saved this exact snapshot. */
 export const confirmPageContent=(id:string,content:string):void=>{
