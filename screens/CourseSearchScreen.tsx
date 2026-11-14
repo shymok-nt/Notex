@@ -10,8 +10,9 @@ import {useTheme} from '@/theme/ThemeProvider';
 import {countUnsearchablePdfPages,hydrateSearchIndex,normalizeSearch,searchIndexedPages,type SearchHit} from '@/features/search/searchIndex';
 import {markNotebookNavigationStart} from '@/utils/notebookOpenPerformance';
 import type {Course,Topic} from '@/types/course';
+import type {Notebook} from '@/types/notebook';
 
-type Result={key:string;kind:'page';hit:SearchHit;title:string;path:string}|{key:string;kind:'course';course:Course}|{key:string;kind:'topic';topic:Topic;course:Course};
+type Result={key:string;kind:'notebook';notebook:Notebook;path:string}|{key:string;kind:'page';hit:SearchHit;title:string;path:string}|{key:string;kind:'course';course:Course}|{key:string;kind:'topic';topic:Topic;course:Course};
 export default function CourseSearchScreen(){
  const {colors}=useTheme();
  const notebooks=useNotebookStore(s=>s.notebooks);
@@ -43,10 +44,17 @@ export default function CourseSearchScreen(){
   const matchedTopics:Result[]=topics.filter(t=>normalizeSearch(t.name).includes(needle)&&(!onlyCurrent||selectedCourseId===null||selectedCourseId===t.courseId)).flatMap(topic=>{
    const course=byCourse.get(topic.courseId);return course?[{kind:'topic' as const,key:'t-'+topic.id,topic,course}]:[]
   });
-  return [...matchedCourses,...matchedTopics,...pages];
+  const matchedNotebooks:Result[]=notebooks.filter(note=>
+   normalizeSearch(note.title).includes(needle)&&
+   (!onlyCurrent||selectedCourseId===null||note.courseId===(selectedCourseId==='unclassified'?null:selectedCourseId))
+  ).map(notebook=>({kind:'notebook',key:'n-'+notebook.id,notebook,
+   path:[notebook.courseId!==null?byCourse.get(notebook.courseId)?.name:'Sınıflandırılmamış',notebook.topicId!==null?byTopic.get(notebook.topicId)?.name:undefined].filter(Boolean).join(' › ')
+  }));
+  return [...matchedCourses,...matchedTopics,...matchedNotebooks,...pages.filter(page=>!(page.hit.source==='title'&&matchedNotebooks.some(note=>note.kind==='notebook'&&note.notebook.id===page.hit.page.notebookId)))];
  },[ready,revision,debounced,metadata,notebooks,courses,topics,onlyCurrent,selectedCourseId]);
  const open=(item:Result)=>{
   void addSearch(query).catch(()=>{});
+  if(item.kind==='notebook'){markNotebookNavigationStart(item.notebook.id);router.push({pathname:'/note/[id]',params:{id:item.notebook.id}});return}
   if(item.kind==='course'){useCourseStore.getState().select(item.course.id);router.navigate('/(tabs)/notebooks');return}
   if(item.kind==='topic'){useCourseStore.getState().select(item.course.id,item.topic.id);router.navigate('/(tabs)/notebooks');return}
   markNotebookNavigationStart(item.hit.page.notebookId);
@@ -74,7 +82,10 @@ export default function CourseSearchScreen(){
    ListHeaderComponent={debounced!==''?<Text style={{color:colors.muted,paddingVertical:12}}>{results.length} sonuç</Text>:undefined}
    ListEmptyComponent={ready&&debounced!==''?<Text style={{color:colors.muted,paddingTop:40,textAlign:'center'}}>Sonuç bulunamadı</Text>:undefined}
    renderItem={({item})=><Pressable onPress={()=>open(item)} style={{paddingVertical:13,borderBottomWidth:1,borderBottomColor:colors.divider,gap:3}}>
-    {item.kind==='page'?<>
+    {item.kind==='notebook'?<>
+     <Text style={{fontSize:15,fontWeight:'700',color:colors.ink}}>{item.notebook.title}</Text>
+     <Text style={{color:colors.muted,fontSize:12}}>{item.path} · Defter başlığı</Text>
+    </>:item.kind==='page'?<>
      <Text style={{fontSize:15,fontWeight:'700',color:colors.ink}}>{item.title} · Sayfa {item.hit.page.position+1}</Text>
      <Text style={{color:colors.muted,fontSize:12}}>{item.path}{item.hit.source==='pdf'?' · PDF':''}</Text>
      <Text numberOfLines={2} style={{color:colors.ink,fontSize:13}}>{item.hit.before}<Text style={{fontWeight:'700',color:colors.accent}}>{item.hit.match}</Text>{item.hit.after}</Text>
