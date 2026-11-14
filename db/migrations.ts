@@ -40,7 +40,7 @@ export const migrations:Migration[]=[{
   }
  }
 }];
-export const latestMigrationVersion=3;
+export const latestMigrationVersion=4;
 migrations.push({
  version:2,
  run:async db=>{
@@ -52,6 +52,21 @@ migrations.push({
  }
 });
 migrations.push({version:3,run:async db=>{
+ await db.execAsync(`
+  CREATE TABLE IF NOT EXISTS card_decks (id TEXT PRIMARY KEY,name TEXT NOT NULL,color TEXT NOT NULL,created_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY,deck_id TEXT NOT NULL REFERENCES card_decks(id) ON DELETE CASCADE,front TEXT NOT NULL,back TEXT NOT NULL,source_note_id TEXT,created_at TEXT NOT NULL,ease REAL NOT NULL DEFAULT 2.5,interval INTEGER NOT NULL DEFAULT 0,repetitions INTEGER NOT NULL DEFAULT 0,due_date TEXT NOT NULL,last_reviewed TEXT);
+  CREATE TABLE IF NOT EXISTS card_reviews (id TEXT PRIMARY KEY,card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,rating TEXT NOT NULL,reviewed_at TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS idx_cards_deck_due ON cards(deck_id,due_date);
+  CREATE INDEX IF NOT EXISTS idx_card_reviews_date ON card_reviews(reviewed_at);
+  CREATE TRIGGER IF NOT EXISTS clear_card_source_on_notebook_delete AFTER DELETE ON notebooks BEGIN UPDATE cards SET source_note_id=NULL WHERE source_note_id=OLD.id; END;
+  CREATE TRIGGER IF NOT EXISTS clear_card_source_on_notebook_trash AFTER UPDATE OF deleted_at ON notebooks WHEN NEW.deleted_at IS NOT NULL BEGIN UPDATE cards SET source_note_id=NULL WHERE source_note_id=NEW.id; END;
+ `);
+}});
+
+// Repair installations whose schema version was already marked as 3 but the
+// optional Cards tables were never created. All statements are idempotent and
+// preserve existing notebooks, pages, decks, cards, and review history.
+migrations.push({version:4,run:async db=>{
  await db.execAsync(`
   CREATE TABLE IF NOT EXISTS card_decks (id TEXT PRIMARY KEY,name TEXT NOT NULL,color TEXT NOT NULL,created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY,deck_id TEXT NOT NULL REFERENCES card_decks(id) ON DELETE CASCADE,front TEXT NOT NULL,back TEXT NOT NULL,source_note_id TEXT,created_at TEXT NOT NULL,ease REAL NOT NULL DEFAULT 2.5,interval INTEGER NOT NULL DEFAULT 0,repetitions INTEGER NOT NULL DEFAULT 0,due_date TEXT NOT NULL,last_reviewed TEXT);
