@@ -5,7 +5,7 @@ import { getDatabase,withSafeTransaction } from '@/db/database';
 import type { Page } from '@/types/page';
 import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
-import {copyStoredFile,isTauriDesktop} from '@/utils/tauriFiles';
+import {copyStoredFile,deleteStoredFile,isTauriDesktop} from '@/utils/tauriFiles';
 type PageRow={id:string;notebook_id:string;position:number;template:PageTemplate;paper_color:PaperColor;content:string;thumbnail_path:string|null;created_at:string;updated_at:string};
 const convert=(r:PageRow):Page=>({id:r.id,notebookId:r.notebook_id,position:r.position,template:r.template,paperColor:r.paper_color,content:r.content,thumbnailPath:r.thumbnail_path,createdAt:r.created_at,updatedAt:r.updated_at});
 export type RecentPageRecord={page:Page;notebookTitle:string};
@@ -65,6 +65,7 @@ export const pageRepository={
  },
 
  async duplicateMany(ids:string[]){
+  if(!ids.length)return [];
   const db=await getDatabase(),date=now(),created:string[]=[],copiedPaths:string[]=[];
   const duplicateFile=async(relative:string|null)=>{
    if(!relative)return null;
@@ -106,7 +107,13 @@ export const pageRepository={
     await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=?',date,notebookId);
    });
    return created;
-  }catch(error){for(const path of copiedPaths)deleteCoverFile(path);throw error}
+  }catch(error){
+   for(const path of copiedPaths){
+    try{if(isTauriDesktop())await deleteStoredFile(path);else deleteCoverFile(path)}
+    catch(cleanupError){console.warn('Çoğaltma sonrası dosya temizliği başarısız',cleanupError)}
+   }
+   throw error;
+  }
  },
  async removeMany(ids:string[]){
   const db=await getDatabase(),date=now();
