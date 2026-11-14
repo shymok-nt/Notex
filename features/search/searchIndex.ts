@@ -1,7 +1,7 @@
 import {getDatabase} from '@/db/database';
 import {parseContent} from '@/features/canvas/engine/content';
-type Row={id:string;notebook_id:string;position:number;content:string;updated_at:string;search_text:string|null;extractable:number|null};
-export type IndexedPage={pageId:string;notebookId:string;position:number;text:string;pdfText:string;extractable:boolean;updatedAt:string};
+type Row={id:string;notebook_id:string;position:number;content:string;updated_at:string;search_text:string|null;extractable:number|null;pdf_imported:number};
+export type IndexedPage={pageId:string;notebookId:string;position:number;text:string;pdfText:string;extractable:boolean;isPdf:boolean;updatedAt:string};
 export type SearchHit={page:IndexedPage;source:'text'|'pdf'|'title'|'course'|'topic';preview:string;before:string;match:string;after:string};
 const pages=new Map<string,IndexedPage>();
 let hydrated:Promise<void>|null=null;
@@ -19,11 +19,11 @@ export async function hydrateSearchIndex(){
  const promise=(async()=>{
   const db=await getDatabase();
   const rows=await db.getAllAsync<Row>(`SELECT p.id,p.notebook_id,p.position,p.content,p.updated_at,
-   i.search_text,i.extractable FROM pages p
+   i.search_text,i.extractable,CASE WHEN i.page_id IS NULL THEN 0 ELSE 1 END AS pdf_imported FROM pages p
    JOIN notebooks n ON n.id=p.notebook_id AND n.deleted_at IS NULL
    LEFT JOIN pdf_search_index i ON i.page_id=p.id`);
   pages.clear();
-  for(const row of rows)pages.set(row.id,{pageId:row.id,notebookId:row.notebook_id,position:row.position,text:textFromPage(row.content),pdfText:row.search_text??'',extractable:row.extractable===1,updatedAt:row.updated_at});
+  for(const row of rows)pages.set(row.id,{pageId:row.id,notebookId:row.notebook_id,position:row.position,text:textFromPage(row.content),pdfText:row.search_text??'',extractable:row.extractable===1,isPdf:row.pdf_imported===1,updatedAt:row.updated_at});
  })();
  hydrated=promise;
  try{await promise}catch(error){hydrated=null;throw error}
@@ -39,7 +39,7 @@ export function queueIndexedPageChange(id:string,raw:string){
 }
 export function indexNewPage(page:{id:string;notebookId:string;position:number;content:string;updatedAt:string}){
  if(!hydrated)return;
- pages.set(page.id,{pageId:page.id,notebookId:page.notebookId,position:page.position,text:textFromPage(page.content),pdfText:'',extractable:false,updatedAt:page.updatedAt});
+ pages.set(page.id,{pageId:page.id,notebookId:page.notebookId,position:page.position,text:textFromPage(page.content),pdfText:'',extractable:false,isPdf:false,updatedAt:page.updatedAt});
 }
 export function removeIndexedPages(ids:string[]){
  for(const id of ids){const timer=pending.get(id);if(timer!==undefined)clearTimeout(timer);pending.delete(id);pages.delete(id)}
@@ -74,3 +74,5 @@ export function searchIndexedPages(query:string,metadata:Map<string,{title:strin
  return found;
 }
 export function getIndexedPageCount(){return pages.size}
+
+export function countUnsearchablePdfPages(){return [...pages.values()].filter(p=>p.isPdf&&!p.extractable).length}
