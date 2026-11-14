@@ -134,7 +134,8 @@ export const pageRepository={
    await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=?',date,notebookId);
   });
  },
- async updateContent(pageId:string,content:string){const db=await getDatabase(),date=now();await withSafeTransaction(db,async tx=>{await tx.runAsync('UPDATE pages SET content=?,updated_at=? WHERE id=? AND EXISTS(SELECT 1 FROM notebooks WHERE notebooks.id=pages.notebook_id AND notebooks.deleted_at IS NULL)',content,date,pageId);await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=(SELECT notebook_id FROM pages WHERE id=?)',date,pageId)})},
+ async updateContent(pageId:string,content:string){const db=await getDatabase(),date=now();await withSafeTransaction(db,async tx=>{const result=await tx.runAsync('UPDATE pages SET content=?,updated_at=? WHERE id=? AND EXISTS(SELECT 1 FROM notebooks WHERE notebooks.id=pages.notebook_id AND notebooks.deleted_at IS NULL)',content,date,pageId);if(result.changes!==1)throw new Error('Sayfa kaydedilemedi: sayfa veya defter bulunamadı.');await tx.runAsync('UPDATE notebooks SET updated_at=? WHERE id=(SELECT notebook_id FROM pages WHERE id=?)',date,pageId)})},
+ async getStoredContent(pageId:string){const db=await getDatabase();const row=await db.getFirstAsync<{content:string}>('SELECT content FROM pages WHERE id=?',pageId);return row?.content??null},
  async updateTemplate(pageId:string,template:PageTemplate,paperColor:PaperColor){
   const db=await getDatabase(),date=now();await withSafeTransaction(db,async tx=>{
    await tx.runAsync('UPDATE pages SET template=?,paper_color=?,updated_at=? WHERE id=?',template,paperColor,date,pageId);

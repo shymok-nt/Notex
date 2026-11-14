@@ -7,7 +7,7 @@ import { coverPathFromUri } from '@/utils/files';
 import {deleteStoredFile,isTauriDesktop,readStoredFile,restoreBackupAsset} from '@/utils/tauriFiles';
 
 type Folder={id:string;name:string;position:number;created_at:string};
-type Notebook={id:string;title:string;folder_id:string|null;cover_type:string;cover_color:string|null;cover_image_path:string|null;cover_preset_id:string|null;show_title_on_cover:number;template:string;paper_color:string;auto_convert_enabled?:number;conversion_font?:string;conversion_delay_ms?:number;favorite:number;created_at:string;updated_at:string;deleted_at:string|null};
+type Notebook={id:string;title:string;folder_id:string|null;cover_type:string;cover_color:string|null;cover_image_path:string|null;cover_preset_id:string|null;show_title_on_cover:number;template:string;paper_color:string;favorite:number;created_at:string;updated_at:string;deleted_at:string|null};
 type Page={id:string;notebook_id:string;position:number;template:string;paper_color:string;content:string;thumbnail_path:string|null;created_at:string;updated_at:string};
 type Setting={key:string;value:string};
 type BackupData={folders:Folder[];notebooks:Notebook[];pages:Page[];settings:Setting[]};
@@ -123,9 +123,6 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
    for(const n of data.notebooks){
     const notebookId=notebookMap.get(n.id)!;
     await tx.runAsync('INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)',notebookId,n.title,n.folder_id?folderMap.get(n.folder_id)??null:null,n.cover_type,n.cover_color,n.cover_image_path?fileMap.get(n.cover_image_path)??null:null,n.cover_preset_id,n.show_title_on_cover,n.template,n.paper_color,n.favorite,n.created_at,n.updated_at);
-    const font=n.conversion_font==='SpaceGrotesk'?'SpaceGrotesk':'Inter';
-    const delay=typeof n.conversion_delay_ms==='number'&&Number.isFinite(n.conversion_delay_ms)?Math.max(500,Math.min(2000,n.conversion_delay_ms)):1000;
-    await tx.runAsync('UPDATE notebooks SET auto_convert_enabled=?,conversion_font=?,conversion_delay_ms=? WHERE id=?',n.auto_convert_enabled===0?0:1,font,delay,notebookId);
    }
    for(const p of data.pages){
      const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};

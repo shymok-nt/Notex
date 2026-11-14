@@ -19,11 +19,17 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
  const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const statusTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const mounted=useRef(true);
+ const idleWaiters=useRef<Array<()=>void>>([]);
  const clear=()=>{if(timer.current)clearTimeout(timer.current);timer.current=null};
  const flush=useCallback(async()=>{
   clear();
+  if(active.current)await new Promise<void>((resolve,reject)=>{
+   const timeout=setTimeout(()=>{idleWaiters.current=idleWaiters.current.filter(waiter=>waiter!==done);reject(new Error('Çizim henüz tamamlanmadı. Tekrar dene.'))},3000);
+   const done=()=>{clearTimeout(timeout);resolve()};
+   idleWaiters.current.push(done);
+  });
   const {pageId:id,content:value}=latest.current;
-  if(!id||!dirty.current||active.current)return queues.get(id??'')??Promise.resolve();
+  if(!id||!dirty.current)return queues.get(id??'')??Promise.resolve();
   const snapshot=version.current;
   if(snapshot===savedVersion.current)return queues.get(id)??Promise.resolve();
   dirty.current=false;
@@ -39,6 +45,7 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
     const writeStarted=__DEV__?perfNow():0;
     if(imageIds.length)logImageDebug('sqlite_save_started',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
     await pageRepository.updateContent(id,data);
+    if(await pageRepository.getStoredContent(id)!==data)throw new Error('Sayfa kaydı doğrulanamadı. Tekrar dene.');
     onSavedRef.current?.(id,data);
     if(imageIds.length)logImageDebug('sqlite_save_succeeded',{pageId:id,imageCount:imageIds.length,elementIds:imageIds});
     if(__DEV__)console.log('[Notex perf] autosave_flush',{compare_ms:Math.round(lastCompareMs.current*10)/10,serialize_ms:Math.round(serializeMs*10)/10,sqlite_write_ms:Math.round((perfNow()-writeStarted)*10)/10,content_characters:data.length});
@@ -65,6 +72,15 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
   clear();if(active.current)return;
   timer.current=setTimeout(()=>{timer.current=null;void flush().catch(()=>{})},autosaveDelay(firstDirty.current,Date.now()));
  },[flush]);
+ const markChanged=useCallback((next:PageContent)=>{
+  latest.current={pageId,content:next};
+  const serialized=serializeContent(next);
+  if(serialized===lastSerialized.current)return;
+  lastSerialized.current=serialized;
+  version.current++;dirty.current=true;
+  if(!firstDirty.current)firstDirty.current=Date.now();
+  schedule();
+ },[pageId,schedule]);
  useEffect(()=>{
   if(!pageId)return;
   const compareStarted=__DEV__?perfNow():0;
@@ -79,6 +95,7 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
  },[pageId,content,schedule]);
  const setDrawingActive=useCallback((value:boolean)=>{
   active.current=value;
+  if(!value){const waiters=idleWaiters.current.splice(0);waiters.forEach(resolve=>resolve())}
   if(value)clear();else if(dirty.current)schedule();
  },[schedule]);
  useEffect(()=>{
@@ -86,8 +103,8 @@ export function useAutosave(pageId:string|null,content:PageContent,onSaved?:(pag
   const sub=AppState.addEventListener('change',state=>{
    if(state!=='active'){active.current=false;void flush().catch(()=>{})}
   });
-  return()=>{mounted.current=false;sub.remove();active.current=false;clear();if(statusTimer.current)clearTimeout(statusTimer.current);void flush().catch(()=>{})};
+  return()=>{mounted.current=false;sub.remove();active.current=false;idleWaiters.current.splice(0).forEach(resolve=>resolve());clear();if(statusTimer.current)clearTimeout(statusTimer.current);void flush().catch(()=>{})};
  },[flush]);
  const retry=useCallback(async()=>{active.current=false;await flush()},[flush]);
- return {flush,error,saving,retry,setDrawingActive};
+ return {flush,error,saving,retry,setDrawingActive,markChanged};
 }

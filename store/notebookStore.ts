@@ -15,8 +15,7 @@ const convert=(r:NotebookRow):Notebook=>({
  coverType:r.cover_type,coverColor:r.cover_color??defaultCoverColor,coverImagePath:r.cover_image_path,
  coverImageUri:coverFileExists(r.cover_image_path)?resolveCoverUri(r.cover_image_path):null,
  coverPresetId:r.cover_preset_id,showTitleOnCover:!!r.show_title_on_cover,template:r.template,
- paperColor:r.paper_color,pageCount:r.page_count,createdAt:r.created_at,updatedAt:r.updated_at,favorite:!!r.favorite,
- autoConvertEnabled:r.auto_convert_enabled!==0,conversionFont:r.conversion_font==='SpaceGrotesk'?'SpaceGrotesk':'Inter',conversionDelayMs:Math.max(500,Math.min(2000,r.conversion_delay_ms||1000))
+ paperColor:r.paper_color,pageCount:r.page_count,createdAt:r.created_at,updatedAt:r.updated_at,favorite:!!r.favorite
 });
 const activeNotebooks=(rows:NotebookRow[],folders:Folder[]):Notebook[]=>rows.map(convert).map(n=>({...n,folder:(folders.find(f=>f.id===n.folderId)?.name??'Klasörsüz') as NotebookFolder}));
 const deletedNotebooks=(rows:NotebookRow[],folders:Folder[])=>rows.filter(r=>!!r.deleted_at).map(r=>({...convert(r),folder:(folders.find(f=>f.id===r.folder_id)?.name??'Klasörsüz') as NotebookFolder,deletedAt:r.deleted_at!}));
@@ -76,4 +75,4 @@ export const useNotebookStore=create<State>((set,get)=>({
  duplicateNotebook:async id=>{try{const key=await notebookRepository.duplicate(id);await get().refresh();return key}catch(e){alert(e);return null}},
  toggleFavorite:async id=>{try{await notebookRepository.toggleFavorite(id);await get().refresh();return true}catch(e){alert(e);return false}}
 }));
-export const defaultNotebookDraft:NotebookDraft={title:'Yeni defter',folder:'Kişisel',coverType:'color',coverColor:defaultCoverColor,coverImageUri:null,coverPresetId:null,showTitleOnCover:true,template:'çizgili',paperColor:'beyaz',autoConvertEnabled:false,conversionFont:'Inter',conversionDelayMs:1000};
+export const defaultNotebookDraft:NotebookDraft={title:'Yeni defter',folder:'Kişisel',coverType:'color',coverColor:defaultCoverColor,coverImageUri:null,coverPresetId:null,showTitleOnCover:true,template:'çizgili',paperColor:'beyaz'};

@@ -37,12 +37,11 @@ reanimated-error.txt
 *.keystore
 *.jks
 
-# Local PaddleOCR prototype environment and downloaded model files
-.venv-ocr/
 __pycache__/
 *.pyc
 
-# Private handwriting evaluation samples and generated reports
+# Legacy local OCR artifacts awaiting manual cleanup.
+.venv-ocr/
 tools/handwriting_ocr/data/
 ocr-benchmark-results.json
 paddle-results.json

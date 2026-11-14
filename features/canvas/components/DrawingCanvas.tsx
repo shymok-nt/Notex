@@ -26,7 +26,7 @@ import type {ShapeMode,Element} from '@/features/canvas/types';
 import type {PageTemplate,PaperColor} from '@/types/notebook';
 export type Tool='pen'|'highlighter'|'eraser'|'hand'|'select'|'shape'|'text';
 export type Brush={color:string;width:number;opacity:number};
-type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}};
+type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onFinishEditingReady?:(finish:()=>void)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear';pageId:string;value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;align:'left'|'center'|'right'}};
 const normalizeShapeSize=(kind:string,w:number,h:number):[number,number]=>{ 'worklet';
  if(kind==='triangle'){
   const side=Math.max(Math.abs(w),Math.abs(h)*2/Math.sqrt(3));
@@ -381,7 +381,7 @@ const Completed=memo(function Completed({content,hiddenIds,fonts}:{content:PageC
  },[elements]);
  return <>{elements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={fonts}/>:<StrokeLayer key={element.id} element={element}/>)}</>;
 });
-export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,eraserSize,eraserMode='pixel',onChange,onAddImage,onDrawingActive,onStrokeComplete,shapeKind='auto',shapeFill=false,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,selectionAction,transformMode=false,onImageSelectionChange,onImageLoadError,imageRequest,onImageRequestConsumed,imageAction,textStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left'}}:Props){
+export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,eraserSize,eraserMode='pixel',onChange,onAddImage,onDrawingActive,onFinishEditingReady,onStrokeComplete,shapeKind='auto',shapeFill=false,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,selectionAction,transformMode=false,onImageSelectionChange,onImageLoadError,imageRequest,onImageRequestConsumed,imageAction,textStyle={fontSize:48,color:'#1B1B2F',bold:false,align:'left'}}:Props){
  const imageRenderProbeEnabled=useMemo(()=>{
   if(Platform.OS!=='web'||!isTauriDevelopmentRuntime())return false;
   try{return window.localStorage.getItem('notexImageRenderProbe')==='1'}catch{return false}
@@ -464,6 +464,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   }else setEditing(null);
  };
  const finishRef=useRef(finishText);finishRef.current=finishText;
+ useEffect(()=>{onFinishEditingReady?.(()=>finishRef.current())},[onFinishEditingReady]);
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{if(!editingRef.current)return false;finishRef.current();return true});return()=>sub.remove()},[]);
  const beginText=(x:number,y:number)=>{
    if(editingRef.current){finishRef.current();return;}
@@ -1400,7 +1401,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  </Group>
   {tool==='select'&&paintedFrame&&<Group transform={selectionTransform}>
    <Rect x={paintedFrame.bounds[0]} y={paintedFrame.bounds[1]} width={paintedFrame.bounds[2]-paintedFrame.bounds[0]} height={paintedFrame.bounds[3]-paintedFrame.bounds[1]} color="#3388EE" opacity={0.035}/>
-  {paintedElements.filter(element=>!(content.beautifications??[]).some(b=>b.mode==='beautified'&&b.sourceIds.includes(element.id))).map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}
+  {paintedElements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}
   {(()=>{
    const bounds=paintedFrame.bounds;
    const rotation=paintedFrame.rotation;
