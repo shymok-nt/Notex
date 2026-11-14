@@ -76,6 +76,11 @@ async function openAndMigrate(){
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   const result=await db.getFirstAsync<{user_version:number}>('PRAGMA user_version');
   const current=result?.user_version??0;
+  // A verified, independent SQLite copy is required before destructive v3 cleanup.
+  // Never silently modify a migrated desktop database without this safety net.
+  if(current===3&&isTauriRuntime()){
+   await invoke('notex_db_backup_before_schema_cleanup');
+  }
   for(const migration of migrations.filter(m=>m.version>current&&m.version<=latestMigrationVersion).sort((a,b)=>a.version-b.version)){
    await withSafeTransaction(db,async tx=>{
     await migration.run(tx);
