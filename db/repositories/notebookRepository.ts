@@ -50,6 +50,7 @@ export const notebookRepository={
    for(let index=0;index<pages.length;index++){
     const page=pages[index];
     await tx.runAsync('INSERT INTO pages(id,notebook_id,position,template,paper_color,content,thumbnail_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',page.id,id,index,'boş','beyaz',page.content,page.thumbnailPath,date,date);
+    await tx.runAsync('INSERT INTO pdf_search_index(page_id,search_text,extractable) VALUES(?,?,?)',page.id,page.searchText??'',(page.searchText??'').trim().length>0?1:0);
    }
   });
   return id;
