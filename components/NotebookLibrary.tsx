@@ -3,6 +3,8 @@ import { ActivityIndicator, Alert, BackHandler, FlatList, Modal, Platform, Press
 import { router, useFocusEffect } from 'expo-router';
 import { Copy, Heart, LayoutGrid, List, MoreHorizontal, Search, Settings2, Trash2, X } from 'lucide-react-native';
 import {CreateNotebookIcon} from '@/components/CreateNotebookIcon';
+import {CourseSidebar} from '@/components/CourseSidebar';
+import {useCourseStore} from '@/store/courseStore';
 import { BackupReminder } from '@/components/BackupReminder';
 import { EmptyState } from '@/components/EmptyState';
 import { FolderChips } from '@/components/FolderChips';
@@ -40,6 +42,11 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   const duplicateNotebook = useNotebookStore(state => state.duplicateNotebook);
   const deleteNotebooks = useNotebookStore(state => state.deleteNotebooks);
   const folders = useNotebookStore(state => state.folders);
+  const courses=useCourseStore(s=>s.courses),topics=useCourseStore(s=>s.topics);
+  const selectedCourseId=useCourseStore(s=>s.selectedCourseId),selectedTopicId=useCourseStore(s=>s.selectedTopicId);
+  const moveCourse=useCourseStore(s=>s.moveNotebook);
+  const [courseMoveTarget,setCourseMoveTarget]=useState<Notebook|null>(null);
+  const [sidebarOpen,setSidebarOpen]=useState(false);
   const moveNotebook = useNotebookStore(state => state.moveNotebook);
 
   const [checked, setChecked] = useState<string[]>([]);
@@ -55,9 +62,9 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     ? Math.min(170, (width - 40 - (columns - 1) * 20) / columns)
     : Math.max(0, width - 40);
   const data = useMemo(() => sortNotebooks(
-    all.filter(notebook => (!favorites || notebook.favorite) && (favorites || folder === 'Tümü' || notebook.folder === folder)),
+    all.filter(notebook => (!favorites || notebook.favorite) && (favorites || folder === 'Tümü' || notebook.folder === folder) && (favorites || (selectedCourseId===null || (selectedCourseId==='unclassified'?notebook.courseId===null:notebook.courseId===selectedCourseId && (selectedTopicId===null||notebook.topicId===selectedTopicId))))),
     sortBy,
-  ), [all, favorites, folder, sortBy]);
+  ), [all, favorites, folder, sortBy, selectedCourseId, selectedTopicId]);
 
   useEffect(() => {
     const available = new Set(data.map(notebook => notebook.id));
@@ -91,7 +98,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     markNotebookNavigationStart(id);
     router.push({ pathname: '/note/[id]', params: { id } });
   };
-  const openEditor = (id?: string) => router.push({ pathname: '/notebook-editor', params: id ? { id } : {} });
+  const openEditor = (id?: string) => router.push({ pathname: '/notebook-editor', params: id ? { id } : {courseId:selectedCourseId!==null&&selectedCourseId!=='unclassified'?selectedCourseId:undefined,topicId:selectedTopicId??undefined} });
 
   const confirmBulkDelete = async () => {
     if (working) return;
@@ -163,9 +170,12 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   </View>;
 
   return <SafeAreaView style={styles.safe}>
+    <View style={{flex:1,flexDirection:'row'}}>
+    {!favorites&&width>=860?<CourseSidebar notebooks={all} onOpenNote={id=>openNotebook(id)} onCreateNote={()=>openEditor()} onDropNote={(noteId,courseId,topicId)=>void moveCourse(noteId,courseId,topicId).catch(error=>Alert.alert('Taşıma başarısız',String(error)))}/>:null}
     <View style={styles.body}>
       <View style={styles.topBar}>
         <View style={styles.brand}><NotexIcon compact /><NotexWordmark compact dark={scheme==='dark'} /></View>
+        {!favorites&&width<860?<Pressable onPress={()=>setSidebarOpen(true)} style={{paddingHorizontal:10,paddingVertical:8}}><Text style={{color:colors.accent,fontWeight:'700'}}>📚 Dersler</Text></Pressable>:null}
         <View style={styles.topActions}>
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
@@ -186,7 +196,11 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
         contentContainerStyle={data.length > 0 ? styles.listContent : styles.emptyContent}
         ListHeaderComponent={listHeader}
-        renderItem={({ item }) => <View style={columns > 1 ? { width: cardWidth, marginBottom: 22 } : styles.listItem}>
+        renderItem={({ item }) => <View {...(Platform.OS==='web'?{
+          draggable:true,
+          onDragStart:(event:any)=>{event.dataTransfer?.setData('application/x-notex-notebook',item.id)},
+          onContextMenu:(event:any)=>{event.preventDefault();setSelected(item)}
+         } as any:{})} style={columns > 1 ? { width: cardWidth, marginBottom: 22 } : styles.listItem}>
           <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => multiSelect ? toggleChecked(item.id) : beginSelection(item.id)} onMenu={() => setSelected(item)} selected={checked.includes(item.id)} colorsOverride={colors} />
         </View>}
         ListEmptyComponent={<EmptyState colorsOverride={colors} />}
@@ -221,6 +235,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         <Text numberOfLines={1} style={styles.modalTitle}>{selected?.title}</Text>
         <Pressable accessibilityRole="button" style={styles.option} onPress={() => { const id = selected?.id; setSelected(null); setChecked([]); if (id) openEditor(id); }}><Text style={styles.optionText}>Defteri düzenle</Text></Pressable>
         <Pressable accessibilityRole="button" style={styles.option} onPress={() => { if (selected) void toggleFavorite(selected.id); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>{selected?.favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}</Text></Pressable>
+        <Pressable accessibilityRole="button" style={styles.option} onPress={() => { setCourseMoveTarget(selected); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>Derse / konuya taşı</Text></Pressable>
         <Pressable accessibilityRole="button" style={styles.option} onPress={() => { setMoveTarget(selected); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>Klasöre taşı</Text></Pressable>
         <Pressable accessibilityRole="button" style={styles.option} onPress={() => { if (selected) void duplicateNotebook(selected.id); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>Çoğalt</Text></Pressable>
         <Pressable accessibilityRole="button" style={styles.option} onPress={() => { if (selected) { setConfirmDelete(true); setChecked([selected.id]); setSelected(null); } }}><Text style={styles.dangerText}>Sil</Text></Pressable>
@@ -228,12 +243,25 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
       </View></View>
     </Modal>
 
+    <Modal visible={sidebarOpen} transparent animationType="slide" onRequestClose={()=>setSidebarOpen(false)}>
+     <View style={{flex:1,flexDirection:'row',backgroundColor:colors.overlay}}>
+      <CourseSidebar notebooks={all} onOpenNote={id=>{setSidebarOpen(false);openNotebook(id)}} onCreateNote={()=>{setSidebarOpen(false);openEditor()}} onDropNote={(noteId,courseId,topicId)=>void moveCourse(noteId,courseId,topicId).catch(error=>Alert.alert('Taşıma başarısız',String(error)))}/>
+      <Pressable accessibilityLabel="Ders menüsünü kapat" onPress={()=>setSidebarOpen(false)} style={{flex:1}}/>
+     </View>
+    </Modal>
+    <Modal visible={!!courseMoveTarget} transparent animationType="slide" onRequestClose={()=>setCourseMoveTarget(null)}>
+     <View style={styles.modalBackdrop}><View style={styles.sheet}><Text style={styles.modalTitle}>Derse / konuya taşı</Text>
+      {[{id:'unclassified',name:'Sınıflandırılmamış',courseId:null,topicId:null},...courses.flatMap(course=>[{id:course.id,name:course.name,courseId:course.id,topicId:null},...topics.filter(topic=>topic.courseId===course.id).map(topic=>({id:topic.id,name:course.name+' › '+topic.name,courseId:course.id,topicId:topic.id}))])].map(target=><Pressable key={target.id} style={styles.option} onPress={()=>{const id=courseMoveTarget?.id;setCourseMoveTarget(null);if(id)void moveCourse(id,target.courseId,target.topicId).catch(error=>Alert.alert('Taşıma başarısız',String(error)))}}><Text style={styles.optionText}>{target.name}</Text></Pressable>)}
+      <Pressable style={styles.option} onPress={()=>setCourseMoveTarget(null)}><Text style={styles.optionText}>Vazgeç</Text></Pressable>
+     </View></View>
+    </Modal>
     <Modal visible={!!moveTarget} transparent animationType="slide" onRequestClose={() => setMoveTarget(null)}>
       <View style={styles.modalBackdrop}><View style={styles.sheet}><Text style={styles.modalTitle}>Klasöre taşı</Text>
         {[{ id: null, name: 'Klasörsüz' }, ...folders].map(target => <Pressable key={target.id ?? 'none'} accessibilityRole="button" style={styles.option} onPress={() => { if (moveTarget) void moveNotebook(moveTarget.id, target.id); setMoveTarget(null); }}><Text style={styles.optionText}>{target.name}</Text></Pressable>)}
         <Pressable accessibilityRole="button" style={styles.option} onPress={() => setMoveTarget(null)}><Text style={styles.optionText}>Vazgeç</Text></Pressable>
       </View></View>
     </Modal>
+    </View>
   </SafeAreaView>;
 }
 

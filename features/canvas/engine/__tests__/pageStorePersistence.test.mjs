@@ -63,7 +63,8 @@ function createFixture(){
   '@/store/notebookStore':{useNotebookStore:{getState:()=>({refresh:async()=>{}})}},
   '@/features/canvas/engine/performance':{perfNow:()=>0},
   '@/features/canvas/store/pagePersistence':persistence,
-  '@/utils/tauriFiles':{isTauriDesktop:()=>false}
+  '@/utils/tauriFiles':{isTauriDesktop:()=>false},
+  '@/features/search/searchIndex':{queueIndexedPageChange:()=>{},indexNewPage:()=>{},removeIndexedPages:()=>{}}
  }).usePageStore;
  return {records,events,persistence,store,get reads(){return reads}};
 }

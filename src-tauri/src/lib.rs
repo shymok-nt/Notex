@@ -158,6 +158,29 @@ fn query_rows(
     Ok(result)
 }
 
+/// Create a durable, external SQLite snapshot before the course/topic v3 migration.
+/// Called once on existing installations. Never overwrite an earlier safety copy.
+#[cfg(windows)]
+#[tauri::command]
+fn notex_db_backup_before_migration(
+    app: AppHandle,
+    state: State<'_, NativeSqliteState>,
+) -> Result<String, String> {
+    ensure_connection(&app, &state)?;
+    let path = database_path(&app)?;
+    let destination = path.with_file_name("notex-before-courses-v3.db");
+    if destination.exists() {
+        return Ok(destination.to_string_lossy().into_owned());
+    }
+    let inner = state.0.lock().map_err(|_| "Notex SQLite kilidi kullanılamıyor".to_string())?;
+    let connection = inner.connection.as_ref().ok_or("Notex SQLite bağlantısı yok")?;
+    connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .map_err(|e| format!("Veritabanı yedek kontrol noktası başarısız: {e}"))?;
+    fs::copy(&path, &destination)
+        .map_err(|e| format!("Veritabanı geçiş yedeği oluşturulamadı: {e}"))?;
+    Ok(destination.to_string_lossy().into_owned())
+}
+
 #[cfg(windows)]
 #[tauri::command]
 fn notex_db_open(app: AppHandle, state: State<'_, NativeSqliteState>) -> Result<String, String> {
@@ -396,6 +419,7 @@ pub fn run() {
             .manage(NativeSqliteState::default())
             .invoke_handler(tauri::generate_handler![
                 notex_db_open,
+                notex_db_backup_before_migration,
                 notex_db_exec,
                 notex_db_run,
                 notex_db_all,

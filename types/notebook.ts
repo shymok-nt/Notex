@@ -5,9 +5,9 @@ export type PaperColor='beyaz'|'krem';
 export type SortBy='updated'|'title'|'created';
 export type ViewMode='grid'|'list';
 export type Notebook={
- id:string;title:string;folderId:string|null;folder:NotebookFolder;
+ id:string;title:string;folderId:string|null;folder:NotebookFolder;courseId:string|null;topicId:string|null;
  coverType:'color'|'image'|'preset';coverColor:string;coverImagePath:string|null;coverImageUri:string|null;coverPresetId:string|null;
  showTitleOnCover:boolean;template:PageTemplate;paperColor:PaperColor;pageCount:number;
  createdAt:string;updatedAt:string;favorite:boolean;
 };
-export type NotebookDraft=Pick<Notebook,'title'|'folder'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'|'template'|'paperColor'>;
+export type NotebookDraft=Pick<Notebook,'title'|'folder'|'coverType'|'coverColor'|'coverImageUri'|'coverPresetId'|'showTitleOnCover'|'template'|'paperColor'> & {courseId?:string|null;topicId?:string|null};

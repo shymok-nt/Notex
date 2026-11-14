@@ -18,3 +18,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: node --test features/canvas/engine/__tests__/*.test.mjs
+      - run: npm run tauri:export
+
+  windows-rust-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
