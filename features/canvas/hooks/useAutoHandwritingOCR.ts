@@ -20,15 +20,30 @@ type OcrResult={ok:boolean;lines:OcrLine[];inferenceMs?:number;model?:string;fal
 type Rasterized={pngBase64:string;left:number;top:number;scale:number;width:number;height:number};
 function rasterize(strokes:StrokeElement[]):Rasterized|null {
   if(typeof document==='undefined'||!strokes.length)return null;
-  const left=Math.min(...strokes.map(s=>s.bbox[0]))-18;
-  const top=Math.min(...strokes.map(s=>s.bbox[1]))-18;
-  const right=Math.max(...strokes.map(s=>s.bbox[2]))+18;
-  const bottom=Math.max(...strokes.map(s=>s.bbox[3]))+18;
-  const width=right-left,height=bottom-top;
+  // Use actual sampled points as well as cached bounds. Small detached marks
+  // (i/İ dots, umlauts, cedillas) must not be cropped or dropped.
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  let widest=1;
+  for(const stroke of strokes){
+    const p=stroke.points;
+    if(p.length<3)continue;
+    widest=Math.max(widest,Number.isFinite(stroke.width)?stroke.width:1);
+    for(let i=0;i+2<p.length;i+=3){
+      const x=p[i],y=p[i+1];
+      if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+      minX=Math.min(minX,x);minY=Math.min(minY,y);
+      maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+    }
+  }
+  if(!Number.isFinite(minX))return null;
+  const padding=Math.max(18,Math.min(32,widest*2+12));
+  const left=minX-padding,top=minY-padding;
+  const width=maxX-minX+padding*2,height=maxY-minY+padding*2;
   if(width<12||height<5||width>2400||height>1200)return null;
-  // Preserve small dots and Turkish diacritics. Scale UP small handwriting,
-  // but cap the raster to avoid large allocations on the CPU OCR worker.
-  const scale=Math.min(2,1600/width,480/height);
+  // Preserve fine details at a target scale while bounding CPU/memory use.
+  // Scale may fall below 1 on long lines; all OCR boxes use this exact scale.
+  const scale=Math.min(2.5,1600/width,480/height);
+  if(!Number.isFinite(scale)||scale<=0)return null;
   const canvas=document.createElement('canvas');
   canvas.width=Math.max(1,Math.ceil(width*scale));
   canvas.height=Math.max(1,Math.ceil(height*scale));
@@ -36,21 +51,27 @@ function rasterize(strokes:StrokeElement[]):Rasterized|null {
   if(!ctx)return null;
   ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
   ctx.scale(scale,scale);ctx.translate(-left,-top);
-  ctx.strokeStyle='#000000';ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle='#000000';ctx.fillStyle='#000000';
+  ctx.lineCap='round';ctx.lineJoin='round';
   for(const stroke of strokes){
     const p=stroke.points;
     if(p.length<3)continue;
-    ctx.lineWidth=Math.max(1.8,Math.min(5,stroke.width));
+    const lineWidth=Math.max(1.5,Math.min(5,Number.isFinite(stroke.width)?stroke.width:2));
+    ctx.lineWidth=lineWidth;
+    // A tap or detached diacritic can be a single sample.
     if(p.length===3){
-      ctx.beginPath();
-      ctx.arc(p[0],p[1],Math.max(1.2,ctx.lineWidth/2),0,Math.PI*2);
-      ctx.fillStyle='#000000';
-      ctx.fill();
+      ctx.beginPath();ctx.arc(p[0],p[1],Math.max(0.9,lineWidth/2),0,Math.PI*2);ctx.fill();
       continue;
     }
     ctx.beginPath();ctx.moveTo(p[0],p[1]);
-    for(let i=3;i+1<p.length;i+=3)ctx.lineTo(p[i],p[i+1]);
-    ctx.stroke();
+    let count=1;
+    for(let i=3;i+2<p.length;i+=3){
+      if(!Number.isFinite(p[i])||!Number.isFinite(p[i+1]))continue;
+      ctx.lineTo(p[i],p[i+1]);count++;
+    }
+    if(count===1){
+      ctx.beginPath();ctx.arc(p[0],p[1],Math.max(0.9,lineWidth/2),0,Math.PI*2);ctx.fill();
+    }else ctx.stroke();
   }
   const pngBase64=canvas.toDataURL('image/png').split(',')[1];
   return pngBase64?{pngBase64,left,top,scale,width,height}:null;
