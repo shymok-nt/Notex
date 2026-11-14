@@ -37,6 +37,10 @@ export function queueIndexedPageChange(id:string,raw:string){
   if(existing)pages.set(id,{...existing,text:textFromPage(raw),updatedAt:new Date().toISOString()});
  },200));
 }
+export function indexNewPage(page:{id:string;notebookId:string;position:number;content:string;updatedAt:string}){
+ if(!hydrated)return;
+ pages.set(page.id,{pageId:page.id,notebookId:page.notebookId,position:page.position,text:textFromPage(page.content),pdfText:'',extractable:false,updatedAt:page.updatedAt});
+}
 export function removeIndexedPages(ids:string[]){
  for(const id of ids){const timer=pending.get(id);if(timer!==undefined)clearTimeout(timer);pending.delete(id);pages.delete(id)}
 }
