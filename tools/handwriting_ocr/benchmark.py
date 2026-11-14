@@ -50,7 +50,7 @@ def score(rows: list[dict]) -> dict:
 def load_manifest(path: Path) -> list[dict]:
     samples = []
     ids = set()
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         item = json.loads(line)
@@ -87,7 +87,7 @@ def main() -> int:
         parser.error(f"No samples in split {args.split}")
     predictions = {}
     if args.predictions:
-        for line in args.predictions.read_text(encoding="utf-8").splitlines():
+        for line in args.predictions.read_text(encoding="utf-8-sig").splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
