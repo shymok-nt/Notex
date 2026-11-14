@@ -1,0 +1,20 @@
+name: Notex persistence checks
+on:
+  push:
+    branches:
+      - refactor/single-sqlite-page-persistence-20261114
+  pull_request:
+    branches:
+      - main
+jobs:
+  types-and-engine-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: node --test features/canvas/engine/__tests__/*.test.mjs
