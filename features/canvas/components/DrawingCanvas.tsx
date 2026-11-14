@@ -719,6 +719,11 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(!keepPendingHandoff){trace('handoff_clear',{reason:'selection_clear'});setHandoff(null);}
  };
  const selectAt=(x:number,y:number)=>{
+  if(tool==='select'){
+   const word=(content.beautifications??[]).filter(item=>item.mode==='beautified').flatMap(item=>item.words)
+     .find(item=>x>=item.bbox[0]-8&&x<=item.bbox[2]+8&&y>=item.bbox[1]-8&&y<=item.bbox[3]+8);
+   if(word){setWordEditing({id:word.id,text:word.text,original:word.text});return;}
+  }
   const image=[...(content.images??[])].reverse().find(i=>{const cx=i.x+i.width/2,cy=i.y+i.height/2,a=-(i.rotation??0),dx=x-cx,dy=y-cy,px=dx*Math.cos(a)-dy*Math.sin(a)+cx,py=dx*Math.sin(a)+dy*Math.cos(a)+cy;return px>=i.x&&px<=i.x+i.width&&py>=i.y&&py<=i.y+i.height});
   if(image){setImageId(image.id);onImageSelectionChange?.(image.id);clearElementSelection();return;}
   setImageId(null);onImageSelectionChange?.(null);
