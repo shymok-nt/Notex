@@ -19,28 +19,29 @@ let latestLoadRevision=0;
  */
 const migrateLegacyDrafts=async(pages:Page[]):Promise<Page[]>=>{
  if(!isTauriDesktop()||typeof window==='undefined')return pages;
- return Promise.all(pages.map(async page=>{
+ const result:Page[]=[];
+ for(const page of pages){
   const key='notex:page-content:v1:'+page.id;
-  let raw:string|null;
-  try{raw=window.localStorage.getItem(key)}catch{return page}
-  if(raw===null)return page;
   try{
+   const raw=window.localStorage.getItem(key);
+   if(raw===null){result.push(page);continue}
    const draft=JSON.parse(raw) as {content?:unknown;base?:unknown;pending?:unknown};
-   if(draft.pending!==true){window.localStorage.removeItem(key);return page}
-   if(typeof draft.content!=='string'||typeof draft.base!=='string')return page;
-   if(page.content!==draft.base&&page.content!==draft.content)return page;
+   if(draft.pending!==true){window.localStorage.removeItem(key);result.push(page);continue}
+   if(typeof draft.content!=='string'||typeof draft.base!=='string'){result.push(page);continue}
+   if(page.content!==draft.base&&page.content!==draft.content){result.push(page);continue}
    if(page.content!==draft.content){
     await pageRepository.updateContent(page.id,draft.content);
     if(await pageRepository.getStoredContent(page.id)!==draft.content)throw new Error('Eski taslak doğrulanamadı.');
    }
    window.localStorage.removeItem(key);
-   return {...page,content:draft.content};
-  }catch(error){console.error('[Notex migration] Eski sayfa taslağı korunuyor',error);return page}
- }));
+   result.push({...page,content:draft.content});
+  }catch(error){console.error('[Notex migration] Eski sayfa taslağı korunuyor',error);result.push(page)}
+ }
+ return result;
 };
 export const usePageStore=create<State>((set,get)=>({
  pages:[],notebookId:null,loading:false,
- load:async id=>{const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await migrateLegacyDrafts(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
+ load:async id=>{if(get().notebookId===id&&!get().loading&&get().pages.length>0)return;const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await migrateLegacyDrafts(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
  cacheContent:(pageId,content)=>{
   const current=get().pages.find(page=>page.id===pageId);
   if(!current)return false;
