@@ -13,7 +13,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_cer_and_wer(self):
         result = score([{"expected": "Benim adım Onur", "actual": "Benim adim Onur"}])
-        self.assertEqual(result["cer"], 0.0625)
+        self.assertEqual(result["cer"], 0.0667)
         self.assertEqual(result["wer"], 0.3333)
 
     def test_manifest_rejects_missing_images(self):
