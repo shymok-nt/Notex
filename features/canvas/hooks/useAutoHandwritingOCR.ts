@@ -26,8 +26,9 @@ function rasterize(strokes:StrokeElement[]):Rasterized|null {
   const bottom=Math.max(...strokes.map(s=>s.bbox[3]))+18;
   const width=right-left,height=bottom-top;
   if(width<12||height<5||width>2400||height>1200)return null;
-  // OCR detector runs on CPU: avoid enlarging already legible handwriting.
-  const scale=Math.min(1.25,960/width,320/height);
+  // Preserve small dots and Turkish diacritics. Scale UP small handwriting,
+  // but cap the raster to avoid large allocations on the CPU OCR worker.
+  const scale=Math.min(2,1600/width,480/height);
   const canvas=document.createElement('canvas');
   canvas.width=Math.max(1,Math.ceil(width*scale));
   canvas.height=Math.max(1,Math.ceil(height*scale));
@@ -39,10 +40,16 @@ function rasterize(strokes:StrokeElement[]):Rasterized|null {
   for(const stroke of strokes){
     const p=stroke.points;
     if(p.length<3)continue;
-    ctx.lineWidth=Math.max(2,stroke.width);
+    ctx.lineWidth=Math.max(1.8,Math.min(5,stroke.width));
+    if(p.length===3){
+      ctx.beginPath();
+      ctx.arc(p[0],p[1],Math.max(1.2,ctx.lineWidth/2),0,Math.PI*2);
+      ctx.fillStyle='#000000';
+      ctx.fill();
+      continue;
+    }
     ctx.beginPath();ctx.moveTo(p[0],p[1]);
     for(let i=3;i+1<p.length;i+=3)ctx.lineTo(p[i],p[i+1]);
-    if(p.length===3)ctx.lineTo(p[0]+0.1,p[1]+0.1);
     ctx.stroke();
   }
   const pngBase64=canvas.toDataURL('image/png').split(',')[1];
@@ -122,8 +129,14 @@ export function useAutoHandwritingOCR(
         if((current.beautifications??[]).some(b=>b.sourceIds.some(id=>ids.includes(id))))return;
         console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,inferenceMs:response.inferenceMs,model:response.model,fallbackReason:response.fallbackReason,lines:response.lines});
         if(!response.ok)throw new Error('OCR returned an unsuccessful response');
-        const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.65);
-        if(!recognized.length){console.warn('[Notex OCR] Güvenilir metin bulunamadı; orijinal el yazısı korunuyor');completed=true;return;}
+        // Do not silently discard a low-confidence word while hiding ALL
+        // source strokes: that permanently loses visible text in the result.
+        const recognized=response.lines.filter(line=>line.text.trim());
+        if(!recognized.length||recognized.some(line=>line.score==null||line.score<0.72)){
+          console.warn('[Notex OCR] Eksik veya düşük güvenli tanıma; orijinal el yazısı korunuyor',response.lines);
+          completed=true;
+          return;
+        }
         const left=Math.min(...strokes.map(s=>s.bbox[0]));
         const top=Math.min(...strokes.map(s=>s.bbox[1]));
         const right=Math.max(...strokes.map(s=>s.bbox[2]));
@@ -278,7 +291,7 @@ export function useAutoHandwritingOCR(
         }
       }
       processRef.current();
-    },1000);
+    },2400);
   };
   useEffect(()=>{scheduleRef.current()},[content.elements]);
   return (active:boolean)=>{
