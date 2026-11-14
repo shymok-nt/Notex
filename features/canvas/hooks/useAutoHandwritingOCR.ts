@@ -4,7 +4,7 @@ import {isTauri,invoke} from '@tauri-apps/api/core';
 import type {PageContent,StrokeElement,BeautifiedWord} from '@/features/canvas/types';
 
 type OcrLine={text:string;score:number|null;box:number[]|null};
-type OcrResult={ok:boolean;lines:OcrLine[]};
+type OcrResult={ok:boolean;lines:OcrLine[];inferenceMs?:number;model?:string};
 
 function rasterize(strokes:StrokeElement[]):string|null {
   if(typeof document==='undefined'||!strokes.length)return null;
@@ -81,7 +81,7 @@ export function useAutoHandwritingOCR(
         if(ids.some(id=>!existing.has(id)))return;
         // New strokes are independent work; they must not invalidate this completed word.
         if((current.beautifications??[]).some(b=>b.sourceIds.some(id=>ids.includes(id))))return;
-        console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,lines:response.lines});
+        console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,inferenceMs:response.inferenceMs,model:response.model,lines:response.lines});
         const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.55);
         if(!recognized.length){console.warn('[Notex OCR] Güvenilir metin bulunamadı');return;}
         const left=Math.min(...strokes.map(s=>s.bbox[0]));
