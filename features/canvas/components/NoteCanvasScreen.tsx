@@ -9,6 +9,7 @@ import {Circle,Square,Triangle,ArrowRight,WandSparkles,ArrowLeft,Undo2,Redo2,Ell
 import {useTheme} from '@/theme/ThemeProvider';
 import {fonts} from '@/theme/fonts';
 import {useNotebookStore} from '@/store/notebookStore';
+import {useCourseStore} from '@/store/courseStore';
 import {notebookRepository} from '@/db/repositories/notebookRepository';
 import {usePageStore} from '@/store/pageStore';
 import {settingsRepository} from '@/db/repositories/settingsRepository';
@@ -43,6 +44,8 @@ export default function NoteCanvasScreen(){
  const {colors,scheme}=useTheme();const {id,pageId}=useLocalSearchParams<{id:string;pageId?:string}>();const {width,height}=useWindowDimensions();const tablet=width>=600||width>height;
  const notebook=useNotebookStore(s=>s.notebooks.find(n=>n.id===id));
  const notebookExists=useNotebookStore(s=>s.notebooks.some(n=>n.id===id));
+ const course=useCourseStore(s=>s.courses.find(c=>c.id===notebook?.courseId));
+ const topic=useCourseStore(s=>s.topics.find(t=>t.id===notebook?.topicId));
  const pages=usePageStore(s=>s.pages),pageStoreNotebookId=usePageStore(s=>s.notebookId),load=usePageStore(s=>s.load),add=usePageStore(s=>s.add),remove=usePageStore(s=>s.remove),move=usePageStore(s=>s.move),changeTemplate=usePageStore(s=>s.updateTemplate),duplicateMany=usePageStore(s=>s.duplicateMany),removeMany=usePageStore(s=>s.removeMany),restoreMany=usePageStore(s=>s.restoreMany);
  const [readyNotebookId,setReadyNotebookId]=useState<string|null>(null);
  const [multiSelect,setMultiSelect]=useState(false),[selectedPageIds,setSelectedPageIds]=useState<string[]>([]),[pendingDelete,setPendingDelete]=useState<Page[]|null>(null);
@@ -266,6 +269,7 @@ export default function NoteCanvasScreen(){
  <Text numberOfLines={1} style={{fontFamily:fonts.heading,fontSize:17,color:ink}}>{notebook?.title??'Defter'}</Text></Pressable>
  <View style={{flexDirection:'row',alignItems:'center',minWidth:0}}>
  <Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}>{`Sayfa ${pages.length?index+1:0} / ${pages.length}`}</Text>
+ {course?<Pressable accessibilityRole="button" accessibilityLabel="Ders yoluna git" onPress={()=>{void controllerRef.current?.flush().then(()=>{useCourseStore.getState().select(course.id,topic?.id??null);router.navigate('/(tabs)/notebooks')}).catch(error=>Alert.alert('Kaydedilemedi',String(error)))}}><Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:colors.accent}}> · {course.name}{topic?' › '+topic.name:''}</Text></Pressable>:null}
  {saveStatus==='error'&&<Pressable accessibilityRole="button" accessibilityLabel="Kaydetmeyi tekrar dene" onPress={()=>{void controllerRef.current?.retry().catch(()=>{})}}><Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:colors.coral}}> · Kaydedilemedi, tekrar dene</Text></Pressable>}
  {saveStatus==='saving'&&<Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}> · Kaydediliyor…</Text>}
  </View></View></View>;
