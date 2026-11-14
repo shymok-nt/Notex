@@ -17,6 +17,22 @@ Each image path is relative to the manifest. Ground-truth text must be transcrib
 
 For a useful first benchmark, collect at least 50 independently transcribed lines from several writers; expand to hundreds before model selection. Split **by writer**, not randomly by line, so the same person's handwriting never appears in both training and test sets. Keep the test split untouched during tuning. Do not train on test data.
 
+## Add a real sample without editing JSON by hand
+
+Export/crop a single line from the local OCR diagnostic PNG, or use a consented handwriting image. Then run:
+
+```powershell
+.\.venv-ocr\Scripts\python.exe tools/handwriting_ocr/collect_sample.py --image "C:\\Temp\\line001.png" --text "Benim adım Onur" --writer writer01 --split test --id writer01-line001
+```
+
+The collector copies the image into the gitignored `data/images/` directory, appends the correct JSONL label, refuses duplicate IDs, and prevents a writer from appearing in different dataset splits. **It cannot collect images automatically or verify your transcription.** Gather samples with permission, and do not use real personal notes or identifying text.
+
+Run the collection and scoring unit tests:
+
+```powershell
+.\.venv-ocr\Scripts\python.exe -m unittest discover -s tools/handwriting_ocr -p "test_*.py"
+```
+
 ## Run (Windows)
 
 ```powershell
