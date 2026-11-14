@@ -4,6 +4,11 @@ import {isTauri,invoke} from '@tauri-apps/api/core';
 import {getPaperGuideMetrics,nearestPaperGuide} from '@/features/canvas/engine/paperGuides';
 import type {PageContent,StrokeElement,BeautifiedWord} from '@/features/canvas/types';
 
+// Ink Engine migration / Phase 1: isolate legacy PaddleOCR without deleting
+// historical beautifications or changing DrawingCanvas/autosave contracts.
+// A future engine will have its own hook and explicit activation gate.
+const LEGACY_PADDLE_OCR_ENABLED=false;
+
 let preloadStarted=false;
 function preloadOCR(){
   if(preloadStarted||!isTauri())return;
@@ -85,7 +90,7 @@ export function useAutoHandwritingOCR(
   apply:(next:PageContent)=>void,
   template:string,
 ){
-  useEffect(()=>{preloadOCR()},[]);
+  useEffect(()=>{if(LEGACY_PADDLE_OCR_ENABLED)preloadOCR()},[]);
   const known=useRef<Set<string>>(new Set(content.elements.map(e=>e.id)));
   const drawing=useRef(false);
   const failures=useRef<Map<string,number>>(new Map());
@@ -117,7 +122,7 @@ export function useAutoHandwritingOCR(
   const processRef=useRef<()=>void>(()=>{});
   const scheduleRef=useRef<()=>void>(()=>{});
   processRef.current=()=>{
-    if(busy.current||!alive.current)return;
+    if(!LEGACY_PADDLE_OCR_ENABLED||busy.current||!alive.current)return;
     const strokes=queued.current.shift();
     if(!strokes)return;
     busy.current=true;
@@ -276,6 +281,7 @@ export function useAutoHandwritingOCR(
   };
   scheduleRef.current=()=>{
     if(timer.current)clearTimeout(timer.current);
+    if(!LEGACY_PADDLE_OCR_ENABLED)return;
     if(!isTauri()||drawing.current||!alive.current)return;
     const pending=contentRef.current.elements.filter(
       (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!reserved.current.has(e.id)
