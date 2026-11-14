@@ -10,6 +10,8 @@ import json
 import sys
 from pathlib import Path
 
+from turkish_context import annotate_lines
+
 
 def extract_lines(results):
     """Normalize PaddleOCR 3.x results without changing text or boxes."""
@@ -133,6 +135,7 @@ def serve() -> int:
                 inference_ms = round((time.perf_counter() - inference_started) * 1000)
             finally:
                 os.unlink(name)
+            lines = annotate_lines(lines)
             print(json.dumps({"ok": True, "lines": lines, "inferenceMs": inference_ms, "model": model_name, "fallbackReason": fallback_reason, "recognitionPass": recognition_pass}, ensure_ascii=False), flush=True)
         except Exception as exc:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), flush=True)
