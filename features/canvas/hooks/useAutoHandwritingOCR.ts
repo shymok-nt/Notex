@@ -49,6 +49,7 @@ export function useAutoHandwritingOCR(
   const alive=useRef(true);
   const applyRef=useRef(apply);applyRef.current=apply;
   const pageRef=useRef(pageId);
+  const startedAt=useRef(0);
   useEffect(()=>()=>{alive.current=false;if(timer.current)clearTimeout(timer.current)},[]);
   const scheduleRef=useRef<()=>void>(()=>{});
   scheduleRef.current=()=>{
@@ -69,6 +70,7 @@ export function useAutoHandwritingOCR(
       const pngBase64=rasterize(strokes);
       if(!pngBase64){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));return;}
       busy.current=true;
+      startedAt.current=Date.now();
       const ids=strokes.map(s=>s.id);
       try{
         const response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64});
@@ -76,11 +78,11 @@ export function useAutoHandwritingOCR(
         const current=contentRef.current;
         const existing=new Set(current.elements.map(e=>e.id));
         if(ids.some(id=>!existing.has(id)))return;
-        // Do not apply stale OCR when the user continued writing during inference.
-        if(current.elements.some(e=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)&&!ids.includes(e.id)))return;
-        console.info('[Notex OCR] Tanıma sonucu',response.lines);
+        // New strokes are independent work; they must not invalidate this completed word.
+        if((current.beautifications??[]).some(b=>b.sourceIds.some(id=>ids.includes(id))))return;
+        console.info('[Notex OCR] Tanıma sonucu',{elapsedMs:Date.now()-startedAt.current,lines:response.lines});
         const recognized=response.lines.filter(line=>line.text.trim()&&(line.score??0)>=0.55);
-        if(!recognized.length)return;
+        if(!recognized.length){console.warn('[Notex OCR] Güvenilir metin bulunamadı');return;}
         const left=Math.min(...strokes.map(s=>s.bbox[0]));
         const top=Math.min(...strokes.map(s=>s.bbox[1]));
         const right=Math.max(...strokes.map(s=>s.bbox[2]));
