@@ -58,6 +58,7 @@ export function useAutoHandwritingOCR(
   useEffect(()=>{preloadOCR()},[]);
   const known=useRef<Set<string>>(new Set(content.elements.map(e=>e.id)));
   const drawing=useRef(false);
+  const failures=useRef<Map<string,number>>(new Map());
   const busy=useRef(false);
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const alive=useRef(true);
@@ -76,16 +77,29 @@ export function useAutoHandwritingOCR(
     if(!pending.length)return;
     timer.current=setTimeout(async()=>{
       if(drawing.current||busy.current||!alive.current)return;
-      const strokes=contentRef.current.elements.filter(
+      const pendingStrokes=contentRef.current.elements.filter(
         (e):e is StrokeElement=>e.type==='stroke'&&e.tool==='pen'&&!known.current.has(e.id)
-      ).slice(-40);
+      );
+      // Process the oldest unrecognized line first. A capped tail of 40
+      // strokes used to strand earlier handwriting during continuous writing.
+      const first=pendingStrokes[0];
+      if(!first)return;
+      const centerY=(first.bbox[1]+first.bbox[3])/2;
+      const lineHeight=Math.max(16,first.bbox[3]-first.bbox[1]);
+      const strokes:StrokeElement[]=[];
+      for(const stroke of pendingStrokes){
+        const y=(stroke.bbox[1]+stroke.bbox[3])/2;
+        if(strokes.length>=80||Math.abs(y-centerY)>Math.max(32,lineHeight*0.9))break;
+        strokes.push(stroke);
+      }
       if(!strokes.length)return;
       console.info('[Notex OCR] Tanıma başlıyor',{pageId,strokeCount:strokes.length});
       const raster=rasterize(strokes);
-      if(!raster){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));return;}
+      if(!raster){console.warn('[Notex OCR] Görsel oluşturulamadı');strokes.forEach(s=>known.current.add(s.id));scheduleRef.current();return;}
       busy.current=true;
       startedAt.current=Date.now();
       const ids=strokes.map(s=>s.id);
+      let completed=false;
       try{
         const response=await invoke<OcrResult>('notex_recognize_handwriting',{pngBase64:raster.pngBase64});
         if(!alive.current||pageRef.current!==pageId)return;
@@ -127,14 +141,24 @@ export function useAutoHandwritingOCR(
         });
         console.info('[Notex OCR] Yazı fonta dönüştürülüyor',words.map(w=>w.text));
         applyRef.current({...current,beautifications:[...(current.beautifications??[]),{sourceIds:ids,words,mode:'beautified'}]});
+        completed=true;
       }catch(error){
         console.warn('[Notex OCR] Tanıma başarısız, orijinal çizgiler korundu:',error);
       }finally{
-        ids.forEach(id=>known.current.add(id));
+        // Transient OCR failures must not permanently discard strokes.
+        // Retry a batch twice, then leave its original ink intact.
+        const batchKey=ids.join('|');
+        const tries=(failures.current.get(batchKey)??0)+1;
+        if(completed||tries>=3){
+          ids.forEach(id=>known.current.add(id));
+          failures.current.delete(batchKey);
+        }else{
+          failures.current.set(batchKey,tries);
+        }
         busy.current=false;
         if(alive.current)scheduleRef.current();
       }
-    },450);
+    },900);
   };
   useEffect(()=>{scheduleRef.current()},[content.elements]);
   return (active:boolean)=>{drawing.current=active;if(active&&timer.current)clearTimeout(timer.current);else if(!active)scheduleRef.current()};
