@@ -44,8 +44,12 @@ export const pendingPageContent=(id:string,sqliteContent?:string):string|null=>{
 export const confirmPageContent=(id:string,content:string):void=>{
  const s=storage();if(!s)return;
  const draft=read(id);
- if(!draft||draft.content!==content)return;
- try{s.setItem(key(id),JSON.stringify({...draft,pending:false}))}
+ if(!draft||!draft.pending)return;
+ // An older autosave may finish after a newer edit was staged. Advance the
+ // recovery base to the snapshot actually verified in SQLite, keeping the
+ // newer local draft pending so it can still be recovered after a crash.
+ const next=draft.content===content?{...draft,base:content,pending:false}:{...draft,base:content};
+ try{s.setItem(key(id),JSON.stringify(next))}
  catch(error){console.warn('[Notex save] Local draft confirmation failed',error)}
 };
 export const discardPageContent=(id:string):void=>{
