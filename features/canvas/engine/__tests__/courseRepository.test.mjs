@@ -50,6 +50,12 @@ test('course/topic add survives SQLite reopen; note moves and remains after safe
   assert.equal(course.order,0);
   const input={title:'Öğrenci notu',folderId:null,courseId:course.id,topicId:topic.id,coverType:'color',coverColor:'#3347D9',coverImagePath:null,coverPresetId:null,showTitleOnCover:true,template:'boş',paperColor:'beyaz'};
   const noteId=await f.notebook.create(input);
+  // A second SQLite connection sees the same committed records (restart model).
+  const reopened=new DatabaseSync(f.file);
+  assert.equal(reopened.prepare('SELECT name FROM courses WHERE id=?').get(course.id).name,'Matematik');
+  assert.equal(reopened.prepare('SELECT name FROM topics WHERE id=?').get(topic.id).name,'Türev');
+  assert.equal(reopened.prepare('SELECT course_id FROM notebooks WHERE id=?').get(noteId).course_id,course.id);
+  reopened.close();
   let note=await f.notebook.getById(noteId);
   assert.equal(note.course_id,course.id);assert.equal(note.topic_id,topic.id);
   const second=await f.course.addTopic(course.id,'İntegral');
