@@ -1,5 +1,5 @@
 import React,{memo,useEffect,useMemo,useRef,useState} from 'react';
-import {View,Text,Pressable,ScrollView} from 'react-native';
+import {View,Text,Pressable,ScrollView,type ViewStyle} from 'react-native';
 import type {ScrollViewInstance} from 'react-native';
 import {Plus,Check} from 'lucide-react-native';
 import Animated,{useAnimatedStyle,useSharedValue,withSpring,runOnJS} from 'react-native-reanimated';
@@ -20,9 +20,9 @@ const PageItem=memo(function PageItem({page,index,count,tablet,pdfMode,colors,se
  const hold=useMemo(()=>Gesture.LongPress().minDuration(520).maxDistance(12).enabled(!multiSelect).onStart(()=>{runOnJS(onEnterSelection)(page.id)}),[multiSelect,onEnterSelection,page.id]);
  const tap=useMemo(()=>Gesture.Tap().maxDuration(220).onEnd((_,success)=>{if(success){if(multiSelect)runOnJS(onToggle)(page.id);else runOnJS(onSelect)(page.id)}}),[multiSelect,onToggle,onSelect,page.id]);
  const gesture=useMemo(()=>Gesture.Race(drag,hold,tap),[drag,hold,tap]);
- const style=useAnimatedStyle(()=>({transform:[tablet?{translateY:translation.value}:{translateX:translation.value},{scale:withSpring(active.value?1.07:1)}],zIndex:active.value?100:0,opacity:active.value?0.92:1}));
+ const style=useAnimatedStyle(()=>({transform:(tablet?[{translateY:translation.value},{scale:withSpring(active.value?1.07:1)}]:[{translateX:translation.value},{scale:withSpring(active.value?1.07:1)}]) as ViewStyle['transform'],zIndex:active.value?100:0,opacity:active.value?0.92:1}));
  return <View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center',borderRadius:15,backgroundColor:'transparent'}}>
- <GestureDetector gesture={gesture}><Animated.View style={[style,{touchAction:'none'}]}>
+ <GestureDetector gesture={gesture}><Animated.View style={[style,{touchAction:'none'} as unknown as ViewStyle]}>
  <View accessibilityLabel={`Sayfa ${index+1}`} style={{padding:5,borderRadius:13,borderWidth:pdfMode&&selected?3:2,borderColor:checked||selected?colors.accent:colors.border,backgroundColor:colors.surface,alignItems:'center',shadowColor:colors.accent,shadowOpacity:pdfMode&&selected?0.28:0,shadowRadius:7,elevation:pdfMode&&selected?3:0}}>
  <PagePreview template={page.template} paperColor={page.paperColor} width={80} height={108} thumbnailPath={page.thumbnailPath}/>
  {multiSelect&&<View style={{position:'absolute',right:0,top:0,width:22,height:22,borderRadius:11,alignItems:'center',justifyContent:'center',backgroundColor:checked?colors.accent:colors.surfaceRaised,borderWidth:1,borderColor:colors.accent}}>{checked&&<Check size={14} color="#FFFFFF"/>}</View>}
