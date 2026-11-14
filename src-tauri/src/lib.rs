@@ -495,6 +495,58 @@ async fn notex_recognize_handwriting(png_base64: String, engine: Option<String>)
     }).await.map_err(|error| format!("OCR görevi tamamlanamadı: {error}"))?
 }
 
+/// Read-only capability check. Never invokes recognition or changes stored ink.
+#[cfg(windows)]
+#[tauri::command]
+async fn notex_windows_ink_capability() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        use windows::UI::Input::Inking::InkRecognizerContainer;
+        let recognizers = match InkRecognizerContainer::new() {
+            Ok(container) => match container.GetRecognizers() {
+                Ok(items) => items,
+                Err(error) => return Ok(serde_json::json!({
+                    "available": false, "locale": "tr-TR",
+                    "reason": format!("Windows Ink tanıyıcı listesi okunamadı: {error}")
+                })),
+            },
+            Err(error) => return Ok(serde_json::json!({
+                "available": false, "locale": "tr-TR",
+                "reason": format!("Windows Ink başlatılamadı: {error}")
+            })),
+        };
+        let count = match recognizers.Size() {
+            Ok(count) => count,
+            Err(error) => return Ok(serde_json::json!({
+                "available": false, "locale": "tr-TR",
+                "reason": format!("Windows Ink tanıyıcı sayısı alınamadı: {error}")
+            })),
+        };
+        let mut names = Vec::new();
+        let mut turkish = false;
+        for index in 0..count {
+            if let Ok(recognizer) = recognizers.GetAt(index) {
+                if let Ok(name) = recognizer.Name() {
+                    let label = name.to_string();
+                    let lower = label.to_lowercase();
+                    if lower.contains("türkiye") || lower.contains("turkish") ||
+                       lower.contains("türkçe") || lower.contains("turkce") {
+                        turkish = true;
+                    }
+                    names.push(label);
+                }
+            }
+        }
+        Ok::<Value, String>(serde_json::json!({
+            "available": turkish,
+            "locale": "tr-TR",
+            "recognizers": names,
+            "reason": if turkish { Value::Null } else {
+                Value::String("Windows üzerinde Türkçe el yazısı tanıyıcısı bulunamadı".into())
+            }
+        }))
+    }).await.map_err(|error| format!("Windows Ink kontrolü tamamlanamadı: {error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -513,22 +565,11 @@ pub fn run() {
                 notex_db_commit,
                 notex_db_rollback,
                 notex_recognize_handwriting,
-                notex_ocr_preload
+                notex_ocr_preload,
+                notex_windows_ink_capability
             ]);
     builder
         .setup(|app| {
-            #[cfg(windows)]
-            std::thread::spawn(|| {
-                let lock = OCR_WORKER.get_or_init(|| Mutex::new(None));
-                if let Ok(mut worker) = lock.lock() {
-                    if worker.is_none() {
-                        match start_ocr_worker() {
-                            Ok(ready) => { *worker = Some(ready); log::info!("Notex OCR model preloaded at application startup"); }
-                            Err(error) => log::warn!("Notex OCR preload failed: {error}"),
-                        }
-                    }
-                }
-            });
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
