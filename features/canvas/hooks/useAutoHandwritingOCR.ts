@@ -139,6 +139,46 @@ export function useAutoHandwritingOCR(
             color:strokes[0].color,font:'Caveat'
           };
         });
+        // Keep the original first-word position. OCR boxes may be much
+        // wider than the rendered Caveat glyphs, leaving artificial gaps.
+        // Reflow only words that belong to the same writing row and are
+        // reasonably close in the user's original handwriting.
+        const existingWords=(current.beautifications??[])
+          .filter(item=>item.mode==='beautified')
+          .flatMap(item=>item.words);
+        const estimatedWidth=(word:BeautifiedWord)=>Math.max(
+          word.fontSize*0.45,
+          Array.from(word.text).reduce((sum,char)=>sum+(
+            /[ilıIİ.,'!]/.test(char)?0.26:
+            /[mwMW]/.test(char)?0.72:0.48
+          )*word.fontSize,0)
+        );
+        const sourcePositions=new Map(words.map(word=>[word.id,{left:word.bbox[0],right:word.bbox[2]}]));
+        const ordered=[...words].sort((a,b)=>a.bbox[0]-b.bbox[0]);
+        const placed:BeautifiedWord[]=[...existingWords];
+        for(const word of ordered){
+          const source=sourcePositions.get(word.id)!;
+          const rowTolerance=Math.max(18,word.fontSize*0.65);
+          const preceding=placed
+            .filter(other=>Math.abs(other.baseline-word.baseline)<=rowTolerance&&other.bbox[0]<source.left)
+            .sort((a,b)=>b.bbox[0]-a.bbox[0])[0];
+          const width=Math.min(Math.max(estimatedWidth(word)*1.12,word.fontSize),Math.max(1,source.right-source.left));
+          let x=source.left;
+          if(preceding){
+            const previousSource=sourcePositions.get(preceding.id);
+            const previousRight=previousSource?.right??preceding.bbox[2];
+            const originalGap=source.left-previousRight;
+            const actualRight=preceding.bbox[0]+estimatedWidth(preceding)*1.12;
+            // Small gaps become a readable single-space separation.
+            // Large deliberate gaps remain anchored to the pen position.
+            if(originalGap>=-8&&originalGap<Math.max(100,word.fontSize*2.8)){
+              x=Math.max(actualRight+word.fontSize*0.26,
+                Math.min(source.left,actualRight+word.fontSize*0.48));
+            }
+          }
+          word.bbox=[x,word.bbox[1],x+width,word.bbox[3]];
+          placed.push(word);
+        }
         console.info('[Notex OCR] Yazı fonta dönüştürülüyor',words.map(w=>w.text));
         applyRef.current({...current,beautifications:[...(current.beautifications??[]),{sourceIds:ids,words,mode:'beautified'}]});
         completed=true;
