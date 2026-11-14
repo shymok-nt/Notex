@@ -105,14 +105,3 @@ Test **çalıştırılmadıysa** çalıştırılmış gibi raporlama. GitHub Act
 7. Kullanıcının açıkça istediği GitHub iş akışı kapsamında commit/PR/merge yap; aksi halde izinsiz kalıcı değişiklik yapma.
 
 **Öncelik:** Çalışan veri kaydı ve kullanıcı notlarının bütünlüğü > yeni özellik veya küçük performans kazanımı.
-
-## 9. Ders / Konu / Arama (v3)
-
-- [COURSES_TOPICS_SEARCH.md](./COURSES_TOPICS_SEARCH.md) belgesini de oku.
-- Ders/konu tablosu ve defter `courseId/topicId` alanları **ek metadata**dır; mevcut `PageContent v2` ve SQLite kayıt kuyruğunu değiştirme.
-- Eski defterler `NULL/NULL` ile Sınıflandırılmamış görünmelidir. Mevcut notları yükseltmede silme.
-- `db/migrations.ts` sürüm 3 öncesi yedek/snapshot ve rollback korumasını bozma.
-- Ders/konu CRUD SQLite'a yazılmadan başarılı state güncellemesi yapma; güvenli silme varsayılanı sınıflandırılmamışa taşı, isteğe bağlı silme soft-delete olmalı.
-- PDF metnini bir kez içe aktarırken indeksle, aramada yeniden PDF raster etme; `searchIndex` yalnız türetilmiş dizindir.
-- `.notex` yedeğine ders/konu bağlarını ve PDF indeksini dahil et; format 1 eski yedekleri kabul etmeye devam et.
-- `courseMigration`, `courseRepository`, `courseSearch`, `courseBackup` testlerini çalıştır.

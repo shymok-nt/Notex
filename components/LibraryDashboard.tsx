@@ -20,7 +20,6 @@ import { getRecentNotebookActivity } from '@/utils/recentNotebooks';
 import type { RecentNotebookActivity } from '@/utils/recentNotebookActivity';
 import { isTauriDesktop } from '@/utils/tauriFiles';
 import { notebookRepository } from '@/db/repositories/notebookRepository';
-import {clearSearchIndex} from '@/features/search/searchIndex';
 import { cleanupPreparedPdfImport, preparePdfImport, type PreparedPdfImport } from '@/utils/pdfImport';
 
 export function LibraryDashboard() {
@@ -94,7 +93,6 @@ export function LibraryDashboard() {
       if (!prepared.pages.length) return;
       setPdfProgress({completed:prepared.pages.length,total:prepared.pages.length,label:'PDF defteri kaydediliyor…'});
       const notebookId = await notebookRepository.createFromPdf(prepared.title,prepared.pages);
-      clearSearchIndex();
       const firstPageId = prepared.pages[0].id;
       prepared = null;
       await useNotebookStore.getState().refresh();

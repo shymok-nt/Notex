@@ -40,7 +40,7 @@ export const migrations:Migration[]=[{
   }
  }
 }];
-export const latestMigrationVersion=3;
+export const latestMigrationVersion=2;
 migrations.push({
  version:2,
  run:async db=>{
@@ -48,36 +48,6 @@ migrations.push({
    ALTER TABLE notebooks ADD COLUMN auto_convert_enabled INTEGER NOT NULL DEFAULT 1;
    ALTER TABLE notebooks ADD COLUMN conversion_font TEXT NOT NULL DEFAULT 'Inter';
    ALTER TABLE notebooks ADD COLUMN conversion_delay_ms INTEGER NOT NULL DEFAULT 1000;
-  `);
- }
-});
-
-// All existing notebooks remain unclassified. This migration is atomic:
-// if any statement fails, user_version remains 2 and existing data is intact.
-// Snapshot tables are created before altering the live schema.
-migrations.push({
- version:3,
- run:async db=>{
-  await db.execAsync(`
-   CREATE TABLE IF NOT EXISTS migration_v3_notebooks_backup AS SELECT * FROM notebooks;
-   CREATE TABLE IF NOT EXISTS migration_v3_pages_backup AS SELECT * FROM pages;
-   CREATE TABLE IF NOT EXISTS courses (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL,
-    icon TEXT NOT NULL, sort_order INTEGER NOT NULL, created_at TEXT NOT NULL
-   );
-   CREATE TABLE IF NOT EXISTS topics (
-    id TEXT PRIMARY KEY, course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-    name TEXT NOT NULL, sort_order INTEGER NOT NULL, created_at TEXT NOT NULL
-   );
-   ALTER TABLE notebooks ADD COLUMN course_id TEXT REFERENCES courses(id) ON DELETE SET NULL;
-   ALTER TABLE notebooks ADD COLUMN topic_id TEXT REFERENCES topics(id) ON DELETE SET NULL;
-   CREATE INDEX IF NOT EXISTS idx_topics_course_order ON topics(course_id,sort_order);
-   CREATE INDEX IF NOT EXISTS idx_notebooks_course_topic ON notebooks(course_id,topic_id);
-   CREATE TABLE IF NOT EXISTS pdf_search_index (
-    page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE,
-    search_text TEXT NOT NULL DEFAULT '', extractable INTEGER NOT NULL DEFAULT 0
-   );
-   INSERT OR REPLACE INTO settings(key,value) VALUES('schemaVersion','3');
   `);
  }
 });
