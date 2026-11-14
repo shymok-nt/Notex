@@ -7,7 +7,7 @@ import type { PageTemplate,PaperColor } from '@/types/notebook';
 import {perfNow} from '@/features/canvas/engine/performance';
 import {stagePageContent,pendingPageContent,confirmPageContent,discardPageContent} from '@/features/canvas/store/pageContentStorage';
 type State={pages:Page[];notebookId:string|null;loading:boolean;
- load:(id:string)=>Promise<void>;cacheContent:(id:string,content:string)=>void;add:(afterPosition:number)=>Promise<string|undefined>;remove:(id:string)=>Promise<void>;move:(id:string,position:number)=>Promise<void>;duplicateMany:(ids:string[])=>Promise<string[]>;removeMany:(ids:string[])=>Promise<Page[]>;restoreMany:(pages:Page[])=>Promise<void>;updateTemplate:(id:string,template:PageTemplate,paperColor:PaperColor)=>Promise<void>};
+ load:(id:string)=>Promise<void>;cacheContent:(id:string,content:string)=>boolean;add:(afterPosition:number)=>Promise<string|undefined>;remove:(id:string)=>Promise<void>;move:(id:string,position:number)=>Promise<void>;duplicateMany:(ids:string[])=>Promise<string[]>;removeMany:(ids:string[])=>Promise<Page[]>;restoreMany:(pages:Page[])=>Promise<void>;updateTemplate:(id:string,template:PageTemplate,paperColor:PaperColor)=>Promise<void>};
 const showError=(e:unknown)=>Alert.alert('Sayfa işlemi başarısız',e instanceof Error?e.message:'Tekrar dene.');
 const timed=async<T>(operation:string,run:()=>Promise<T>):Promise<T>=>{if(!__DEV__)return run();const started=perfNow();try{return await run()}finally{console.log('[Notex perf] page_operation',{operation,duration_ms:Math.round((perfNow()-started)*10)/10})}};
 let latestLoadRevision=0;
@@ -30,7 +30,18 @@ const recoverPages=async(pages:Page[]):Promise<Page[]>=>{
 export const usePageStore=create<State>((set,get)=>({
  pages:[],notebookId:null,loading:false,
  load:async id=>{const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await recoverPages(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
- cacheContent:(pageId,content)=>set(state=>{const pageIndex=state.pages.findIndex(page=>page.id===pageId);if(pageIndex<0||state.pages[pageIndex].content===content)return state;stagePageContent(pageId,content,state.pages[pageIndex].content);const pages=state.pages.slice();pages[pageIndex]={...pages[pageIndex],content};return {pages}}),
+ cacheContent:(pageId,content)=>{
+  const current=get().pages.find(page=>page.id===pageId);
+  if(!current)return false;
+  if(current.content===content)return true;
+  // Write to localStorage before exposing a new snapshot in the editor.
+  if(!stagePageContent(pageId,content,current.content)){
+   showError(new Error('Yerel taslak kaydedilemedi; not değiştirilmedi.'));
+   return false;
+  }
+  set(state=>({pages:state.pages.map(page=>page.id===pageId?{...page,content}:page)}));
+  return true;
+ },
  add:async position=>{
   const id=get().notebookId;if(!id)return;
   try{
@@ -51,16 +62,12 @@ export const usePageStore=create<State>((set,get)=>({
   const id=get().notebookId;if(!id)return;
   const removed=get().pages.find(page=>page.id===pageId);
   if(!removed)return;
-  set(state=>({pages:state.pages.filter(page=>page.id!==pageId).map((page,index)=>({...page,position:index}))}));
   try{
    await timed('remove_write',()=>pageRepository.remove(pageId));
    discardPageContent(pageId);
+   if(get().notebookId===id)set(state=>({pages:state.pages.filter(page=>page.id!==pageId).map((page,index)=>({...page,position:index}))}));
    await timed('remove_notebook_refresh',()=>useNotebookStore.getState().refresh());
-  }catch(e){
-   set(state=>({pages:[...state.pages.filter(page=>page.id!==pageId),removed]
-    .sort((a,b)=>a.position-b.position).map((page,index)=>({...page,position:index}))}));
-   showError(e);
-  }
+  }catch(e){showError(e)}
  },
  move:async(pageId,position)=>{
   const id=get().notebookId;if(!id)return;
@@ -71,17 +78,11 @@ export const usePageStore=create<State>((set,get)=>({
   const [page]=pages.splice(from,1);
   const target=Math.max(0,Math.min(pages.length,position));
   pages.splice(target,0,page);
-  set({pages:pages.map((p,index)=>({...p,position:index}))});
   try{
    await timed('move_write',()=>pageRepository.move(pageId,position));
+   if(get().notebookId===id)set({pages:pages.map((p,index)=>({...p,position:index}))});
    await timed('move_notebook_refresh',()=>useNotebookStore.getState().refresh());
-  }catch(e){
-   set(state=>({pages:state.pages.map(page=>{
-    const old=previous.find(p=>p.id===page.id);
-    return old?{...page,position:old.position}:page;
-   }).sort((a,b)=>a.position-b.position)}));
-   showError(e);
-  }
+  }catch(e){showError(e)}
  },
  duplicateMany:async ids=>{
   const id=get().notebookId;if(!id||!ids.length)return [];
@@ -106,17 +107,13 @@ export const usePageStore=create<State>((set,get)=>({
   const selected=new Set(ids);
   const removed=get().pages.filter(page=>selected.has(page.id));
   if(!removed.length)return [];
-  set(state=>({pages:state.pages.filter(page=>!selected.has(page.id)).map((page,index)=>({...page,position:index}))}));
   try{
    const dbRemoved=await timed('remove_many_write',()=>pageRepository.removeMany(ids));
    ids.forEach(discardPageContent);
+   if(get().notebookId===id)set(state=>({pages:state.pages.filter(page=>!selected.has(page.id)).map((page,index)=>({...page,position:index}))}));
    await timed('remove_many_notebook_refresh',()=>useNotebookStore.getState().refresh());
    return dbRemoved;
-  }catch(e){
-   set(state=>({pages:[...state.pages.filter(p=>!selected.has(p.id)),...removed]
-    .sort((a,b)=>a.position-b.position).map((page,index)=>({...page,position:index}))}));
-   showError(e);return [];
-  }
+  }catch(e){showError(e);return []}
  },
  restoreMany:async restored=>{
   const id=get().notebookId;if(!id||!restored.length)return;
@@ -134,13 +131,10 @@ export const usePageStore=create<State>((set,get)=>({
   const id=get().notebookId;if(!id)return;
   const previous=get().pages.find(page=>page.id===pageId);
   if(!previous)return;
-  set(state=>({pages:state.pages.map(page=>page.id===pageId?{...page,template,paperColor}:page)}));
   try{
    await timed('template_write',()=>pageRepository.updateTemplate(pageId,template,paperColor));
+   if(get().notebookId===id)set(state=>({pages:state.pages.map(page=>page.id===pageId?{...page,template,paperColor}:page)}));
    await timed('template_notebook_refresh',()=>useNotebookStore.getState().refresh());
-  }catch(e){
-   set(state=>({pages:state.pages.map(page=>page.id===pageId?{...page,template:previous.template,paperColor:previous.paperColor}:page)}));
-   showError(e);
-  }
+  }catch(e){showError(e)}
  }
 }));
