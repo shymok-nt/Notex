@@ -29,3 +29,4 @@ tauri-plugin-fs = "2"
 [target.'cfg(windows)'.dependencies]
 rusqlite = { version = "0.42.0", features = ["bundled"] }
 base64 = "0.22"
+windows = { version = "0.62.2", features = ["UI_Input_Inking", "Foundation_Collections"] }
