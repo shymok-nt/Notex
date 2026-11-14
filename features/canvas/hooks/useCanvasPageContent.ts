@@ -1,36 +1,50 @@
-import {useMemo,useRef} from 'react';
+import {useCallback,useMemo,useRef,useSyncExternalStore} from 'react';
 import {usePageStore} from '@/store/pageStore';
 import {parseContent,serializeContent} from '@/features/canvas/engine/content';
-import {useAutosave} from '@/features/canvas/hooks/useAutosave';
+import {flushPageSave,getPageSaveStatus,subscribePageSave} from '@/features/canvas/store/pagePersistence';
 import {record,undo,redo,historyState} from '@/features/canvas/store/history';
-import type {PageContent,PageImage} from '@/features/canvas/types';
+import type {Element,PageContent,PageImage} from '@/features/canvas/types';
 
-/**
- * The shared page store is the only page-content state.
- * All pen/eraser/text/shape/image edits, undo and redo commit through here.
- * useAutosave persists the same snapshot to SQLite; the store synchronously
- * stages it in Tauri localStorage for crash recovery.
- */
+function reconcileById<T extends {id:string}>(base:T[],incoming:T[],latest:T[]):T[]{
+ const original=new Map(base.map(item=>[item.id,item]));
+ const changed=new Map(incoming.filter(item=>original.has(item.id)&&JSON.stringify(original.get(item.id))!==JSON.stringify(item)).map(item=>[item.id,item]));
+ const kept=new Set(incoming.map(item=>item.id));
+ const updated=latest.filter(item=>!original.has(item.id)||kept.has(item.id)).map(item=>changed.get(item.id)??item);
+ const ids=new Set(updated.map(item=>item.id));
+ for(const item of incoming){
+  if(!original.has(item.id)&&!ids.has(item.id)){updated.push(item);ids.add(item.id)}
+ }
+ return updated;
+}
+/** One store owns every page; the canvas has no independent note array. */
 export function useCanvasPageContent(pageId:string,fallbackContent:string,onHistory:()=>void){
- const raw=usePageStore(s=>s.pages.find(page=>page.id===pageId)?.content??fallbackContent);
- const content=useMemo<PageContent>(()=>parseContent(raw),[raw]);
+ const serialized=usePageStore(s=>s.pages.find(page=>page.id===pageId)?.content??fallbackContent);
+ const content=useMemo<PageContent>(()=>parseContent(serialized),[serialized]);
  const latest=useRef(content);
- const {error,saving,retry,flush,setDrawingActive,markChanged}=useAutosave(pageId,content);
+ const drawing=useRef(false);
+ const idleWaiters=useRef<Array<()=>void>>([]);
+ const subscribe=useCallback((listener:()=>void)=>subscribePageSave(pageId,listener),[pageId]);
+ const getSnapshot=useCallback(()=>getPageSaveStatus(pageId),[pageId]);
+ const status=useSyncExternalStore(subscribe,getSnapshot,getSnapshot);
  const commit=(next:PageContent):boolean=>{
-  // Stage in Tauri localStorage first; never publish an unsaved snapshot.
+  // The shared store publishes immediately for smooth drawing; SQLite is the
+  // sole persistent source, using a per-page serialized queue.
   if(!usePageStore.getState().cacheContent(pageId,serializeContent(next)))return false;
   latest.current=next;
-  markChanged(next); // Debounced SQLite save follows the durable local draft.
   return true;
  };
  const change=(incoming:PageContent)=>{
   const previous=latest.current;
-  const previousIds=new Set(previous.elements.map(element=>element.id));
-  const addedStrokes=incoming.elements.filter(element=>element.type==='stroke'&&element.tool==='pen'&&!previousIds.has(element.id));
-  const isAdditivePenCommit=addedStrokes.length>0&&incoming.elements.every(element=>previousIds.has(element.id)||addedStrokes.includes(element as typeof addedStrokes[number]));
-  const next=isAdditivePenCommit
-   ? {...incoming,elements:[...previous.elements,...addedStrokes],h:Math.max(previous.h??0,incoming.h??0)}
-   : incoming;
+  // Incoming edits can use an older render snapshot. Apply their exact
+  // additions, deletions and modifications to the latest committed content
+  // instead of resurrecting strokes or overwriting a completed erase.
+  const next:PageContent={
+   ...previous,
+   elements:reconcileById<Element>(content.elements,incoming.elements,previous.elements),
+   images:reconcileById<PageImage>(content.images??[],incoming.images??[],previous.images??[]),
+   ...(incoming.h!==content.h?{h:incoming.h}:{})
+  };
+  if(serializeContent(previous)===serializeContent(next))return;
   if(commit(next)){record(pageId,previous);onHistory()}
  };
  const addImage=(image:PageImage)=>{
@@ -40,6 +54,25 @@ export function useCanvasPageContent(pageId:string,fallbackContent:string,onHist
  };
  const back=()=>{const next=undo(pageId,latest.current);if(next&&commit(next))onHistory()};
  const forward=()=>{const next=redo(pageId,latest.current);if(next&&commit(next))onHistory()};
+ const setDrawingActive=(active:boolean)=>{
+  drawing.current=active;
+  if(!active)idleWaiters.current.splice(0).forEach(resolve=>resolve());
+ };
+ const flush=async()=>{
+  if(drawing.current){
+   await new Promise<void>((resolve,reject)=>{
+    const done=()=>{clearTimeout(timeout);resolve()};
+    const timeout=setTimeout(()=>{
+     idleWaiters.current=idleWaiters.current.filter(item=>item!==done);
+     reject(new Error('Çizim işlemi tamamlanmadan sayfa değiştirilemez.'));
+    },3000);
+    idleWaiters.current.push(done);
+   });
+  }
+  await flushPageSave(pageId);
+ };
+ const retry=async()=>{await flush()};
  const h=historyState(pageId);
- return {content,change,addImage,back,forward,error,saving,retry,flush,setDrawingActive,canUndo:h.canUndo,canRedo:h.canRedo};
+ return {content,change,addImage,back,forward,flush,retry,setDrawingActive,
+  error:status==='error',saving:status==='saving',canUndo:h.canUndo,canRedo:h.canRedo};
 }
