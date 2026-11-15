@@ -13,15 +13,15 @@ const WORKER_URL='/pdfjs/pdf.worker.min.mjs';
 const PAGE_RENDER_MAX_EDGE=1600;
 const PAGE_THUMBNAIL_WIDTH=96;
 
-function canvasPng(canvas:HTMLCanvasElement):Promise<Uint8Array>{
+function canvasJpeg(canvas:HTMLCanvasElement):Promise<Uint8Array>{
  return new Promise((resolve,reject)=>canvas.toBlob(blob=>{
-  if(!blob){reject(new Error('PDF sayfa görseli PNG olarak oluşturulamadı.'));return;}
+  if(!blob){reject(new Error('PDF sayfa görseli JPEG olarak oluşturulamadı.'));return;}
   void blob.arrayBuffer().then(buffer=>resolve(new Uint8Array(buffer)),reject);
- },'image/png'));
+ },'image/jpeg',0.9));
 }
 
-async function savePng(bytes:Uint8Array,assetPaths:string[]){
- const path=`page-assets/${Crypto.randomUUID()}.png`;
+async function saveJpeg(bytes:Uint8Array,assetPaths:string[]){
+ const path=`page-assets/${Crypto.randomUUID()}.jpg`;
  assetPaths.push(path);
  await writeStoredFile(path,bytes);
  return path;
@@ -39,9 +39,9 @@ async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,asse
  if(!context)throw new Error('PDF sayfası çizim alanı oluşturulamadı.');
  context.fillStyle='#FFFFFF';context.fillRect(0,0,pixelWidth,pixelHeight);
  await page.render({canvas,viewport}).promise;
- const png=await canvasPng(canvas);
+ const jpeg=await canvasJpeg(canvas);
  const layout=pdfPageLayout(pixelWidth,pixelHeight,PAGE_WIDTH,PAGE_HEIGHT);
- const backgroundPath=await savePng(png,assetPaths);
+ const backgroundPath=await saveJpeg(jpeg,assetPaths);
 
  const thumbnailCanvas=globalThis.document.createElement('canvas');
  const thumbnailHeight=Math.max(1,Math.round(PAGE_THUMBNAIL_WIDTH*pixelHeight/pixelWidth));
@@ -50,7 +50,7 @@ async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,asse
  if(!thumbnailContext)throw new Error('PDF sayfa küçük önizlemesi oluşturulamadı.');
  thumbnailContext.fillStyle='#FFFFFF';thumbnailContext.fillRect(0,0,thumbnailCanvas.width,thumbnailCanvas.height);
  thumbnailContext.drawImage(canvas,0,0,thumbnailCanvas.width,thumbnailCanvas.height);
- const thumbnailPath=await savePng(await canvasPng(thumbnailCanvas),assetPaths);
+ const thumbnailPath=await saveJpeg(await canvasJpeg(thumbnailCanvas),assetPaths);
  canvas.width=0;canvas.height=0;thumbnailCanvas.width=0;thumbnailCanvas.height=0;
  await page.cleanup();
 
@@ -79,13 +79,21 @@ export async function preparePdfImport(onProgress:PdfImportProgress):Promise<Pre
   document=await loadingTask.promise;
   const pdfDocument=document;
   if(pdfDocument.numPages<1)throw new Error('PDF içinde görüntülenebilir sayfa bulunamadı.');
-  const pages:ImportedPdfPage[]=[];
+  const pages=new Array<ImportedPdfPage>(pdfDocument.numPages);
   onProgress(0,pdfDocument.numPages,'PDF sayfaları hazırlanıyor…');
-  for(let pageNumber=1;pageNumber<=pdfDocument.numPages;pageNumber++){
-   pages.push(await renderPdfPage(pdfDocument,pageNumber,assetPaths));
-   onProgress(pageNumber,pdfDocument.numPages,`PDF sayfası ${pageNumber}/${pdfDocument.numPages} işleniyor…`);
-   if(pageNumber<pdfDocument.numPages)await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-  }
+  // Limit concurrent canvas allocations; preserve the original page ordering.
+  let nextPage=1,completed=0;
+  const worker=async()=>{
+   while(nextPage<=pdfDocument.numPages){
+    const pageNumber=nextPage++;
+    pages[pageNumber-1]=await renderPdfPage(pdfDocument,pageNumber,assetPaths);
+    completed++;
+    onProgress(completed,pdfDocument.numPages,`PDF sayfası ${completed}/${pdfDocument.numPages} işleniyor…`);
+    // Yield between expensive renders without waiting for the next animation frame.
+    await new Promise<void>(resolve=>setTimeout(resolve,0));
+   }
+  };
+  await Promise.all([worker(),worker()]);
   return {title,pages,assetPaths};
  }catch(error){
   await Promise.allSettled(assetPaths.map(async path=>{const {deleteStoredFile}=await import('@/utils/tauriFiles');await deleteStoredFile(path)}));
