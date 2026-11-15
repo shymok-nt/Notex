@@ -412,6 +412,15 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // Windows uses the native window icon for both the title bar and taskbar.
+            // The web favicon does not control either of these surfaces.
+            #[cfg(windows)]
+            if let (Some(window), Some(icon)) = (
+                app.get_webview_window("main"),
+                app.default_window_icon(),
+            ) {
+                window.set_icon(icon.clone())?;
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
