@@ -537,7 +537,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const handoffIsCommitted=isSelectionHandoffCommitted(handoff?.elements??null,content.elements);
   const handoffNeedsReleaseRender=needsReleasedSelectionHandoff(!!handoff,handoffIsCommitted,tool==='select',handoffMatchesSelection);
   if(frozenContentElements.current!==content.elements){
-   if(!handoffIsCommitted)frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
+   // During a pending move, the frozen paths must remain at their pointerdown geometry.
+   // Replacing them with the newly committed paths while the preview offset is live
+   // would apply the same movement twice and cause a forward jump.
+   if(!handoffIsCommitted&&!(handoffMatchesSelection&&pendingHandoff.current))frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
    frozenContentElements.current=content.elements;
   }
  // Before the page commit, keep the frozen source paths under the live
