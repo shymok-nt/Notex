@@ -48,6 +48,9 @@ export default function NoteCanvasScreen(){
  const [readyNotebookId,setReadyNotebookId]=useState<string|null>(null);
  const [pdfPreparation,setPdfPreparation]=useState<{completed:number;total:number}|null>(null);
  const [pdfRenderError,setPdfRenderError]=useState<string|null>(null);
+ const [pageLoadError,setPageLoadError]=useState<string|null>(null);
+ const [pageRetryVersion,setPageRetryVersion]=useState(0);
+ const [pdfErrorDetails,setPdfErrorDetails]=useState(false);
  useEffect(()=>{
   if(!id||!isTauriDesktop())return;
   let active=true;let unsubscribe:(()=>void)|undefined;
@@ -57,7 +60,7 @@ export default function NoteCanvasScreen(){
    unsubscribe=queue.subscribePdfProgress(update);update();
    return queue.resumePdfNotebook(id);
   }).catch(error=>console.error('[Notex PDF] Kuyruk devam ettirilemedi',error));
-  return()=>{active=false;unsubscribe?.()};
+  return()=>{active=false;unsubscribe?.();void import('@/utils/pdfRenderQueue.web').then(queue=>queue.releasePdfNotebook(id)).catch(error=>console.error('[Notex PDF] Belge kapatılamadı:',error))};
  },[id]);
  useEffect(()=>{
   if(!selectedId||!isTauriDesktop())return;
@@ -179,9 +182,27 @@ export default function NoteCanvasScreen(){
  useEffect(()=>{void settingsRepository.set('canvasToolSettings',JSON.stringify({tool,brush,eraserMode,eraserSize,textStyle})).catch(()=>{})},[tool,brush,recent,eraserMode,eraserSize,textStyle]);
  useEffect(()=>{
   if(!selectedId)return;
-  void usePageStore.getState().hydrateAround(selectedId).catch(error=>console.error('[Notex pages] Sayfa içeriği yüklenemedi',error));
- },[selectedId,pageStoreNotebookId]);
+  let cancelled=false;
+  setPageLoadError(null);
+  void (async()=>{
+   for(let attempt=0;attempt<2;attempt++){
+    try{await usePageStore.getState().hydrateAround(selectedId);return}
+    catch(error){
+     console.error('[Notex PDF] Sayfa içeriği yüklenemedi',selectedId,error);
+     if(attempt===1&&!cancelled)setPageLoadError(error instanceof Error?error.message:String(error));
+    }
+   }
+  })();
+  return()=>{cancelled=true};
+ },[selectedId,pageStoreNotebookId,pageRetryVersion]);
+ const retryPdfPage=()=>{
+  if(!selectedId)return;
+  setPageLoadError(null);
+  setPageRetryVersion(value=>value+1);
+  void import('@/utils/pdfRenderQueue.web').then(queue=>queue.prioritizePdfPage(selectedId)).catch(error=>console.error('[Notex PDF] Tekrar deneme başarısız:',error));
+ };
  const pagesReady=readyNotebookId===id&&pageStoreNotebookId===id;const selected=pagesReady?pages.find(p=>p.id===selectedId):undefined;const index=selected?pages.findIndex(p=>p.id===selected.id):0;
+ const pdfPending=selected?.contentLoaded!==false&&!!selected&&!!parseContent(selected.content).pdfSource&&!parseContent(selected.content).backgroundImage;
  const selectedCardText=selected?parseContent(selected.content).elements.filter((e):e is TextElement=>e.type==='text'&&selectedElements.includes(e.id)).map(e=>e.text).join('\n'):'';
  const loadingStartedAt=useRef(__DEV__?perfNow():0);
  const loadingRemovalLogged=useRef(false);
@@ -315,7 +336,7 @@ export default function NoteCanvasScreen(){
  <Pressable accessibilityRole="button" accessibilityLabel="Defteri düzenle" onPress={()=>router.push({pathname:'/notebook-editor',params:{id}})}>
  <Text numberOfLines={1} style={{fontFamily:fonts.heading,fontSize:17,color:ink}}>{notebook?.title??'Defter'}</Text></Pressable>
  <View style={{flexDirection:'row',alignItems:'center',minWidth:0}}>
- <Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}>{`Sayfa ${pages.length?index+1:0} / ${pages.length}`}</Text>{pdfPreparation&&pdfPreparation.completed<pdfPreparation.total&&<Text style={{fontFamily:fonts.body,fontSize:11,color:muted,marginLeft:10}}>{`Sayfalar hazırlanıyor ${pdfPreparation.completed}/${pdfPreparation.total}`}</Text>}{pdfRenderError&&<Text numberOfLines={1} style={{fontSize:11,color:colors.coral,marginLeft:8}}>PDF sayfası hazırlanamadı: {pdfRenderError}</Text>}
+ <Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}>{`Sayfa ${pages.length?index+1:0} / ${pages.length}`}</Text>{pdfPreparation&&pdfPreparation.completed<pdfPreparation.total&&<Text style={{fontFamily:fonts.body,fontSize:11,color:muted,marginLeft:10}}>{`Sayfalar hazırlanıyor ${pdfPreparation.completed}/${pdfPreparation.total}`}</Text>}{pdfRenderError&&<Pressable onPress={()=>setPdfErrorDetails(true)} accessibilityRole="button"><Text style={{fontSize:11,color:colors.coral,marginLeft:8}}>PDF hatası · Ayrıntılar</Text></Pressable>}
  {saveStatus==='error'&&<Pressable accessibilityRole="button" accessibilityLabel="Kaydetmeyi tekrar dene" onPress={()=>{void controllerRef.current?.retry().catch(()=>{})}}><Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:colors.coral}}> · Kaydedilemedi, tekrar dene</Text></Pressable>}
  {saveStatus==='saving'&&<Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}> · Kaydediliyor…</Text>}
  </View></View></View>;
@@ -336,6 +357,10 @@ export default function NoteCanvasScreen(){
   {tablet&&!focus&&<View style={{width:148,flexGrow:0,flexShrink:0,flexBasis:148,minHeight:0,backgroundColor:colors.background,borderRightWidth:1,borderRightColor:colors.divider}}>{selectionBar}<CanvasPageStrip tablet {...pageStripProps}/></View>}
  <View onTouchStart={()=>{if(panel!==null)setPanel(null)}} style={{flex:1,marginHorizontal:0,marginTop:0,marginBottom:0,borderRadius:0,overflow:'hidden'}}>
   {selected&&selected.contentLoaded!==false?<CanvasPage key={selected.id} page={selected} tool={tool} brush={brush} eraserSize={eraserSize} eraserMode={eraserMode} onController={setController} onHistory={()=>{}} onDrawStart={()=>setPanel(null)} onStrokeComplete={recordStroke} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={setSelectedElements} onSelectionClipboardChange={setInkClipboardAvailable} onSelectionActionComplete={version=>setSelectionAction(current=>current?.version===version?undefined:current)} onTextSelectionChange={setSelectedText} selectionAction={selectionAction} imageRequest={imageRequest} onImageRequestConsumed={version=>setImageRequest(current=>current?.version===version?null:current)} imageAction={imageAction} onImageSelectionChange={setSelectedImageId} onImageLoadError={message=>Alert.alert('Görsel yüklenemedi',message)}/>:<Text style={{color:ink}}>{selected?.contentLoaded===false?'Sayfa yükleniyor…':pagesReady?'Sayfa bulunamadı':'Sayfalar yükleniyor…'}</Text>}
+  {selected&&selected.contentLoaded===false&&pageLoadError&&<View style={{position:'absolute',top:'35%',alignSelf:'center',padding:16,backgroundColor:colors.surfaceRaised,borderRadius:12,maxWidth:'90%',gap:10}}><Text style={{color:ink}}>Sayfa yüklenemedi</Text><Text selectable style={{color:colors.coral}}>{pageLoadError}</Text><Pressable onPress={retryPdfPage}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable></View>}
+  {pdfPending&&<View pointerEvents="box-none" style={{position:'absolute',top:18,alignSelf:'center',alignItems:'center',gap:6,padding:10,backgroundColor:colors.surfaceRaised,borderRadius:10,maxWidth:'90%'}}>
+   {pdfRenderError?<><Text style={{color:colors.coral}}>Bu sayfa hazırlanamadı</Text><Text selectable style={{color:colors.coral}}>{pdfRenderError}</Text><Pressable onPress={retryPdfPage}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable></>:<><ActivityIndicator size="small" color={colors.accent}/><Text style={{color:ink}}>Sayfa hazırlanıyor…</Text></>}
+  </View>}
  </View>
  {isPdfNotebook&&pagesReady&&pages.length>1&&<View style={{position:'absolute',right:16,top:'36%',gap:9,zIndex:12,alignItems:'center'}}>
   {([{direction:-1 as const,Icon:ChevronUp,label:'Önceki PDF sayfası',disabled:index===0},{direction:1 as const,Icon:ChevronDown,label:'Sonraki PDF sayfası',disabled:index===pages.length-1}]).map(({direction,Icon,label,disabled})=><Pressable key={direction} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled}} disabled={disabled} onPress={()=>navigatePdfPage(direction)} style={{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:colors.surfaceRaised,borderWidth:1,borderColor:colors.divider,opacity:disabled?0.35:0.96,shadowColor:'#000',shadowOpacity:0.12,shadowRadius:8,elevation:4}}><Icon size={24} strokeWidth={2.2} color={colors.ink}/></Pressable>)}
@@ -351,6 +376,7 @@ export default function NoteCanvasScreen(){
  {ruler&&<View pointerEvents="none" style={{position:'absolute',top:'45%',left:'15%',width:'70%',height:64,backgroundColor:colors.accent+'55',borderWidth:1,borderColor:colors.accent,borderRadius:6,justifyContent:'center',alignItems:'center'}}><Text style={{color:ink}}>0°   | | | | | | | | | | | |</Text></View>}
  {popover}
  </View>
+ <Modal visible={pdfErrorDetails} transparent animationType="fade" onRequestClose={()=>setPdfErrorDetails(false)}><View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:colors.overlay}}><View style={{backgroundColor:colors.surfaceRaised,padding:20,borderRadius:14,gap:14}}><Text style={{color:ink,fontSize:17}}>PDF hazırlanamadı</Text><ScrollView style={{maxHeight:250}}><Text selectable style={{color:colors.coral}}>{pdfRenderError}</Text></ScrollView><Pressable onPress={()=>{setPdfErrorDetails(false);retryPdfPage()}}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable><Pressable onPress={()=>setPdfErrorDetails(false)}><Text style={{color:ink}}>Kapat</Text></Pressable></View></View></Modal>
  <Modal visible={sheet} transparent animationType="slide" onRequestClose={()=>{if(multiSelect){setMultiSelect(false);setSelectedPageIds([])}else setSheet(false)}}><GestureHandlerRootView style={{flex:1}}><View style={{flex:1,justifyContent:'flex-end',backgroundColor:colors.overlay}}><View style={{backgroundColor:colors.surfaceRaised,borderTopLeftRadius:24,borderTopRightRadius:24,paddingBottom:28,maxHeight:height*0.65}}><View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:16,paddingTop:12}}><Text style={{fontFamily:fonts.heading,fontSize:20,color:ink}}>Sayfalar</Text>{control('Kapat',X,()=>setSheet(false))}</View>{selectionBar}<CanvasPageStrip tablet={false} {...pageStripProps}/></View></View></GestureHandlerRootView></Modal>
  <Modal visible={templatePageId!==null} transparent animationType="fade" onRequestClose={()=>setTemplatePageId(null)}>
  <View style={{flex:1,justifyContent:'center',paddingHorizontal:20,backgroundColor:colors.overlay}}>
