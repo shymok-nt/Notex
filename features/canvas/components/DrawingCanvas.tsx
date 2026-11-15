@@ -441,9 +441,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const selectedRef=useRef<string[]>([]);selectedRef.current=selectedIds;
  const traceRef=useRef<{id:number;part:number;ids:string[];gestureEndAt:number|null;events:{t:number;event:string;ids:string[];detail?:unknown}[]}>({id:0,part:0,ids:[],gestureEndAt:null,events:[]});
  const traceSequence=useRef(0);
- const trace=(event:string,detail?:unknown)=>{if(!__DEV__||Platform.OS!=='android')return;const current=traceRef.current;if(!current.id)return;const t=Math.round(perfNow()*10)/10;if(event==='gesture_end')current.gestureEndAt=t;const timing=event==='react_render_commit'&&current.gestureEndAt!==null?{msSinceGestureEnd:Math.round((t-current.gestureEndAt)*10)/10}:{};current.events.push({t,event,ids:current.ids,detail:event==='react_render_commit'?{...(detail as Record<string,unknown>),...timing}:detail});if(current.events.length>80)current.events.shift()};
- const flushTrace=()=>{if(!__DEV__||Platform.OS!=='android')return;const current=traceRef.current;if(current.events.length){console.log('[Notex lasso-trace] '+JSON.stringify({operation:current.id,part:++current.part,pageId,measurement:'React commit and JS events; not presented Skia frames',events:current.events}));current.events=[]}};
- const beginTrace=(kind:string,bounds:readonly number[])=>{if(!__DEV__||Platform.OS!=='android')return;flushTrace();traceRef.current={id:++traceSequence.current,part:0,ids:selectedRef.current.slice(0,12),gestureEndAt:null,events:[]};trace('gesture_begin',{kind,bounds})};
+ const trace=(event:string,detail?:unknown)=>{if(!__DEV__)return;const current=traceRef.current;if(!current.id)return;const t=Math.round(perfNow()*10)/10;if(event==='gesture_end')current.gestureEndAt=t;const timing=event==='react_render_commit'&&current.gestureEndAt!==null?{msSinceGestureEnd:Math.round((t-current.gestureEndAt)*10)/10}:{};current.events.push({t,event,ids:current.ids,detail:event==='react_render_commit'?{...(detail as Record<string,unknown>),...timing}:detail});if(current.events.length>80)current.events.shift()};
+ const flushTrace=()=>{if(!__DEV__)return;const current=traceRef.current;if(current.events.length){console.log('[Notex lasso-trace] '+JSON.stringify({operation:current.id,part:++current.part,pageId,measurement:'React commit and JS events; not presented Skia frames',events:current.events}));current.events=[]}};
+ const beginTrace=(kind:string,bounds:readonly number[])=>{if(!__DEV__)return;flushTrace();traceRef.current={id:++traceSequence.current,part:0,ids:selectedRef.current.slice(0,12),gestureEndAt:null,events:[]};trace('gesture_begin',{kind,bounds})};
+  const flushTraceAfterRelease=()=>{if(!__DEV__)return;setTimeout(()=>flushTrace(),350)};
 
  const [imageId,setImageId]=useState<string|null>(null);
  const imageIdRef=useRef<string|null>(null);imageIdRef.current=imageId;
@@ -588,7 +589,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  useLayoutEffect(()=>{
   const contentReferenceChanged=tracedContentRef.current!==content.elements;
   tracedContentRef.current=content.elements;
-  if(!__DEV__||Platform.OS!=='android'||!traceRef.current.id)return;
+  if(!__DEV__||!traceRef.current.id)return;
   const hidden=new Set(tool==='select'?selectedIds:[]);
   if(handoffNeedsReleaseRender)for(const element of handoff!.elements)hidden.add(element.id);
   const relevant=new Set([...selectedIds,...(handoff?.elements.map(e=>e.id)??[])]);
@@ -602,6 +603,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    handoffActive:handoffNeedsReleaseRender,
    handoffDrawn:handoffNeedsReleaseRender?handoff!.elements.slice(0,12).map(e=>({id:e.id,bbox:e.bbox})):[],
    transform:{dx:committedDX.value+dragX.value+gestureDX.value,dy:committedDY.value+dragY.value+gestureDY.value,scale:committedScale.value*gestureScale.value,angle:committedAngle.value+gestureAngle.value},
+   paintedBBox:paintedFrame?.bounds??null,
+   renderCommittedSelection,
+   effectiveTranslation:shouldApplySelectionPreviewTransform(renderCommittedSelection,draggingSelection.value||cornerActive.value||transformActive.value,dragPending.value||transformPending.value,handoff?.generation??-1,selectionGestureGeneration.value)?[committedDX.value+dragX.value+gestureDX.value,committedDY.value+dragY.value+gestureDY.value]:[0,0],
+   projectedBBox:paintedFrame?[paintedFrame.bounds[0]+committedDX.value+dragX.value+gestureDX.value,paintedFrame.bounds[1]+committedDY.value+dragY.value+gestureDY.value,paintedFrame.bounds[2]+committedDX.value+dragX.value+gestureDX.value,paintedFrame.bounds[3]+committedDY.value+dragY.value+gestureDY.value]:null,
    previewApplied:shouldApplySelectionPreviewTransform(renderCommittedSelection,draggingSelection.value||cornerActive.value||transformActive.value,dragPending.value||transformPending.value,handoff?.generation??-1,selectionGestureGeneration.value),
    handoffGeneration:handoff?.generation??null,gestureGeneration:selectionGestureGeneration.value,
   });
@@ -1287,6 +1292,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    if(shouldCommit)dragPending.value=true;
    draggingSelection.value=false;
     if(shouldCommit){runOnJS(commitSelectionMove)(dx,dy,selectionGestureGeneration.value);}
+    if(__DEV__)runOnJS(flushTraceAfterRelease)();
     else {dragX.value=0;dragY.value=0;dragPending.value=false}
    drawing.value=false;
    runOnJS(notify)(false);return;
