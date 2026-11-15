@@ -6,8 +6,6 @@
   "scripts": {
     "start": "expo start",
     "postinstall": "setup-skia-web public",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "check": "expo install --check && tsc --noEmit",
@@ -17,7 +15,6 @@
     "tauri:serve": "node scripts/serve-tauri-spa.mjs",
     "prestart": "npm run setup:skia-web",
     "preweb": "npm run setup:skia-web",
-    "start:dev": "expo start --dev-client",
     "tauri": "tauri dev",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
