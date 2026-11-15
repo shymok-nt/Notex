@@ -346,6 +346,8 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const desktopSurfaceRef=useRef<any>(null);
  const pressureEnabled=useSettingsStore(state=>state.penSettings.pressureEnabled);
  const pressureSensitivity=useSettingsStore(state=>state.penSettings.pressureSensitivity);
+ const pressurePreset=useSettingsStore(state=>state.penSettings.pressurePreset);
+ const stabilization=useSettingsStore(state=>state.penSettings.stabilization);
  const fingerDraw=useSettingsStore(state=>state.penSettings.fingerDraw);
  const stylusOnly=useSettingsStore(state=>state.penSettings.stylusOnly);
  const sharedFonts=React.useContext(CanvasFontsContext);
