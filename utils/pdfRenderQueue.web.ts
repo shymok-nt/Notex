@@ -2,7 +2,7 @@ import * as Crypto from 'expo-crypto';
 import {getDatabase,withSafeTransaction} from '@/db/database';
 import {usePageStore} from '@/store/pageStore';
 import {renderPdfPage} from '@/utils/pdfImport.web';
-import {deleteStoredFile,storedFileAssetUri,readStoredFile} from '@/utils/tauriFiles';
+import {deleteStoredFile,storedFileAssetUri,readStoredFile,storedFileExists} from '@/utils/tauriFiles';
 import {flushPageSave} from '@/features/canvas/store/pagePersistence';
 import type {PDFDocumentProxy} from 'pdfjs-dist/types/src/display/api';
 
@@ -22,27 +22,50 @@ export const getPdfProgress=(notebookId:string)=>progress.get(notebookId)??null;
 export const getPdfError=(notebookId:string)=>[...failedJobs.values()].find(item=>item.job.notebookId===notebookId)?.error??null;
 const yieldIdle=()=>new Promise<void>(resolve=>setTimeout(resolve,12));
 const documentCache=new Map<string,Promise<PDFDocumentProxy>>();
+const TIMEOUT_URL=15000,TIMEOUT_RENDER=30000;
+const wait=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
+async function deadline<T>(work:Promise<T>,ms:number,message:string):Promise<T>{
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{return await Promise.race([work,new Promise<T>((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),ms)})])}
+ finally{if(timer)clearTimeout(timer)}
+}
+export const getPdfPageError=(pageId:string)=>failedJobs.get(pageId)?.error??null;
+export async function releasePdfNotebook(notebookId:string){
+ const sources=new Set<string>();
+ for(const job of jobs.values())if(job.notebookId===notebookId)sources.add(job.source);
+ const db=await getDatabase();
+ const rows=await db.getAllAsync<{content:string}>('SELECT content FROM pages WHERE notebook_id=?',notebookId);
+ for(const row of rows){try{const source=(JSON.parse(row.content) as {pdfSource?:{file:string}}).pdfSource?.file;if(source)sources.add(source)}catch{}}
+ for(const source of sources){
+  const promise=documentCache.get(source);documentCache.delete(source);
+  if(promise)void promise.then(doc=>doc.destroy()).catch(()=>{});
+ }
+}
+
 async function getDocument(source:string){
  let promise=documentCache.get(source);
  if(!promise){
   promise=(async()=>{
+   if(!await storedFileExists(source))throw new Error('PDF kaynak dosyası bulunamadı: '+source);
    const url=storedFileAssetUri(source);
-   if(!url)throw Error('PDF kaynağı bulunamadı.');
    const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
    pdfjs.GlobalWorkerOptions.workerSrc='/pdfjs/pdf.worker.min.mjs';
    const options={cMapUrl:'/pdfjs/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdfjs/standard_fonts/',wasmUrl:'/pdfjs/wasm/',iccUrl:'/pdfjs/iccs/'};
-   try{
-    return await pdfjs.getDocument({url,...options}).promise;
-   }catch(urlError){
-    // Tauri's asset protocol does not always support pdf.js range/stream requests.
-    // Fall back to one source read rather than leaving every page permanently white.
-    console.warn('[Notex PDF] Asset URL failed; using local PDF bytes',urlError);
-    const bytes=await readStoredFile(source);
-    return pdfjs.getDocument({data:bytes,...options}).promise;
+   if(url){
+    const task=pdfjs.getDocument({url,...options});
+    try{return await deadline(task.promise,TIMEOUT_URL,'PDF URL okuma 15 saniyede tamamlanamadı')}
+    catch(error){
+     console.error('[Notex PDF] URL ile okuma başarısız, yerel dosya deneniyor:',error);
+     void task.destroy().catch(()=>{});
+    }
    }
+   const bytes=await deadline(readStoredFile(source),TIMEOUT_URL,'PDF dosyası 15 saniyede okunamadı');
+   const fallback=pdfjs.getDocument({data:bytes,...options});
+   try{return await deadline(fallback.promise,TIMEOUT_URL,'PDF baytlardan 15 saniyede açılamadı')}
+   catch(error){void fallback.destroy().catch(()=>{});throw error}
   })();
   documentCache.set(source,promise);
-  void promise.catch(()=>documentCache.delete(source));
+  void promise.catch(error=>{if(documentCache.get(source)===promise)documentCache.delete(source);console.error('[Notex PDF] Belge açılamadı:',error)});
  }
  return promise;
 }
@@ -89,7 +112,18 @@ async function process(job:Job){
  try{
   if(cancelled.has(job.notebookId))return;
   const pdf=await getDocument(job.source);
-  const rendered=await renderPdfPage(pdf,job.index+1,assets);
+  let rendered:Awaited<ReturnType<typeof renderPdfPage>>|undefined;
+  for(let attempt=0;attempt<3;attempt++){
+   try{
+    rendered=await deadline(renderPdfPage(pdf,job.index+1,assets),TIMEOUT_RENDER,'PDF sayfa render işlemi 30 saniyede tamamlanamadı');
+    break;
+   }catch(error){
+    console.error('[Notex PDF] Sayfa render hatası',job.id,'deneme',attempt+1,error);
+    if(attempt===2)throw error;
+    await wait(300*(attempt+1));
+   }
+  }
+  if(!rendered)throw new Error('PDF sayfası oluşturulamadı');
   const content=JSON.parse(rendered.content) as {backgroundImage:{uri:string}};
   const backgroundPath=content.backgroundImage.uri;
   if(cancelled.has(job.notebookId))return;
