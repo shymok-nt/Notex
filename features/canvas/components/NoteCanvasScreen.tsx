@@ -63,13 +63,13 @@ export default function NoteCanvasScreen(){
   }).catch(error=>console.error('[Notex PDF] Kuyruk devam ettirilemedi',error));
   return()=>{active=false;unsubscribe?.();void import('@/utils/pdfRenderQueue.web').then(queue=>queue.releasePdfNotebook(id)).catch(error=>console.error('[Notex PDF] Belge kapatılamadı:',error))};
  },[id]);
+ const [multiSelect,setMultiSelect]=useState(false),[selectedPageIds,setSelectedPageIds]=useState<string[]>([]),[pendingDelete,setPendingDelete]=useState<Page[]|null>(null);
+ const deleteTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const [selectedId,setSelectedId]=useState<string|null>(null),[tool,setTool]=useState<Tool>('pen'),[brush,setBrush]=useState<Brush>({color:'#1B1B2F',width:5,opacity:1});
  useEffect(()=>{
   if(!selectedId||!isTauriDesktop())return;
   void import('@/utils/pdfRenderQueue.web').then(queue=>{setSelectedPdfError(queue.getPdfPageError(selectedId));queue.prioritizePdfPage(selectedId)}).catch(()=>{});
  },[selectedId]);
- const [multiSelect,setMultiSelect]=useState(false),[selectedPageIds,setSelectedPageIds]=useState<string[]>([]),[pendingDelete,setPendingDelete]=useState<Page[]|null>(null);
- const deleteTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
- const [selectedId,setSelectedId]=useState<string|null>(null),[tool,setTool]=useState<Tool>('pen'),[brush,setBrush]=useState<Brush>({color:'#1B1B2F',width:5,opacity:1});
  const [templatePageId,setTemplatePageId]=useState<string|null>(null);
  const [moreOpen,setMoreOpen]=useState(false);const [panel,setPanel]=useState<'tool'|'palette'|null>(null),[sheet,setSheet]=useState(false),[focus,setFocus]=useState(false),[eraserSize,setEraserSize]=useState(24),[eraserMode,setEraserMode]=useState<'pixel'|'stroke'>('pixel');
  const [controller,setController]=useState<CanvasController|null>(null);
