@@ -108,6 +108,8 @@ Test **çalıştırılmadıysa** çalıştırılmış gibi raporlama. GitHub Act
 
 ## Kartlar özelliği
 
+- Güncel `db/migrations.ts` şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretli olup kart tabloları eksik kalan kurulumları idempotent olarak onarır. Yeni şema değişikliğinde sürüm 5 veya üzerini kullan; sürüm 4'ü yeniden yazma.
+
 - Kartlar ayarlardan açılan, defter ve sayfa kayıt akışından bağımsız bir bölümdür. Kalıcı verisi SQLite `card_decks`, `cards`, `card_reviews` tablolarındadır; ikinci bir not deposu değildir.
 - Kaynak defter silinince kart korunur ve `source_note_id` boşaltılır. Kart cevabı ve tekrar kaydı tek transaction içinde yazılır.
 - `.notex` yedek biçimi 2, kartları ve çalışma geçmişini kapsar; biçim 1 yedekleri de açılmalıdır. Yeni migrasyon eklerken sürümü artır ve mevcut tabloları koru.

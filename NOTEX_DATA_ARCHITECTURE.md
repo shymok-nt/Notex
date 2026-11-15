@@ -1,5 +1,7 @@
 # Notex — Veri Mimarisi, Çizim ve Kalıcı Kayıt Rehberi
 
+> **15 Kasım 2026 kaynak kodu kontrolü:** `db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretlenmiş fakat tabloları eksik kalmış kurulumları idempotent olarak onarır. Aşağıdaki kart açıklamasında yalnız sürüm 3'ün anılması tarihsel uygulama sırasını ifade eder. `NoteCanvasScreen.tsx` içindeki `onHistory` artık boş callback'tir; eski render teşhisi için [TESHIS.md](./TESHIS.md) dosyasının güncel notuna bakın.
+
 ## Kartlar eklentisi (15 Kasım 2026)
 
 İsteğe bağlı **Kartlar** sekmesi `settings.cardsEnabled` açıkken görünür. Deste, kart ve çalışma geçmişi ayrı SQLite tablolarında (`card_decks`, `cards`, `card_reviews`) saklanır; `db/migrations.ts` sürüm 3 bunları mevcut not şemasına ekler. Kartın `source_note_id` alanı kaynak defter kimliğidir; kaynak defter silinirse SQLite tetikleyicisi yalnızca bu bağlantıyı `NULL` yapar. Kart cevapları `cardRepository.rate` içinde tekrar parametreleri ve çalışma geçmişiyle aynı transaction içinde kalıcılaşır. Yerel takvim günü ve günlük yeni kart sınırı `features/cards/scheduler.ts` tarafından hesaplanır. `.notex` yedek biçimi 2 desteleri, kartları, tekrar kayıtlarını ve kart ayarlarını içerir; eski biçim 1 yedekleri kart listesi boş kabul edilerek okunur. Kart arayüzü `app/(tabs)/cards.tsx`, çalışma ekranı `app/cards-study.tsx`, nottan kart oluşturma eylemi `NoteCanvasScreen.tsx` içindedir. Doğrulama: `node --test features/cards/__tests__/cards.test.mjs`.

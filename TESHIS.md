@@ -1,5 +1,7 @@
 # Notex çizim ekranı — kaynak kod teşhisi
 
+> **15 Kasım 2026 güncellemesi:** Bu belge tarihsel bir statik performans teşhisidir. Güncel `NoteCanvasScreen.tsx` içinde `onHistory={()=>{}}` kullanılır; aşağıdaki `setHistoryVersion` render zinciri artık geçerli değildir. Sayfa sarmalayıcısında `marginHorizontal`, `marginTop`, `marginBottom` ve `borderRadius` artık `0`'dır; aşağıdaki kenar/gölge teşhisi eski sürüme aittir. Kayıt gecikmesi `pagePersistence.ts` içinde 500 ms'dir. Güncel performans sonucu için cihaz ölçümü gerekir.
+
 > İnceleme: kaynak kod üzerinden statik teşhis. Gerçek cihaz React Profiler ve Skia frame ölçümü henüz yapılmadı. Bu belge çalışma zamanı ölçümü yapılmış gibi değerlendirilmemelidir.
 
 ## Çizgi bitişi render zinciri
