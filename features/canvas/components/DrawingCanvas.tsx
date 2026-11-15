@@ -1376,7 +1376,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const singleTap=Gesture.Tap().numberOfTaps(1).maxDuration(250).maxDistance(12).onEnd(e=>{
   if(!blocked.value){const p=pagePoint(e.x,e.y);if(tool==='text')runOnJS(beginText)(p[0],p[1]);else runOnJS(selectAt)(p[0],p[1],shiftDown.value);}
  }).runOnJS(false);
- const gestures=Gesture.Simultaneous(pan,pinch,rotation,Gesture.Exclusive(doubleTap,singleTap));
+ // A double-tap recognizer delays the single tap until its second-tap window
+ // expires. Text creation has no double-tap action, so bypass that wait.
+ // Selection still keeps its existing double-tap-to-edit behavior.
+ const gestures=Gesture.Simultaneous(pan,pinch,rotation,tool==='text'?singleTap:Gesture.Exclusive(doubleTap,singleTap));
 
  return <View ref={desktopSurfaceRef} onLayout={layout} style={{flex:1,overflow:'hidden',touchAction:'none',backgroundColor:paperColor==='krem'?'#FFF5DF':'#FFFFFF'} as ViewStyle}>
  <GestureDetector gesture={gestures}><View style={{flex:1,touchAction:'none'} as ViewStyle}><Canvas style={{flex:1}}>
