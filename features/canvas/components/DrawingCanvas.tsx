@@ -1427,7 +1427,19 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   canvasZoom={zoom.value}
   pageHeight={pageHeight}
   onCommit={value=>{editValueRef.current=value;finishRef.current()}}
-  onValueChange={value=>{editValueRef.current=value;scheduleTextSave()}}
+  onValueChange={value=>{
+   editValueRef.current=value;
+   const current=editingRef.current;
+   if(current){
+    // Keep the editor's bounding box in sync with wrapped text immediately,
+    // without waiting for the debounced SQLite write.
+    const height=measureTextHeight(current,value,current.w);
+    const next={...current,text:value,bbox:[current.x,current.y,current.x+current.w,current.y+height] as [number,number,number,number]};
+    editingRef.current=next;
+    setEditing(next);
+   }
+   scheduleTextSave();
+  }}
   onGeometryCommit={()=>persistTextGeometry()}
   onStyleChange={patch=>{
    const current=editingRef.current;if(!current)return;
