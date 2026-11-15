@@ -29,7 +29,8 @@
           "$APPDATA/covers/**",
           "$APPDATA/images/**",
           "$APPDATA/page-assets/**",
-          "$APPDATA/thumbnails/**"
+          "$APPDATA/thumbnails/**",
+          "$APPDATA/pdf-sources/**"
         ]
       }
     }
