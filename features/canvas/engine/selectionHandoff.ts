@@ -1,5 +1,13 @@
 type Identified={id:string};
 
+/** Stable comparison across JSON round-trips, where object key insertion order can change. */
+function stableValue(value:unknown):string{
+ if(Array.isArray(value))return '['+value.map(stableValue).join(',')+']';
+ if(value!==null&&typeof value==='object')return '{'+Object.entries(value).filter(([,v])=>v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+stableValue(v)).join(',')+'}';
+ return JSON.stringify(value)??'null';
+}
+
+
 /** Serialized page content recreates element objects. Compare their saved values, not object identity. */
 export function isSelectionHandoffCommitted<T extends Identified>(
  handoffElements:readonly T[]|null,
@@ -9,7 +17,7 @@ export function isSelectionHandoffCommitted<T extends Identified>(
  const byId=new Map(contentElements.map(element=>[element.id,element]));
  return handoffElements.every(element=>{
   const stored=byId.get(element.id);
-  return !!stored&&(stored===element||JSON.stringify(stored)===JSON.stringify(element));
+  return !!stored&&(stored===element||stableValue(stored)===stableValue(element));
  });
 }
 
