@@ -122,6 +122,7 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
 const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit,onStyleChange}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void;onStyleChange:(patch:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>)=>void}){
  const [value,setValue]=useState(item.text);
  const [typing,setTyping]=useState(true);
+ const [measuredContentHeight,setMeasuredContentHeight]=useState(0);
  const [preview,setPreviewState]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
  const previewRef=useRef(preview);
  const setPreview=(next:typeof preview)=>{previewRef.current=next;setPreviewState(next)};
@@ -130,10 +131,10 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
  const done=useRef(false);
  const commit=()=>{if(done.current)return;done.current=true;onCommit(valueRef.current)};
  const width=Math.max(40*scale,Math.min((PAGE_WIDTH-item.x)*scale,item.w*scale));
- const height=Math.max(24*scale,Math.min((pageHeight-item.y)*scale,(item.minHeight??Math.max(24,item.bbox[3]-item.bbox[1]))*scale));
+ const height=Math.max(24*scale,(item.bbox[3]-item.bbox[1])*scale,measuredContentHeight+8);
  const latest=useRef({item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit});
  latest.current={item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit};
- useEffect(()=>{setPreview({dx:0,dy:0,width,height})},[item.x,item.y,item.w,item.minHeight,item.bbox[3],width,height]);
+ useLayoutEffect(()=>{if(!dragRef.current)setPreview({dx:0,dy:0,width,height})},[item.x,item.y,item.w,item.minHeight,item.bbox[3],width,height]);
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{commit();return true});return()=>sub.remove()},[]);
  const dragRef=useRef<{kind:'resize';handle:string;startX:number;startY:number;dx:number;dy:number}|null>(null);
  const begin=(handle:string,event:any)=>{
@@ -184,7 +185,7 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
    {([{label:'B',patch:{bold:!item.bold}},{label:'I',patch:{italic:!item.italic}},{label:'U',patch:{underline:!item.underline}},{label:'Sol',patch:{align:'left'}},{label:'Orta',patch:{align:'center'}},{label:'Sağ',patch:{align:'right'}},{label:'−',patch:{fontSize:Math.max(16,item.fontSize-2)}},{label:'+',patch:{fontSize:Math.min(200,item.fontSize+2)}}] as {label:string;patch:Partial<Pick<TextElement,'fontSize'|'bold'|'italic'|'underline'|'align'>>}[]).map(action=><Pressable key={action.label} accessibilityLabel={action.label} onPress={()=>onStyleChange(action.patch)} style={{paddingHorizontal:6,paddingVertical:4,borderRadius:4,backgroundColor:'#F1F3FA'}}><Text style={{fontSize:12,color:'#25355B'}}>{action.label}</Text></Pressable>)}
    {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Yazı rengi '+color} onPress={()=>onStyleChange({color})} style={{width:16,height:16,borderRadius:8,backgroundColor:color,borderWidth:1,borderColor:'#DDD'}}/>)}
   </View>
-  <TextInput multiline autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',wordBreak:'break-word',boxSizing:'border-box'} as any}/>
+  <TextInput multiline scrollEnabled={false} onContentSizeChange={event=>{const next=event.nativeEvent.contentSize.height;if(Number.isFinite(next)&&next>0)setMeasuredContentHeight(previous=>Math.abs(previous-next)>0.5?next:previous)}} autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',overflowWrap:'anywhere',wordBreak:'break-word',overflow:'visible',boxSizing:'border-box'} as any}/>
   {handles.map(handle=><View key={handle} onPointerDown={(e:any)=>begin(handle,e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',width:12,height:12,borderRadius:2,borderWidth:1,borderColor:'#FFFFFF',backgroundColor:'#496AE8',touchAction:'none',zIndex:20,...positions[handle]} as any}/>)}
  </View>;
 });
@@ -358,17 +359,18 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    const builder=Skia.ParagraphBuilder.Make({textAlign:paragraphAlign(element.align)},textFonts);
    builder.pushStyle(paragraphTextStyle(element));
    builder.addText(value);builder.pop();
-   const paragraph=builder.build();paragraph.layout(width);
+   const paragraph=builder.build();paragraph.layout(Math.max(1,width-8));
    height=Math.max(element.fontSize*1.25,paragraph.getHeight());
   }
-  return Math.max(height,element.minHeight??0);
+  // The saved box height must never force deleted lines to remain visible.
+  return Math.max(element.fontSize*1.3,height+8);
  };
  const persistTextGeometry=()=>{
   const current=editingRef.current;if(!current)return;
   const value=editValueRef.current;
   const width=Math.min(current.w,PAGE_WIDTH-current.x);
   const height=measureTextHeight(current,value,width);
-  const next={...current,w:width,text:value,bbox:[current.x,current.y,current.x+width,current.y+height] as [number,number,number,number]};
+  const next={...current,w:width,text:value,minHeight:height,bbox:[current.x,current.y,current.x+width,current.y+height] as [number,number,number,number]};
   const exists=content.elements.some(element=>element.id===current.id);
   if(value.trim()||exists){
    const elements=content.elements.filter(element=>element.id!==current.id);
@@ -406,7 +408,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const hit=[...content.elements].reverse().find(e=>e.type==='text'&&x>=e.bbox[0]&&x<=e.bbox[2]&&y>=e.bbox[1]&&y<=e.bbox[3]) as TextElement|undefined;
   const scale=Math.max(0.01,fitWidth*zoom.value);
   const initialWidth=Math.min(PAGE_WIDTH,Math.max(60,requestedWidth??280/scale));
-  const initialHeight=Math.max(textStyle.fontSize*1.3,requestedHeight??textStyle.fontSize*1.3*3);
+  const initialHeight=Math.max(textStyle.fontSize*1.3+8,requestedHeight??textStyle.fontSize*1.3*3+8);
   const initialX=Math.max(0,Math.min(PAGE_WIDTH-initialWidth,x));
   const initialY=Math.max(0,Math.min(Math.max(0,pageHeight-initialHeight),y));
   const current=hit??{id:Crypto.randomUUID(),type:'text' as const,z:content.elements.length,createdAt:new Date().toISOString(),x:initialX,y:initialY,w:initialWidth,text:'',fontSize:textStyle.fontSize,color:textStyle.color,bold:textStyle.bold,italic:textStyle.italic??false,underline:textStyle.underline??false,align:textStyle.align,fontFamily:'Inter' as const,bbox:[initialX,initialY,initialX+initialWidth,initialY+initialHeight] as [number,number,number,number]};
@@ -1434,7 +1436,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     // Keep the editor's bounding box in sync with wrapped text immediately,
     // without waiting for the debounced SQLite write.
     const height=measureTextHeight(current,value,current.w);
-    const next={...current,text:value,bbox:[current.x,current.y,current.x+current.w,current.y+height] as [number,number,number,number]};
+    const next={...current,text:value,minHeight:height,bbox:[current.x,current.y,current.x+current.w,current.y+height] as [number,number,number,number]};
     editingRef.current=next;
     setEditing(next);
    }
