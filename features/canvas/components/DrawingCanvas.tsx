@@ -122,7 +122,6 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
 const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit,onStyleChange}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void;onStyleChange:(patch:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>)=>void}){
  const [value,setValue]=useState(item.text);
  const [typing,setTyping]=useState(true);
- const [measuredContentHeight,setMeasuredContentHeight]=useState(0);
  const [preview,setPreviewState]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
  const previewRef=useRef(preview);
  const setPreview=(next:typeof preview)=>{previewRef.current=next;setPreviewState(next)};
@@ -131,7 +130,7 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
  const done=useRef(false);
  const commit=()=>{if(done.current)return;done.current=true;onCommit(valueRef.current)};
  const width=Math.max(40*scale,Math.min((PAGE_WIDTH-item.x)*scale,item.w*scale));
- const height=Math.max(24*scale,(item.bbox[3]-item.bbox[1])*scale,measuredContentHeight+8);
+ const height=Math.max(24*scale,(item.bbox[3]-item.bbox[1])*scale);
  const latest=useRef({item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit});
  latest.current={item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit};
  useLayoutEffect(()=>{if(!dragRef.current)setPreview({dx:0,dy:0,width,height})},[item.x,item.y,item.w,item.minHeight,item.bbox[3],width,height]);
@@ -185,7 +184,7 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
    {([{label:'B',patch:{bold:!item.bold}},{label:'I',patch:{italic:!item.italic}},{label:'U',patch:{underline:!item.underline}},{label:'Sol',patch:{align:'left'}},{label:'Orta',patch:{align:'center'}},{label:'Sağ',patch:{align:'right'}},{label:'−',patch:{fontSize:Math.max(16,item.fontSize-2)}},{label:'+',patch:{fontSize:Math.min(200,item.fontSize+2)}}] as {label:string;patch:Partial<Pick<TextElement,'fontSize'|'bold'|'italic'|'underline'|'align'>>}[]).map(action=><Pressable key={action.label} accessibilityLabel={action.label} onPress={()=>onStyleChange(action.patch)} style={{paddingHorizontal:6,paddingVertical:4,borderRadius:4,backgroundColor:'#F1F3FA'}}><Text style={{fontSize:12,color:'#25355B'}}>{action.label}</Text></Pressable>)}
    {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Yazı rengi '+color} onPress={()=>onStyleChange({color})} style={{width:16,height:16,borderRadius:8,backgroundColor:color,borderWidth:1,borderColor:'#DDD'}}/>)}
   </View>
-  <TextInput multiline scrollEnabled={false} onContentSizeChange={event=>{const next=event.nativeEvent.contentSize.height;if(Number.isFinite(next)&&next>0)setMeasuredContentHeight(previous=>Math.abs(previous-next)>0.5?next:previous)}} autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',overflowWrap:'anywhere',wordBreak:'break-word',overflow:'visible',boxSizing:'border-box'} as any}/>
+  <TextInput multiline scrollEnabled={false} autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',overflowWrap:'anywhere',wordBreak:'break-word',overflow:'visible',boxSizing:'border-box'} as any}/>
   {handles.map(handle=><View key={handle} onPointerDown={(e:any)=>begin(handle,e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',width:12,height:12,borderRadius:2,borderWidth:1,borderColor:'#FFFFFF',backgroundColor:'#496AE8',touchAction:'none',zIndex:20,...positions[handle]} as any}/>)}
  </View>;
 });
