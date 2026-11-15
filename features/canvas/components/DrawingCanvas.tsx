@@ -7,6 +7,7 @@ import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
 import * as Crypto from 'expo-crypto';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
 import {makeStroke,strokePath,strokePathString,cacheFinalizedStrokePath} from '@/features/canvas/engine/geometry';
+import {defaultBrush,pressureValue} from '@/features/canvas/engine/penEngineV2';
 import {appendPolylinePoint,centerlinePathString} from '@/features/canvas/engine/centerlinePath';
 import {appendSample,emptySampleBuffer,flattenSamples,normalizeStylusPressure,sampleBufferAt,sampleBufferFromPoint,type Sample,type SampleBuffer} from '@/features/canvas/engine/sampleBuffer';
 import {interruptedStrokeAction,isCurrentStrokeCommit} from '@/features/canvas/engine/strokeInterruption';
@@ -982,7 +983,15 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    strokeTelemetryStart.current=0;
   }
   const stroke=makeStroke(points,{tool:tool==='highlighter'?'highlighter':'pen',...brush},Crypto.randomUUID(),content.elements.length);
-  if(tool==='pen'&&pressureEnabled&&points.some(p=>p[2]!==0.5))stroke.renderMode='outline';
+  if(tool==='pen'||tool==='highlighter'){
+    // Snapshot brush parameters per stroke; never reinterpret saved legacy strokes.
+    stroke.brushId=tool==='highlighter'?'highlighter':'fountain';
+    stroke.brush={...defaultBrush(stroke.brushId),size:brush.width,opacity:brush.opacity};
+    stroke.aux=points.flatMap(()=>[0,0,0]);
+    // Keep raw rendering until the shared live/committed renderer is active.
+    // This avoids the historical pressure-outline jump on pen lift.
+    stroke.renderMode='raw';
+   }
   const finalizedSvg=strokePathString(stroke);cacheFinalizedStrokePath(stroke,finalizedSvg);
   if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration)){handoffDraft.value=finalizedSvg;handoffColor.value=stroke.color;handoffOpacity.value=stroke.opacity;handoffWidth.value=stroke.width;handoffTool.value=stroke.tool;handoffIsOutline.value=stroke.renderMode==='outline'}
   if(__DEV__)console.log('[Notex perf] stroke_finalize',{duration_ms:Math.round((perfNow()-finalizeStarted)*10)/10,point_count:points.length});
@@ -1275,7 +1284,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const p=pagePoint(e.x,e.y);
   if(!Number.isFinite(p[0])||!Number.isFinite(p[1]))return;
   if(e.pointerType===PointerType.STYLUS&&pressureEnabled&&e.stylusData){
-   p[2]=normalizeStylusPressure(e.stylusData.pressure,pressureSensitivity);
+   p[2]=pressureValue(normalizeStylusPressure(e.stylusData.pressure,pressureSensitivity),'normal');
   }
   samples.value=appendSample(samples.value,p);
   const startingDrawing=!drawing.value;
