@@ -997,7 +997,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     stroke.renderMode=tool==='pen'&&pressureEnabled?'brush-v2':'raw';
    }
   const finalizedSvg=strokePathString(stroke);cacheFinalizedStrokePath(stroke,finalizedSvg);
-  if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration)){handoffDraft.value=finalizedSvg;handoffColor.value=stroke.color;handoffOpacity.value=stroke.opacity;handoffWidth.value=stroke.width;handoffTool.value=stroke.tool;handoffIsOutline.value=stroke.renderMode==='outline'}
+  if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration)){handoffDraft.value=finalizedSvg;handoffColor.value=stroke.color;handoffOpacity.value=stroke.opacity;handoffWidth.value=stroke.width;handoffTool.value=stroke.tool;handoffIsOutline.value=stroke.renderMode==='outline'||stroke.renderMode==='brush-v2'}
   if(__DEV__)console.log('[Notex perf] stroke_finalize',{duration_ms:Math.round((perfNow()-finalizeStarted)*10)/10,point_count:points.length});
   if(__DEV__)console.log('[Notex ink] endStroke kalÄ±cÄ± stroke Ã¼retiyor:',{pageId,tool:stroke.tool,pointCount:points.length,strokeId:stroke.id});
   if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration))handoffCommittedGeneration.value=commitGeneration;
@@ -1467,13 +1467,11 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  {(content.images??[]).map(source=>{const item=source.id===displayImageId&&paintedImage?paintedImage:source;const cx=item.x+item.width/2,cy=item.y+item.height/2;const art=<Group origin={vec(cx,cy)} transform={[{rotate:item.rotation??0}]}><PageImageLayer item={item} onLoadError={onImageLoadError}/>{item.id===imageId&&<><Rect x={item.x} y={item.y} width={item.width} height={item.height} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/>{Platform.OS==='web'&&<><Line p1={vec(cx,item.y)} p2={imageRotatePoint} color="#3388EE" strokeWidth={imageOutlineWidth}/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={cx} cy={imageRotateY} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></>}{Platform.OS==='web'&&[[item.x,item.y],[item.x+item.width,item.y],[item.x,item.y+item.height],[item.x+item.width,item.y+item.height]].map(([x,y],index)=><Group key={index}><Circle cx={x} cy={y} r={imageHandleRadius} color="#FFFFFF"/><Circle cx={x} cy={y} r={imageHandleRadius} color="#3388EE" style="stroke" strokeWidth={imageOutlineWidth}/></Group>)}</>}</Group>;return item.id===displayImageId?<Group key={item.id} transform={imageTransform}>{art}</Group>:<Group key={item.id}>{art}</Group>})}
  {imageRenderProbe&&imageProbeCenter&&<><SkiaImage image={imageRenderProbe} x={imageProbeCenter[0]-24} y={imageProbeCenter[1]-24} width={48} height={48} fit="fill"/><Rect x={imageProbeCenter[0]-27} y={imageProbeCenter[1]-27} width={54} height={54} color="#111111" style="stroke" strokeWidth={2}/></>}
 
- <Group layer={tool==='eraser'}>
+ <Group>
   <Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:tool==='select'?[...selectedIds,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts}/>
   {handoffNeedsReleaseRender&&<Group>{handoff!.elements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}</Group>}
-   {tool==='eraser'&&<>
-    <Path path={eraserHandoffDraft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
-    <Path path={draft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
-   </>}
+   {/* Pixel eraser commits through pixelErase; never clear the whole completed layer
+       as this made unrelated handwriting vanish and repaint on each gesture. */}
  </Group>
   {tool==='select'&&paintedFrame&&<Group transform={selectionTransform}>
    <Rect x={paintedFrame.bounds[0]} y={paintedFrame.bounds[1]} width={paintedFrame.bounds[2]-paintedFrame.bounds[0]} height={paintedFrame.bounds[3]-paintedFrame.bounds[1]} color="#3388EE" opacity={0.035}/>
