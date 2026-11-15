@@ -49,7 +49,7 @@ export function scaleElement(e:Element,cx:number,cy:number,sx:number,sy:number):
   const height=Math.max(fontSize*1.25,(e.bbox[3]-e.bbox[1])*Math.abs(sy));
   return {...e,x,y,w,fontSize,minHeight:Math.max(24,(e.minHeight??e.bbox[3]-e.bbox[1])*Math.abs(sy)),bbox:[x,y,x+w,y+height]};
  }
- if(e.type==='stroke'){const points=e.points.map((v,i)=>i%3===0?cx+(v-cx)*sx:i%3===1?cy+(v-cy)*sy:v);const b=e.bbox;return {...e,points,width:Math.max(0.1,e.width*Math.sqrt(Math.abs(sx*sy))),bbox:[Math.min(cx+(b[0]-cx)*sx,cx+(b[2]-cx)*sx),Math.min(cy+(b[1]-cy)*sy,cy+(b[3]-cy)*sy),Math.max(cx+(b[0]-cx)*sx,cx+(b[2]-cx)*sx),Math.max(cy+(b[1]-cy)*sy,cy+(b[3]-cy)*sy)]}}
+ if(e.type==='stroke'){const points=e.points.map((v,i)=>i%3===0?cx+(v-cx)*sx:i%3===1?cy+(v-cy)*sy:v);const b=e.bbox;return {...e,points,width:Math.max(0.1,e.width*Math.sqrt(Math.abs(sx*sy))),brush:e.brush?{...e.brush,size:Math.max(0.1,e.brush.size*Math.sqrt(Math.abs(sx*sy)))}:undefined,bbox:[Math.min(cx+(b[0]-cx)*sx,cx+(b[2]-cx)*sx),Math.min(cy+(b[1]-cy)*sy,cy+(b[3]-cy)*sy),Math.max(cx+(b[0]-cx)*sx,cx+(b[2]-cx)*sx),Math.max(cy+(b[1]-cy)*sy,cy+(b[3]-cy)*sy)]}}
  const p=e.params;const params={...p,x:cx+(p.x-cx)*sx,y:cy+(p.y-cy)*sy,w:p.w*sx,h:p.h*sy,points:p.points?.map((v,i)=>i%2===0?cx+(v-cx)*sx:cy+(v-cy)*sy)};return {...e,params,stroke:{...e.stroke,width:Math.max(0.1,e.stroke.width*Math.sqrt(Math.abs(sx*sy)))},bbox:shapeBounds(params)};
 }
 export function rotateElement(e:Element,cx:number,cy:number,angle:number):Element{
