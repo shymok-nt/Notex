@@ -119,7 +119,7 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
   {dots.map((p,i)=><Circle key={i} cx={p[0]} cy={p[1]} r={lineW*1.2} color="#C4CCDD"/>)}
  </>;
 });
-const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void}){
+const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit,onStyleChange}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void;onStyleChange:(patch:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>)=>void}){
  const [value,setValue]=useState(item.text);
  const [typing,setTyping]=useState(true);
  const [preview,setPreview]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
@@ -185,6 +185,10 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
   sw:{left:-6,bottom:-6,cursor:'nesw-resize'},w:{left:-6,top:preview.height/2-6,cursor:'ew-resize'}
  };
  return <View style={{position:'absolute',left:left+preview.dx,top:top+preview.dy,width:preview.width,height:preview.height,borderWidth:1,borderColor:'#496AE8',backgroundColor:'transparent',overflow:'visible'} as any}>
+  <View onPointerDown={(event:any)=>event.preventDefault?.()} style={{position:'absolute',left:0,bottom:'100%',marginBottom:19,flexDirection:'row',alignItems:'center',gap:4,padding:4,borderRadius:6,backgroundColor:'#FFFFFF',borderWidth:1,borderColor:'#C9D0E8',zIndex:30} as any}>
+   {([{label:'B',patch:{bold:!item.bold}},{label:'I',patch:{italic:!item.italic}},{label:'U',patch:{underline:!item.underline}},{label:'Sol',patch:{align:'left'}},{label:'Orta',patch:{align:'center'}},{label:'Sağ',patch:{align:'right'}},{label:'−',patch:{fontSize:Math.max(16,item.fontSize-2)}},{label:'+',patch:{fontSize:Math.min(200,item.fontSize+2)}}] as {label:string;patch:Partial<Pick<TextElement,'fontSize'|'bold'|'italic'|'underline'|'align'>>}[]).map(action=><Pressable key={action.label} accessibilityLabel={action.label} onPress={()=>onStyleChange(action.patch)} style={{paddingHorizontal:6,paddingVertical:4,borderRadius:4,backgroundColor:'#F1F3FA'}}><Text style={{fontSize:12,color:'#25355B'}}>{action.label}</Text></Pressable>)}
+   {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Yazı rengi '+color} onPress={()=>onStyleChange({color})} style={{width:16,height:16,borderRadius:8,backgroundColor:color,borderWidth:1,borderColor:'#DDD'}}/>)}
+  </View>
   <TextInput multiline autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',wordBreak:'break-word',boxSizing:'border-box'} as any}/>
   <View onPointerDown={(e:any)=>begin('move','move',e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',left:0,top:-13,right:0,height:12,cursor:'grab',touchAction:'none',backgroundColor:'#496AE844'} as any}/>
   {handles.map(handle=><View key={handle} onPointerDown={(e:any)=>begin('resize',handle,e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',width:12,height:12,borderRadius:2,borderWidth:1,borderColor:'#FFFFFF',backgroundColor:'#496AE8',touchAction:'none',zIndex:20,...positions[handle]} as any}/>)}
@@ -1403,6 +1407,12 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   onCommit={value=>{editValueRef.current=value;finishRef.current()}}
   onValueChange={value=>{editValueRef.current=value;scheduleTextSave()}}
   onGeometryCommit={()=>persistTextGeometry()}
+  onStyleChange={patch=>{
+   const current=editingRef.current;if(!current)return;
+   const next={...current,...patch};
+   editingRef.current=next;setEditing(next);
+   onChange({...content,elements:content.elements.map(element=>element.id===next.id?next:element)});
+  }}
   onMove={(dx,dy,heightPx)=>{
    const current=editingRef.current;if(!current)return;
    const scale=Math.max(0.01,fitWidth*zoom.value);
