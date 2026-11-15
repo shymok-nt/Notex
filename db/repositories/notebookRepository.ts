@@ -18,7 +18,8 @@ const rowParams=(input:NotebookInput)=>[input.title,input.folderId,input.coverTy
 const storedImagePaths=(content:string)=>{
  const paths=new Set<string>();
  try{
-  const parsed=JSON.parse(content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+  const parsed=JSON.parse(content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string};pdfSource?:{file?:string}};
+  if(parsed.pdfSource?.file&&isStoredAppDataPath(parsed.pdfSource.file))paths.add(parsed.pdfSource.file);
   const images=[...(Array.isArray(parsed.images)?parsed.images:[]),...(parsed.backgroundImage?[parsed.backgroundImage]:[])];
   for(const image of images){
    if(typeof image?.uri!=='string'||image.uri.startsWith('data:'))continue;
@@ -126,6 +127,7 @@ export const notebookRepository={
   await db.runAsync(`UPDATE notebooks SET deleted_at=NULL,folder_id=CASE WHEN folder_id IS NULL OR EXISTS(SELECT 1 FROM folders WHERE folders.id=notebooks.folder_id) THEN folder_id ELSE NULL END WHERE id=? AND deleted_at IS NOT NULL`,id);
  },
  async permanentlyRemove(id:string){
+  if(isTauriDesktop())await import('@/utils/pdfRenderQueue.web').then(queue=>queue.cancelPdfNotebook(id)).catch(()=>{});
   const db=await getDatabase();
   const removed=await withSafeTransaction(db,async tx=>{
    const row=await tx.getFirstAsync<{cover_image_path:string|null}>('SELECT cover_image_path FROM notebooks WHERE id=? AND deleted_at IS NOT NULL',id);
