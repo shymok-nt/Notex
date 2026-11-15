@@ -8,7 +8,6 @@ import * as Crypto from 'expo-crypto';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
 import {makeStroke,strokePath,strokePathString,cacheFinalizedStrokePath} from '@/features/canvas/engine/geometry';
 import {defaultBrush,pressureValue} from '@/features/canvas/engine/penEngineV2';
-import {ribbonPath} from '@/features/canvas/engine/pressureRibbon';
 import {appendPolylinePoint,centerlinePathString} from '@/features/canvas/engine/centerlinePath';
 import {appendSample,emptySampleBuffer,flattenSamples,normalizeStylusPressure,sampleBufferAt,sampleBufferFromPoint,type Sample,type SampleBuffer} from '@/features/canvas/engine/sampleBuffer';
 import {interruptedStrokeAction,isCurrentStrokeCommit} from '@/features/canvas/engine/strokeInterruption';
@@ -503,6 +502,14 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const [size,setSize]=useState({width:300,height:450});
  const spacePan=useSharedValue(false),handPanActive=useSharedValue(false);
   const eraserCommitRef=useRef<{elements:Element[];generation:number}|null>(null);
+  // Tool and size changes must not replay a stale clear-blend preview over
+  // unrelated handwriting. Eraser edits themselves remain committed to content.
+  useEffect(()=>{
+   eraserHandoffDraft.value='';
+   if(tool!=='eraser')return;
+   if(!drawing.value){draft.value='';cursorOn.value=false;}
+  },[tool,eraserSize,pageId]);
+
  const canvasMountedAt=useRef(__DEV__?perfNow():0),firstCanvasLayoutLogged=useRef(false);
  const strokeTelemetryStart=useRef(0),strokeTelemetryPointer=useRef('unknown');
  const fitWidth=Math.max(0.01,size.width/PAGE_WIDTH);
@@ -994,7 +1001,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     // Native gesture events do not expose per-point timestamps in this buffer yet.
     // Keep raw rendering until the shared live/committed renderer is active.
     // This avoids the historical pressure-outline jump on pen lift.
-    stroke.renderMode=tool==='pen'&&pressureEnabled?'brush-v2':'raw';
+    stroke.renderMode='raw'; // Stable legacy centerline for new ink; saved brush-v2 strokes remain readable.
    }
   const finalizedSvg=strokePathString(stroke);cacheFinalizedStrokePath(stroke,finalizedSvg);
   if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration)){handoffDraft.value=finalizedSvg;handoffColor.value=stroke.color;handoffOpacity.value=stroke.opacity;handoffWidth.value=stroke.width;handoffTool.value=stroke.tool;handoffIsOutline.value=stroke.renderMode==='outline'||stroke.renderMode==='brush-v2'}
@@ -1210,7 +1217,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   }
   const start=pagePoint(e.x,e.y);
   if(!Number.isFinite(start[0])||!Number.isFinite(start[1])){samples.value=emptySampleBuffer();drawing.value=false;draft.value='';return;}
-  samples.value=sampleBufferFromPoint(start);drawing.value=false;draftIsOutline.value=tool==='pen'&&pressureEnabled;draft.value=draftIsOutline.value?ribbonPath([start],brush.width,.3,1,pressurePreset):centerlinePathString([start]);
+  samples.value=sampleBufferFromPoint(start);drawing.value=false;draftIsOutline.value=false;draft.value=centerlinePathString([start]);
   if(tool==='eraser'){
     const q=sampleBufferAt(samples.value,0);
     draft.value='M'+q[0]+' '+q[1]+' L'+(q[0]+0.01)+' '+q[1];
@@ -1298,7 +1305,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     draft.value=previewShape(shapeKind,x0,y0,x1,y1);
     return;
   }
-  draft.value=draftIsOutline.value?ribbonPath(flattenSamples(samples.value),brush.width,.3,1,pressurePreset):(startingDrawing?centerlinePathString(flattenSamples(samples.value)):appendPolylinePoint(draft.value,p));
+  draft.value=startingDrawing?centerlinePathString(flattenSamples(samples.value)):appendPolylinePoint(draft.value,p);
   if(tool==='eraser'){cursorX.value=p[0];cursorY.value=p[1];cursorOn.value=true}
  }).onEnd(e=>{
   if(tool==='text'&&textDragStart.value){
