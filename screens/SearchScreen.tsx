@@ -54,7 +54,7 @@ export default function SearchScreen() {
     let active = true;
     setPagesLoading(true);
     void Promise.all(notebooks.map(async notebook => {
-      const notebookPages = await pageRepository.getByNotebook(notebook.id);
+      const notebookPages = await pageRepository.getByNotebookFull(notebook.id);
       return notebookPages.map(page => ({ page, notebookId: notebook.id, notebookTitle: notebook.title, notebookFolder: notebook.folder }));
     })).then(groups => {
       if (active) setPages(groups.flat());
