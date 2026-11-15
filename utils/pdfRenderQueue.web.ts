@@ -152,17 +152,17 @@ function pump(){
 export async function repairPdfBackground(pageId:string){
  const db=await getDatabase();
  await flushPageSave(pageId);
- let notebookId:string|null=null;
+ const repairTarget:{notebookId:string|null}={notebookId:null};
  await withSafeTransaction(db,async tx=>{
   const row=await tx.getFirstAsync<{notebook_id:string;content:string}>('SELECT notebook_id,content FROM pages WHERE id=?',pageId);
   if(!row)return;
   const content=JSON.parse(row.content) as {pdfSource?:{file:string;pageIndex:number};backgroundImage?:{uri:string};[key:string]:unknown};
   if(!content.pdfSource)return;
-  notebookId=row.notebook_id;
+  repairTarget.notebookId=row.notebook_id;
   delete content.backgroundImage;
   await tx.runAsync('UPDATE pages SET content=?,thumbnail_path=NULL WHERE id=?',JSON.stringify(content),pageId);
  });
- if(!notebookId)return;
+ if(!repairTarget.notebookId)return;
  usePageStore.setState(state=>({pages:state.pages.map(page=>{
   if(page.id!==pageId)return page;
   if(page.contentLoaded===false)return {...page,thumbnailPath:null};
@@ -171,7 +171,7 @@ export async function repairPdfBackground(pageId:string){
   return {...page,content:JSON.stringify(content),thumbnailPath:null};
  })}));
  failedJobs.delete(pageId);
- await resumePdfNotebook(notebookId);
+ await resumePdfNotebook(repairTarget.notebookId);
  prioritizePdfPage(pageId);
 }
 export function prioritizePdfPage(pageId:string){preferredPage=pageId;const failed=failedJobs.get(pageId);if(failed){failedJobs.delete(pageId);jobs.set(pageId,failed.job)}pump()}
