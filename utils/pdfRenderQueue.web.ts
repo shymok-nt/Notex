@@ -3,7 +3,7 @@ import {getDatabase,withSafeTransaction} from '@/db/database';
 import {pageRepository} from '@/db/repositories/pageRepository';
 import {usePageStore} from '@/store/pageStore';
 import {renderPdfPage} from '@/utils/pdfImport.web';
-import {deleteStoredFile,storedFileAssetUri} from '@/utils/tauriFiles';
+import {deleteStoredFile,storedFileAssetUri,readStoredFile} from '@/utils/tauriFiles';
 import {flushPageSave} from '@/features/canvas/store/pagePersistence';
 import type {PDFDocumentProxy} from 'pdfjs-dist/types/src/display/api';
 
@@ -12,6 +12,7 @@ type Progress={completed:number;total:number};
 const jobs=new Map<string,Job>();
 const cancelled=new Set<string>();
 const active=new Set<string>();
+const failedJobs=new Map<string,{job:Job;error:string}>();
 const progress=new Map<string,Progress>();
 const listeners=new Set<()=>void>();
 let preferredPage:string|null=null;
@@ -19,6 +20,7 @@ let running=0;
 const emit=()=>listeners.forEach(listener=>listener());
 export const subscribePdfProgress=(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener)}};
 export const getPdfProgress=(notebookId:string)=>progress.get(notebookId)??null;
+export const getPdfError=(notebookId:string)=>[...failedJobs.values()].find(item=>item.job.notebookId===notebookId)?.error??null;
 const yieldIdle=()=>new Promise<void>(resolve=>setTimeout(resolve,12));
 const documentCache=new Map<string,Promise<PDFDocumentProxy>>();
 async function getDocument(source:string){
@@ -29,7 +31,16 @@ async function getDocument(source:string){
    if(!url)throw Error('PDF kaynağı bulunamadı.');
    const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
    pdfjs.GlobalWorkerOptions.workerSrc='/pdfjs/pdf.worker.min.mjs';
-   return pdfjs.getDocument({url,cMapUrl:'/pdfjs/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdfjs/standard_fonts/',wasmUrl:'/pdfjs/wasm/',iccUrl:'/pdfjs/iccs/'}).promise;
+   const options={cMapUrl:'/pdfjs/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdfjs/standard_fonts/',wasmUrl:'/pdfjs/wasm/',iccUrl:'/pdfjs/iccs/'};
+   try{
+    return await pdfjs.getDocument({url,...options}).promise;
+   }catch(urlError){
+    // Tauri's asset protocol does not always support pdf.js range/stream requests.
+    // Fall back to one source read rather than leaving every page permanently white.
+    console.warn('[Notex PDF] Asset URL failed; using local PDF bytes',urlError);
+    const bytes=await readStoredFile(source);
+    return pdfjs.getDocument({data:bytes,...options}).promise;
+   }
   })();
   documentCache.set(source,promise);
   void promise.catch(()=>documentCache.delete(source));
@@ -89,7 +100,7 @@ async function process(job:Job){
    if(p){p.completed=Math.min(p.total,p.completed+1);emit()}
    assets.length=0;
   }
- }catch(error){console.error('[Notex PDF] Sayfa arka planı hazırlanamadı',job.id,error)}
+ }catch(error){console.error('[Notex PDF] Sayfa arka planı hazırlanamadı',job.id,error);failedJobs.set(job.id,{job,error:error instanceof Error?error.message:String(error)});emit()}
  finally{await Promise.allSettled(assets.map(path=>deleteStoredFile(path)))}
 }
 function pump(){
@@ -105,10 +116,11 @@ function pump(){
   })();
  }
 }
-export function prioritizePdfPage(pageId:string){preferredPage=pageId;pump()}
+export function prioritizePdfPage(pageId:string){preferredPage=pageId;const failed=failedJobs.get(pageId);if(failed){failedJobs.delete(pageId);jobs.set(pageId,failed.job)}pump()}
 export function cancelPdfNotebook(notebookId:string){
  cancelled.add(notebookId);
  for(const [id,job] of jobs)if(job.notebookId===notebookId)jobs.delete(id);
+ for(const [id,item] of failedJobs)if(item.job.notebookId===notebookId)failedJobs.delete(id);
  progress.delete(notebookId);emit();
 }
 export async function resumePdfNotebook(notebookId:string){
@@ -122,7 +134,7 @@ export async function resumePdfNotebook(notebookId:string){
   if(!content.pdfSource)continue;
   total++;
   if(content.backgroundImage){completed++;continue}
-  if(!jobs.has(row.id)&&!active.has(row.id))jobs.set(row.id,{id:row.id,notebookId,source:content.pdfSource.file,index:content.pdfSource.pageIndex,position:row.position});
+  if(!jobs.has(row.id)&&!active.has(row.id)&&!failedJobs.has(row.id))jobs.set(row.id,{id:row.id,notebookId,source:content.pdfSource.file,index:content.pdfSource.pageIndex,position:row.position});
  }
  if(total){progress.set(notebookId,{completed,total});emit()}
  pump();
