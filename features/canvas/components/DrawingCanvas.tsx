@@ -554,6 +554,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const frozenSelection=useRef<{key:string;elements:Element[];frame:ReturnType<typeof selectionFrame>}|null>(null);
  const moveBaselineRef=useRef(content);
  const movePendingRef=useRef<Element[]|null>(null);
+ const moveFrozenRef=useRef(false);
  const moveSelectionKeyRef=useRef('');
   const frozenContentElements=useRef(content.elements);
  if(!frozenSelection.current||frozenSelection.current.key!==selectionKey){
@@ -566,9 +567,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(frozenContentElements.current!==content.elements){
    frozenContentElements.current=content.elements;
    const pendingMove=movePendingRef.current;
-   if(pendingMove){
-    // Move persistence must never replace the frozen Skia geometry.
-    if(isSelectionHandoffCommitted(pendingMove,content.elements)){
+   if(moveFrozenRef.current){
+    // A move's persisted geometry and the selected overlay are independent.
+    // Keep the original paths even after persistence acknowledges the move.
+    if(pendingMove&&isSelectionHandoffCommitted(pendingMove,content.elements)){
      movePendingRef.current=null;
      moveBaselineRef.current=content;
     }
@@ -581,7 +583,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // transform. As soon as the exact final objects are in content, swap the
  // selected overlay to those same objects and remove the preview transform.
  const renderCommittedSelection=shouldUseCommittedSelectionGeometry(handoffIsCommitted,handoffMatchesSelection);
-  if(moveSelectionKeyRef.current!==selectionKey){moveSelectionKeyRef.current=selectionKey;moveBaselineRef.current=content;movePendingRef.current=null;}
+  if(moveSelectionKeyRef.current!==selectionKey){moveSelectionKeyRef.current=selectionKey;moveBaselineRef.current=content;movePendingRef.current=null;moveFrozenRef.current=false;}
   if(renderCommittedSelection)frozenSelection.current={key:selectionKey,elements:handoff!.elements,frame:{bounds:handoff!.bounds,rotation:handoff!.rotation}};
  const paintedElements=renderCommittedSelection?handoff!.elements:frozenSelection.current.elements;
  const paintedFrame=renderCommittedSelection?{bounds:handoff!.bounds,rotation:handoff!.rotation}:frozenSelection.current.frame;
@@ -700,6 +702,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(!ids.size)return;
   const baseline=moveBaselineRef.current;
   const next=baseline.elements.map(e=>ids.has(e.id)?moveElement(e,dx,dy):e);
+  moveFrozenRef.current=true;
   movePendingRef.current=next.filter(e=>ids.has(e.id));
   moveBaselineRef.current={...baseline,elements:next};
   trace('move_persist',{dx,dy});
