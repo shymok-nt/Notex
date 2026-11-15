@@ -1,4 +1,4 @@
-import {useCallback,useMemo,useRef,useSyncExternalStore} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useSyncExternalStore} from 'react';
 import {usePageStore} from '@/store/pageStore';
 import {parseContent,serializeContent} from '@/features/canvas/engine/content';
 import {flushPageSave,getPageSaveStatus,subscribePageSave} from '@/features/canvas/store/pagePersistence';
@@ -11,6 +11,8 @@ export function useCanvasPageContent(pageId:string,fallbackContent:string,onHist
  const serialized=usePageStore(s=>s.pages.find(page=>page.id===pageId)?.content??fallbackContent);
  const content=useMemo<PageContent>(()=>parseContent(serialized),[serialized]);
  const latest=useRef(content);
+ // Background PDF rasterization can update content without a local drawing action.
+ useEffect(()=>{latest.current=content},[content]);
  const drawing=useRef(false);
  const idleWaiters=useRef<Array<()=>void>>([]);
  const subscribe=useCallback((listener:()=>void)=>subscribePageSave(pageId,listener),[pageId]);
