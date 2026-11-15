@@ -1,6 +1,6 @@
 # Notex — Veri Mimarisi, Çizim ve Kalıcı Kayıt Rehberi
 
-> **15 Kasım 2026 (`main`, PR #43 sonrası) kaynak kodu kontrolü:** `db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretlenmiş fakat tabloları eksik kalmış kurulumları idempotent olarak onarır. Aşağıdaki kart açıklamasında yalnız sürüm 3'ün anılması tarihsel uygulama sırasını ifade eder. `NoteCanvasScreen.tsx` içindeki `onHistory` artık boş callback'tir; eski render teşhisi için [TESHIS.md](./TESHIS.md) dosyasının güncel notuna bakın.
+> **16 Kasım 2026 (`main`, `f8b7eaf` sonrası) kaynak kodu kontrolü:** `db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretlenmiş fakat tabloları eksik kalmış kurulumları idempotent olarak onarır. Aşağıdaki kart açıklamasında yalnız sürüm 3'ün anılması tarihsel uygulama sırasını ifade eder. `NoteCanvasScreen.tsx` içindeki `onHistory` artık boş callback'tir; eski render teşhisi için [TESHIS.md](./TESHIS.md) dosyasının güncel notuna bakın.
 
 ## Kartlar eklentisi (15 Kasım 2026)
 
@@ -463,3 +463,33 @@ PR #12 ile şu eski veya mükerrer kayıt yolu dosyaları kaldırıldı:
 `commitSelectionMove` ve `commitResize`, güncel `moveBaselineRef` içeriğini dönüştürür ve `onChange` ile ortak `useCanvasPageContent` → `pagePersistence` → SQLite yoluna gönderir. `moveFrozenRef`, hareket/ölçekleme commit'leri boyunca eski Skia temel geometrisinin korunmasını sağlar; `movePendingRef` kayıt edilen öğeleri izler. Seçim tutamacı hit-test'i birikmiş öteleme ve ölçeği dikkate alır. Döndürme ve diğer dönüşümler için mevcut `commitGesture`, `handoff` ve `selectionHandoff.ts` yardımcıları kullanılmaya devam eder.
 
 **Regresyon kontrolü:** art arda taşıma, art arda ölçekleme, taşıma→ölçekleme, ölçekleme→taşıma, metin kutusu çift tıklama, undo/redo ve seçim/araç değiştirme. Kullanıcı Windows'ta taşıma ve ölçekleme sıçramalarının düzeldiğini doğruladı; tüm bu kombinasyonların otomatik uçtan uca test edildiği iddia edilmez.
+
+## 16. Tembel PDF içe aktarma, SQLite uzlaştırma ve hata onarımı (16 Kasım 2026)
+
+### 16.1 Kaynak dosya ve sayfa modeli
+
+`utils/pdfImport.web.ts:preparePdfImport` Windows/Tauri'de PDF seçimini açar ve `utils/tauriFiles.ts:storePdfSource` ile orijinal dosyayı uygulama verisindeki `pdf-sources/` dizinine kopyalar. pdf.js sayfaların boyutlarını okur. İlk SQLite kaydında sayfa içeriği `PageContent v2` olup `elements:[]`, `images:[]`, `pdfSource:{file,pageIndex}`, `pdfPageLayout` ve `h` taşır; `backgroundImage` ve `thumbnailPath` başlangıçta bulunmayabilir. Sayfalar JPEG tamamlanmadan defter olarak açılır. Eski raster PDF/PNG sayfalarının `backgroundImage` alanı tek başına geçerlidir; onlara zorla `pdfSource` eklenmez.
+
+### 16.2 Arka plan oluşturma
+
+`utils/pdfRenderQueue.web.ts` içindeki `resumePdfNotebook`, SQLite'dan PDF kaynaklı sayfaları tarar; arka planı olmayanları `jobs` haritasına koyar. `prioritizePdfPage`, seçili sayfayı öne alır ve çevresindeki sayfalara yakınlık önceliği verir. `pump` en fazla iki eşzamanlı iş çalıştırır. `getDocument`, kaynak dosyanın varlığını kontrol eder, pdf.js URL erişimi başarısızsa veya 15 saniyeyi aşarsa `readStoredFile` üzerinden baytlardan yüklemeyi dener. `renderPdfPage` JPEG arka planı ve küçük resmi `page-assets/` dizinine yazar. Render için 30 saniyelik iptal ve iki tekrar denemesi uygulanır. `failedJobs`, hata mesajı ve yeniden deneme durumunu tutar; `releasePdfNotebook` belge önbelleğini kapatır.
+
+### 16.3 İçerik hidratasyonu ve eşzamanlılık
+
+`db/repositories/pageRepository.ts:getByNotebook` hafif sayfa satırlarını getirir. `store/pageStore.ts:hydrateAround` seçili sayfanın yaklaşık üç önce/üç sonraki komşusunu `getByIds` ile yükler. Eski taslak kurtarma işleminden sonra SQLite'yı yeniden okur; mağazaya yazarken daha yeni `thumbnailPath` değerini korur ve bir kez daha SQLite'dan arka plan bilgisini uzlaştırır. Bu yol, render ile hydrate'in yarışını azaltmak içindir.
+
+`pdfRenderQueue.complete`, önce `flushPageSave(pageId)` yapar; ardından SQLite transaction içinde mevcut `pages.content` içeriğini okuyup yalnızca aynı `pdfSource` ve `pdfPageLayout` bulunan, arka planı eksik sayfaya `backgroundImage` ve `thumbnail_path` ekler. Aktif mağaza sayfası `contentLoaded:false` ise küçük resim güncellenir; tam içerik hydrate ile gelir. Yüklenmiş sayfada arka plan mevcut çizimlerin üzerine eklenir. `DrawingCanvas` düzenleme sırasında `pdfSource` ve diğer içerik alanlarını korur.
+
+**Dikkat:** Bu mekanizma sayfa bazında tam bir mutex değildir. SQLite commit, mağaza uzlaştırması ve kullanıcı çiziminin bütün olası iç içe geçişleri için otomatik stres testi doğrulaması bulunmuyor. Mimariyi kesinlikle yarışsız diye belgeleme; yeni değişikliklerde eşzamanlı render + çizim + hydrate regresyonu uygula.
+
+### 16.4 Görünür durumlar ve onarım
+
+`NoteCanvasScreen.tsx` PDF arka planı eksik olduğunda `Sayfa hazırlanıyor…` ve ilerleme durumu gösterir; yükleme/render hatasında gerçek hata ve `Tekrar dene` sunar. `hydrateAround` hata verirse bir kez daha denenir. `DrawingCanvas.tsx` PDF arka plan görselinin okunamamasını normal eklenmiş görsel hatasından ayırır. `repairPdfBackground` eksik/bozuk arka planı SQLite içeriğinden temizleyerek sayfayı tekrar render kuyruğuna alır; çizim elemanlarını silmek için tasarlanmamıştır.
+
+**Açılış çökmesi düzeltmesi:** `NoteCanvasScreen.tsx` içinde `selectedId` bir effect'in bağımlılık dizisinde, `useState` tanımından önce okunuyordu. `f8b7eaf` commit'i effect'i tanımdan sonraya taşıdı; kullanıcı sorunun düzeldiğini bildirdi.
+
+### 16.5 Yedekleme, silme ve doğrulama
+
+`services/notexBackup.ts`, `.notex` biçim 2 arşivinde `pdfSource.file` referansını ve kaynak PDF dosyasını diğer sayfa varlıklarıyla birlikte taşır; geri yüklemede yollar yeniden eşlenmelidir. `notebookRepository` silme akışları PDF kaynak dosyalarını da hesaba katar. Önceden içe aktarılmış `backgroundImage` sayfalarının açılabilirliği korunmalıdır. Veritabanı şema sürümü hâlâ **4**; PDF tembel yükleme için yeni tablo/migrasyon eklenmemiştir.
+
+**Henüz kanıtlanmayanlar:** 200 sayfalık PDF'de uçtan uca süre/FPS, zaman aşımı ve iptalde kaynakların tamamının temizlenmesi, bozuk PDF'nin otomatik toparlanması, render/çizim eşzamanlılık stres testi, eski PNG yedekleri ve PDF kaynaklı `.notex` geri yüklemenin gerçek Windows/Tauri doğrulaması. Kod incelemesi, bu testlerin geçmiş olduğu anlamına gelmez.
