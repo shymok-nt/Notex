@@ -114,14 +114,18 @@ async function process(job:Job){
   const pdf=await getDocument(job.source);
   let rendered:Awaited<ReturnType<typeof renderPdfPage>>|undefined;
   for(let attempt=0;attempt<3;attempt++){
+   const controller=new AbortController();
+   let timer:ReturnType<typeof setTimeout>|undefined;
    try{
-    rendered=await deadline(renderPdfPage(pdf,job.index+1,assets),TIMEOUT_RENDER,'PDF sayfa render işlemi 30 saniyede tamamlanamadı');
+    timer=setTimeout(()=>controller.abort(),TIMEOUT_RENDER);
+    rendered=await deadline(renderPdfPage(pdf,job.index+1,assets,controller.signal),TIMEOUT_RENDER+1000,'PDF sayfa render işlemi 30 saniyede tamamlanamadı');
     break;
    }catch(error){
+    controller.abort();
     console.error('[Notex PDF] Sayfa render hatası',job.id,'deneme',attempt+1,error);
     if(attempt===2)throw error;
     await wait(300*(attempt+1));
-   }
+   }finally{if(timer)clearTimeout(timer)}
   }
   if(!rendered)throw new Error('PDF sayfası oluşturulamadı');
   const content=JSON.parse(rendered.content) as {backgroundImage:{uri:string}};
