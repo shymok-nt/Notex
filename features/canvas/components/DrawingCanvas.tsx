@@ -1477,6 +1477,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     <Path path={draft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
    </>}
  </Group>
+  {/* Text elements are not pixel-erasable. Paint them outside the clear-blend
+      ink layer so resizing or dragging the eraser cannot erase their glyphs. */}
+  {tool==='eraser'&&<Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts} kind="text"/>}
+  {tool==='eraser'&&handoffNeedsReleaseRender&&handoff!.elements.filter(element=>element.type==='text').map(element=><TextLayer key={element.id} element={element} fonts={textFonts}/>)}
   {tool==='select'&&paintedFrame&&<Group transform={selectionTransform}>
    <Rect x={paintedFrame.bounds[0]} y={paintedFrame.bounds[1]} width={paintedFrame.bounds[2]-paintedFrame.bounds[0]} height={paintedFrame.bounds[3]-paintedFrame.bounds[1]} color="#3388EE" opacity={0.035}/>
   {paintedElements.map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}
