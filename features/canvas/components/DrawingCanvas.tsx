@@ -659,8 +659,8 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    {translateY:committedDY.value+dragY.value+(applyPreview?gestureDY.value:0)},
   {translateX:paintedCenterX},
   {translateY:paintedCenterY},
-   {rotate:applyPreview?committedAngle.value+gestureAngle.value:0},
-   {scale:applyPreview?committedScale.value*gestureScale.value:1},
+   {rotate:committedAngle.value+(applyPreview?gestureAngle.value:0)},
+   {scale:committedScale.value*(applyPreview?gestureScale.value:1)},
   {translateX:-paintedCenterX},
   {translateY:-paintedCenterY}
    ];
@@ -706,6 +706,27 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   movePendingRef.current=next.filter(e=>ids.has(e.id));
   moveBaselineRef.current={...baseline,elements:next};
   trace('move_persist',{dx,dy});
+  onChange({...moveBaselineRef.current,h:Math.max(pageHeight,baseline.h??pageHeight)});
+ };
+ const commitResize=(scale:number,dx:number,dy:number)=>{
+  if(Math.abs(scale-1)<0.0001&&Math.abs(dx)+Math.abs(dy)<0.0001)return;
+  const ids=new Set(selectedRef.current);
+  if(!ids.size)return;
+  const baseline=moveBaselineRef.current;
+  const elements=baseline.elements.filter(e=>ids.has(e.id));
+  const frame=selectionFrame(elements);
+  if(!frame)return;
+  const cx=(frame.bounds[0]+frame.bounds[2])/2,cy=(frame.bounds[1]+frame.bounds[3])/2;
+  const next=baseline.elements.map(e=>{
+   if(!ids.has(e.id))return e;
+   let out=e;
+   if(Math.abs(scale-1)>0.0001)out=scaleElement(out,cx,cy,scale,scale);
+   if(Math.abs(dx)+Math.abs(dy)>0.0001)out=moveElement(out,dx,dy);
+   return out;
+  });
+  moveFrozenRef.current=true;
+  movePendingRef.current=next.filter(e=>ids.has(e.id));
+  moveBaselineRef.current={...baseline,elements:next};
   onChange({...moveBaselineRef.current,h:Math.max(pageHeight,baseline.h??pageHeight)});
  };
  const commitGesture=(dx:number,dy:number,scale:number,angle:number,generation:number)=>{
@@ -1127,7 +1148,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(tool==='select'&&selectionBoundsValue.value){
     if(renderCommittedSelection){committedScale.value=1;committedAngle.value=0;gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
    const p=pagePoint(e.x,e.y),raw=selectionBoundsValue.value;
-   const b:readonly [number,number,number,number]=[raw[0]+committedDX.value,raw[1]+committedDY.value,raw[2]+committedDX.value,raw[3]+committedDY.value];
+   const centerX=(raw[0]+raw[2])/2,centerY=(raw[1]+raw[3])/2;
+   const halfW=(raw[2]-raw[0])*committedScale.value/2,halfH=(raw[3]-raw[1])*committedScale.value/2;
+   const b:readonly [number,number,number,number]=[centerX-halfW+committedDX.value,centerY-halfH+committedDY.value,centerX+halfW+committedDX.value,centerY+halfH+committedDY.value];
    const cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;
    const cornerRadius=22/(fitWidth*zoom.value);
    const rotation=selectedRotationValue.value,cos=Math.cos(rotation),sin=Math.sin(rotation);
@@ -1277,9 +1300,13 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    const scale=gestureScale.value,angle=gestureAngle.value;
    if(__DEV__)runOnJS(trace)('gesture_end',{kind:'corner',scale,angle});
    const shouldCommit=!blocked.value&&(Math.abs(scale-1)>0.0001||Math.abs(angle)>0.0001);
-   if(shouldCommit)transformPending.value=true;
    cornerActive.value=false;cornerMode.value=0;
-   if(shouldCommit){
+   if(shouldCommit&&Math.abs(angle)<0.0001){
+    committedScale.value*=scale;
+    gestureScale.value=1;gestureAngle.value=0;
+    runOnJS(commitResize)(scale,0,0);
+   }else if(shouldCommit){
+    transformPending.value=true;
     runOnJS(commitGesture)(0,0,scale,angle,selectionGestureGeneration.value);
    }else {gestureScale.value=1;gestureAngle.value=0;selectionPreviewLive.value=false}
    runOnJS(notify)(false);return;
