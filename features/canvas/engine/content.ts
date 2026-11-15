@@ -11,6 +11,8 @@ export function parseContent(raw:string):PageContent{
  if(e.type==='text'){
   const safe={...e};
   if(safe.fontFamily!==undefined&&safe.fontFamily!=='Inter'&&safe.fontFamily!=='SpaceGrotesk')delete safe.fontFamily;
+  if(safe.italic!==undefined&&typeof safe.italic!=='boolean')delete safe.italic;
+  if(safe.underline!==undefined&&typeof safe.underline!=='boolean')delete safe.underline;
   if(safe.minHeight!==undefined&&(typeof safe.minHeight!=='number'||!Number.isFinite(safe.minHeight)||safe.minHeight<0||safe.minHeight>1000000))delete safe.minHeight;
   return safe;
  }

@@ -48,21 +48,9 @@ export function pixelErase(elements:Element[],path:P[],radius:number,wholeStroke
  let changed=false;
  const result:Element[]=[];
  for(const e of elements){
+  // Text is edited and deleted through the text/selection tools.
+  if(e.type==='text'){result.push(e);continue}
   if(!overlaps(e.bbox,eraserBox)){result.push(e);continue}
-  if(e.type==='text'){
-   const [left,top,right,bottom]=e.bbox;
-   const touches=(p:P)=>p[0]>=left-radius&&p[0]<=right+radius&&p[1]>=top-radius&&p[1]<=bottom+radius;
-   let hit=path.some(touches);
-   for(let i=1;!hit&&i<path.length;i++){
-    const a=path[i-1],b=path[i],steps=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/Math.max(1,radius)));
-    for(let j=1;j<=steps;j++)if(touches(lerp(a,b,j/steps))){hit=true;break}
-   }
-   if(!hit){result.push(e);continue}
-   changed=true;
-   if(wholeStroke)continue;
-   result.push({...e,erasures:[...(e.erasures??[]),{points:path.flatMap(p=>[p[0],p[1]]),radius}]});
-   continue;
-  }
   let source:StrokeElement;
   if(e.type==='shape'){
    if(e.fill||wholeStroke){

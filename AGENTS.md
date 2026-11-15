@@ -49,6 +49,7 @@ DrawingCanvas.onChange / metin / görsel / silgi
 - Silgi sonucu vektör elemanlarının kaldırılması/değiştirilmesidir. `features/canvas/engine/pixelEraser.ts` ve `DrawingCanvas.onChange` üzerinden **diğer editlerle aynı kayıt yoluna** girmeli.
 - Eski canvas props'larıyla gelen düzenlemeler silinen çizgileri yeniden oluşturmasın: `features/canvas/engine/reconcilePageEdit.ts` içindeki `reconcileById` davranışını koru ve değişiklikte ilgili testi güncelle.
 - Metin, şekil, görsel, kalem, silgi, seçim ve undo/redo işlemleri için aynı veri bütünlüğü kurallarını uygula.
+- Güncel silgi davranışında `pixelEraser.ts` metin öğelerini korur; metin silme düzenleme veya seçim eyleminden geçer. Metin biçimindeki isteğe bağlı `italic`/`underline` alanları eski `PageContent v2` kayıtlarını geçersiz kılmamalıdır.
 - Eski sayfa ve `.notex` yedek biçimlerine geriye uyumu koru. Geçersiz içeriği sessizce boşaltıp veritabanına geri yazma.
 
 ## 4. Sayfa CRUD ve yükleme

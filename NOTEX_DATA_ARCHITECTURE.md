@@ -234,6 +234,10 @@ Seçilen sayfa değiştiğinde `<CanvasPage key={selected.id}>` farklı sayfanı
 
 ## 8. Çizim, silgi, metin ve boş sayfa
 
+Lasso seçimi sonrasında küçük veya ince öğelerin taşınabilmesi için seçim merkezindeki dokunuş sürükleme olarak yorumlanır. Köşe tutamacı yalnızca merkezdeki sürükleme bölgesinin dışından yakalanır (`features/canvas/engine/selectionGestureTarget.ts`). Bu hit testi kayıt akışını değiştirmez; hareket sonucu yine `DrawingCanvas.onChange` üzerinden kaydedilir.
+
+Metin öğeleri hâlâ `PageContent v2.elements` içindedir; ayrı bir `textBoxes` deposu yoktur. Metin aracı tıklamayla varsayılan boyutta, sürüklemeyle seçilen boyutta kutu açar. `TextElement` içindeki isteğe bağlı `italic` ve `underline` alanları eski kayıtların okunmasını etkilemez. Yazma sırasında metin 500 ms sonra ortak kayıt yoluna aktarılır; düzenleme bitişi ve sayfa geçişi bekleyen değişikliği tamamlar. Güncel silgi motoru metin öğelerini korur; metin silme seçme veya düzenleme eylemiyle yapılır. Masaüstünde `T` ve `L` ilgili araçlara geçer; lasso seçimi için Shift+tıklama ile seçime ekleme/çıkarma, Ctrl+A/C/X/V/D ve Delete/Backspace kısayolları bulunur.
+
 ### 8.1 Vektör çizim
 
 `StrokeElement.points`, üçlü `[x,y,pressure]` verilerinin düzleştirilmiş dizisidir. Kalem bırakıldığında öğe `elements` listesine girer. Skia yalnızca bu vektör öğelerinin ve aktif çizim önizlemesinin çizimini yapar. Kaydedilecek değer **bitmap canvas görüntüsü değildir**.
