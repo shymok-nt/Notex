@@ -3,6 +3,7 @@ import {View,PixelRatio,Platform,TextInput,BackHandler,Keyboard,Animated,Text,Mo
 import {Canvas,Group,Path,Rect,Line,Circle,DashPathEffect,Image as SkiaImage,Skia,vec,Paragraph,TextAlign,TextDecoration,FontSlant} from '@shopify/react-native-skia';
 import {Gesture,GestureDetector,PointerType} from 'react-native-gesture-handler';
 import {useSettingsStore} from '@/store/settingsStore';
+import {readPointerBatch,type PointerBatch} from '@/features/canvas/engine/inputSample';
 import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
 import * as Crypto from 'expo-crypto';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
@@ -877,7 +878,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);window.removeEventListener('blur',blur);
    spacePan.value=false;handPanActive.value=false;
   };
- },[clamp,fitWidth,minZoom,originX,size.height,size.width]);
+ },[clamp,fitWidth,minZoom,originX,size.height,size.width,legacyDesktopInput]);
  const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(__DEV__&&!firstCanvasLayoutLogged.current){firstCanvasLayoutLogged.current=true;const dimensions={width:Math.round(width),height:Math.round(height)};requestAnimationFrame(()=>requestAnimationFrame(()=>console.log('[Notex perf] first_canvas_visible',{duration_ms:Math.round((perfNow()-canvasMountedAt.current)*10)/10,...dimensions})))}if(width===size.width&&height===size.height)return;setSize({width,height});if(!isTauriDesktop()){zoom.value=1;offsetX.value=0;offsetY.value=0;return;}const fit=Math.max(0.01,width/PAGE_WIDTH),pageH=Math.max(PAGE_HEIGHT,content.h??PAGE_HEIGHT,Math.ceil(height/fit)),z=zoom.value,limitX=Math.max(0,(PAGE_WIDTH*fit*z-width)/2),minY=Math.min(0,height-pageH*fit*z);offsetX.value=Math.max(-limitX,Math.min(limitX,offsetX.value));offsetY.value=Math.max(minY,Math.min(0,offsetY.value))};
  const pagePoint=(x:number,y:number):Sample=>{ 'worklet';return [(x-originX.value)/(fitWidth*zoom.value),(y-originY.value)/(fitWidth*zoom.value),0.5]};
  const imageProbeCenter=imageRenderProbe?pagePoint(size.width/2,size.height/2):null;
