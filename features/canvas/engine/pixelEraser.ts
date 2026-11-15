@@ -96,7 +96,7 @@ export function pixelErase(elements:Element[],path:P[],radius:number,wholeStroke
   if(current.length>1)chunks.push(current);
   for(let i=0;i<chunks.length;i++){
    const pts=chunks[i];if(pathLength(pts)<source.width*0.25)continue;
-   const newStroke:StrokeElement={...source,id:source.id+'-cut-'+i+'-'+Date.now(),points:pts.flatMap(p=>p.map(round)),bbox:bbox(pts,source.width/2)};
+   const newStroke:StrokeElement={...source,id:source.id+'-cut-'+i+'-'+Date.now(),points:pts.flatMap(p=>p.map(round)),aux:undefined,bbox:bbox(pts,source.width/2)};
    result.push(newStroke);
   }
  }
