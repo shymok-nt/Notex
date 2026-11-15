@@ -703,6 +703,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const baseline=moveBaselineRef.current;
   const next=baseline.elements.map(e=>ids.has(e.id)?moveElement(e,dx,dy):e);
   moveFrozenRef.current=true;
+  // Resize persistence uses the frozen layer, not an older transform handoff.
+  pendingHandoff.current=false;
+  setHandoff(null);
   movePendingRef.current=next.filter(e=>ids.has(e.id));
   moveBaselineRef.current={...baseline,elements:next};
   trace('move_persist',{dx,dy});
