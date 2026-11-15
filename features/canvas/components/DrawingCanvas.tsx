@@ -122,7 +122,10 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
 const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit,onStyleChange}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void;onStyleChange:(patch:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>)=>void}){
  const [value,setValue]=useState(item.text);
  const [typing,setTyping]=useState(true);
- const [preview,setPreview]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
+ const [preview,setPreviewState]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
+ const previewRef=useRef(preview);
+ const setPreview=(next:typeof preview)=>{previewRef.current=next;setPreviewState(next)};
+
  const valueRef=useRef(value);valueRef.current=value;
  const done=useRef(false);
  const commit=()=>{if(done.current)return;done.current=true;onCommit(valueRef.current)};
@@ -138,7 +141,7 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
   event.preventDefault?.();event.stopPropagation?.();
   const native=event.nativeEvent??event;
   dragRef.current={kind,handle,startX:native.clientX??0,startY:native.clientY??0,dx:0,dy:0};
-  (event.currentTarget as HTMLElement)?.setPointerCapture?.(native.pointerId);
+  if(typeof native.pointerId==='number')(event.currentTarget as HTMLElement)?.setPointerCapture?.(native.pointerId);
  };
  const move=(event:any)=>{
   const d=dragRef.current;if(!d)return;
@@ -168,12 +171,13 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
   event.stopPropagation?.();
   dragRef.current=null;
   const {item,scale,pageHeight,onMove,onResize,onGeometryCommit}=latest.current;
+  const finalPreview=previewRef.current;
   const factor=Math.max(0.01,scale);
   if(d.kind==='move'){
-   if(Math.abs(preview.dx)+Math.abs(preview.dy)>0.5){onMove(preview.dx,preview.dy,preview.height);onGeometryCommit();}
+   if(Math.abs(finalPreview.dx)+Math.abs(finalPreview.dy)>0.5){onMove(finalPreview.dx,finalPreview.dy,finalPreview.height);onGeometryCommit();}
   }else{
-   if(d.handle.includes('w')||d.handle.includes('n'))onMove(preview.dx,preview.dy,preview.height);
-   onResize(Math.max(40,preview.width/factor),Math.max(24,preview.height/factor),preview.height);
+   if(d.handle.includes('w')||d.handle.includes('n'))onMove(finalPreview.dx,finalPreview.dy,finalPreview.height);
+   onResize(Math.max(40,finalPreview.width/factor),Math.max(24,finalPreview.height/factor),finalPreview.height);
    onGeometryCommit();
   }
  };
@@ -190,7 +194,7 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
    {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Yazı rengi '+color} onPress={()=>onStyleChange({color})} style={{width:16,height:16,borderRadius:8,backgroundColor:color,borderWidth:1,borderColor:'#DDD'}}/>)}
   </View>
   <TextInput multiline autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',wordBreak:'break-word',boxSizing:'border-box'} as any}/>
-  <View onPointerDown={(e:any)=>begin('move','move',e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',left:0,top:-13,right:0,height:12,cursor:'grab',touchAction:'none',backgroundColor:'#496AE844'} as any}/>
+  <View onPointerDown={(e:any)=>begin('move','move',e)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} style={{position:'absolute',left:0,top:-20,right:0,height:19,cursor:'grab',touchAction:'none',backgroundColor:'#496AE844'} as any}/>
   {handles.map(handle=><View key={handle} onPointerDown={(e:any)=>begin('resize',handle,e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',width:12,height:12,borderRadius:2,borderWidth:1,borderColor:'#FFFFFF',backgroundColor:'#496AE8',touchAction:'none',zIndex:20,...positions[handle]} as any}/>)}
  </View>;
 });
