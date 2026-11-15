@@ -45,7 +45,7 @@ DrawingCanvas.onChange / metin / görsel / silgi
 
 - **Boş string `""`, boş dizi `[]`, `0` ve `false` geçerli değerlerdir.** Bunları `if(content)`, `content || old` gibi truthy kontrolleriyle düşürme. Gerekirse `!== undefined` veya `??` kullan; `null` ile kayıt yokluğunu açıkça ayır.
 - Normal boş sayfa `{"v":2,"elements":[]}` olabilir. Tam silme, **değişiklik** sayılır ve kaydedilir; eski `elements` dizisini fallback ile geri getirme.
-- Sayfa içeriği mevcut `PageContent v2` formatındadır: `elements` (stroke/shape/text), isteğe bağlı `images`, `backgroundImage` ve `h`. Ayrı bir `strokes` şeması getirip eski verileri düşürme.
+- Sayfa içeriği mevcut `PageContent v2` formatındadır: `elements` (stroke/shape/text), isteğe bağlı `images`, `backgroundImage`, `pdfSource`, `pdfPageLayout` ve `h`. Ayrı bir `strokes` şeması getirip eski verileri düşürme.
 - Silgi sonucu vektör elemanlarının kaldırılması/değiştirilmesidir. `features/canvas/engine/pixelEraser.ts` ve `DrawingCanvas.onChange` üzerinden **diğer editlerle aynı kayıt yoluna** girmeli.
 - Eski canvas props'larıyla gelen düzenlemeler silinen çizgileri yeniden oluşturmasın: `features/canvas/engine/reconcilePageEdit.ts` içindeki `reconcileById` davranışını koru ve değişiklikte ilgili testi güncelle.
 - Metin, şekil, görsel, kalem, silgi, seçim ve undo/redo işlemleri için aynı veri bütünlüğü kurallarını uygula.
@@ -116,3 +116,14 @@ Test **çalıştırılmadıysa** çalıştırılmış gibi raporlama. GitHub Act
 - Kartlar ayarlardan açılan, defter ve sayfa kayıt akışından bağımsız bir bölümdür. Kalıcı verisi SQLite `card_decks`, `cards`, `card_reviews` tablolarındadır; ikinci bir not deposu değildir.
 - Kaynak defter silinince kart korunur ve `source_note_id` boşaltılır. Kart cevabı ve tekrar kaydı tek transaction içinde yazılır.
 - `.notex` yedek biçimi 2, kartları ve çalışma geçmişini kapsar; biçim 1 yedekleri de açılmalıdır. Yeni migrasyon eklerken sürümü artır ve mevcut tabloları koru.
+
+## 9. Güncel PDF defteri koruma kuralları (16 Kasım 2026)
+
+- **Tembel içe aktarma:** `utils/pdfImport.web.ts` PDF kaynak dosyasını `pdf-sources/` altına kopyalar ve önce yalnızca `pdfSource` / `pdfPageLayout` metaverisini oluşturur. PDF'yi açmadan önce bütün sayfaları rasterize eden eski yolu geri getirme.
+- **Arka plan kuyruğu:** `utils/pdfRenderQueue.web.ts` en fazla iki eşzamanlı sayfa işler; seçili sayfa önceliklidir. `complete`, SQLite'daki mevcut içeriği transaction içinde birleştirir. Çizimleri, metni, görselleri veya PDF kaynak bilgisini sıfırlama. `DrawingCanvas` içerik üretirken mevcut `PageContent` metaverisini korumalıdır.
+- **Hafif yükleme:** `pageRepository.getByNotebook` yalnızca hafif satırları getirir ve `contentLoaded:false` kullanır; `pageStore.hydrateAround` seçili sayfa çevresinin tam içeriğini getirir. Tam içeriği yüklenmemiş sayfada düzenlemeyi doğrudan kayda gönderme. Arka plan üretimi ile hydrate aynı anda biterse yeni `thumbnailPath` ve `backgroundImage` korunmalıdır.
+- **Hata yönetimi:** `pdfSource` mevcut fakat arka plan eksikse hazırlanma durumu göster; kaynak/render hatasında tam hata ve yeniden deneme sun. URL okuma için 15 sn, render için 30 sn sınırı ve iki yeniden deneme kodda tanımlıdır. Eksik JPEG için `repairPdfBackground` yeniden kuyruğa alma yoludur. Hata mesajlarını `[Notex PDF]` önekiyle kaydet.
+- **Kaynak yaşam döngüsü:** PDF kaynak dosyaları ve oluşturulan JPEG'ler silme ve `.notex` yedekleme/geri yüklemede hesaba katılmalı. `releasePdfNotebook` belge önbelleğini kapatma yoludur. Kaynak PDF'yi kullanıcı verisi olarak koru; silinen bir arka plan görseli ile asıl PDF dosyasını karıştırma.
+- **React başlatma sırası:** `useEffect` / `useMemo` / `useCallback` bağımlılık dizilerinde kullanılan `const` / `let` değişkenleri ilgili hook'tan önce tanımlanmış olmalı. Özellikle `NoteCanvasScreen.tsx` içinde `selectedId` tanımını PDF önceliklendirme effect'inin altına taşıma; bu düzen `f8b7eaf` ile açılış çökmesini düzeltti.
+- **Geriye uyumluluk:** Eski `backgroundImage` içeren PNG defterler `pdfSource` gerektirmeden açılmalı. Kalem, silgi, undo/redo, sayfa geçişi ve yedekleme davranışını PDF performansı için değiştirme.
+- **Regresyon:** Büyük PDF açma, ilk sayfanın hazırlanması, hızlı sayfa geçişi, aynı sayfada çizim + arka plan commit'i, eksik kaynak, bozuk/kayıp JPEG, hata sonrası tekrar deneme, kapatıp açma ve `.notex` geri yükleme senaryolarını gerçek Windows/Tauri uygulamasında test et. Bunların tamamının geçtiği henüz belgelenmiş değildir.
