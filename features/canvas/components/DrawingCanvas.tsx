@@ -144,6 +144,7 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
   const host=editorHostRef.current as HTMLElement|null;
   const textarea=host?.querySelector?.('textarea') as HTMLTextAreaElement|null;
   if(!textarea)return;
+  textarea.style.height='0px';
   const needed=Math.ceil(textarea.scrollHeight+2);
   if(Number.isFinite(needed)&&needed>0){
    textarea.style.height=needed+'px';
