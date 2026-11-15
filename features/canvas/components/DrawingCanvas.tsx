@@ -1386,12 +1386,16 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     const dx=gestureDX.value,dy=gestureDY.value,scale=gestureScale.value,angle=gestureAngle.value;
     if(__DEV__)runOnJS(trace)('gesture_end',{kind:'pinch',dx,dy,scale,angle});
     const shouldCommit=Math.abs(dx)+Math.abs(dy)+Math.abs(scale-1)+Math.abs(angle)>0.0001;
-    if(shouldCommit)transformPending.value=true;
     transformActive.value=false;
-    if(shouldCommit){
+    if(shouldCommit&&Math.abs(angle)<0.0001){
+     committedDX.value+=dx;committedDY.value+=dy;
+     committedScale.value*=scale;
+     gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0;
+     runOnJS(commitResize)(scale,dx,dy);
+    }else if(shouldCommit){
+     transformPending.value=true;
      runOnJS(commitGesture)(dx,dy,scale,angle,selectionGestureGeneration.value);
-    }
-    else {gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
+    }else {gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
     runOnJS(notify)(false);
    }
    return;
