@@ -10,7 +10,7 @@ Notex, **yerel çalışan, el yazısı odaklı bir defter/not uygulamasıdır**.
 - **Arayüz durumu:** Zustand.
 - **Çizim:** React Native Skia, Gesture Handler, Reanimated; vektör kalem/şekil/metin verileri.
 - **Kalıcı veri:** Yerel SQLite (`expo-sqlite` / Windows Tauri SQLite köprüsü); **ikinci bir kalıcı not deposu oluşturma**.
-- **Platformlar:** Windows/Tauri, Android, iOS ve web. Platforma özgü API'leri diğerlerinde çalışıyormuş gibi kullanma.
+- **Aktif ürün hedefi:** Windows/Tauri masaüstü. Expo Router ve React Native Web masaüstü arayüzünün altyapısıdır; Android/iOS'u güncel desteklenen ürün hedefi gibi belgeleme. Platforma özgü API'leri başka platformlarda çalışıyormuş gibi kullanma.
 - **Dil:** Kullanıcıya görünen metinler Türkçe; stylus ve parmak kullanımını gözet.
 
 ## 2. Çalışan kayıt mimarisi — BOZMA
@@ -75,6 +75,7 @@ DrawingCanvas.onChange / metin / görsel / silgi
 - Çizim sırasında React state üzerinden ağır iş, SQL veya dosya kopyalama çalıştırma. Aktif UI-thread çizimi, tamamlanmış çizginin JS tarafına aktarımı ve kaydedilmiş vektör verisi ayrı sorumluluklardır.
 - Kalem, stylus basıncı, silgi, metin kutusu, görsel yerleşimi, sayfa şablonları, selection handoff ve undo/redo'nun çalışmasını koru.
 - Önce çalışan davranışı anlamadan `DrawingCanvas.tsx` içindeki gesture, handoff ve render sırasını “sadeleştirme”.
+- **Lasso taşıma/ölçekleme:** `frozenSelection` çizilen geometriyi sabit tutar; `committedDX/committedDY` ve `committedScale` gesture sonunda UI thread'de birikir. `commitSelectionMove`/`commitResize` sadece güncel `moveBaselineRef` üzerinden içeriği kalıcılaştırır; taşıma/ölçekleme kayıt onayıyla seçim geometrisini değiştirip shared transform'u sıfırlama. Hit-test, birikmiş konum ve ölçeği izlemeli. Döndürme ve diğer handoff davranışlarını ayrı koru (PR #42 ve #43).
 - Bir performans değişikliğini veri bütünlüğü kontrolünü kaldırarak yapma.
 
 ## 7. Zorunlu doğrulama
@@ -91,7 +92,8 @@ Kayıt sistemini etkileyen değişiklikler için özellikle:
 - `pagePersistence.test.mjs`: boş içerik, 500 ms debounce, sıralı flush, SQLite hata durumu.
 - `pageStorePersistence.test.mjs`: ekleme, içeriği tamamen silme, başka sayfaya/deftere gidip geri gelme, kalıcı silme, gereksiz reload olmaması.
 - `npm run tauri:dev` ile manuel Windows testi: hızlı kalem/silgi → sayfa değişimi → geri dönüş → uygulamayı kapatıp açma.
-- Görsel/PDF/yedek veya Android/web etkisi varsa ilgili platform testleri.
+- Görsel/PDF/yedek veya platform uyumluluğu etkisi varsa ilgili platform testleri.
+- Lasso değişikliklerinde Windows'ta art arda taşıma, büyütme/küçültme, taşıma→ölçekleme, ölçekleme→taşıma, metin kutusu çift tıklama ve undo/redo regresyonlarını denetle.
 
 Test **çalıştırılmadıysa** çalıştırılmış gibi raporlama. GitHub Actions testlerinin geçmesi gerçek Tauri kalem/silgi UI testinin yerine geçmez.
 
