@@ -11,5 +11,5 @@ export type ShapeElement={id:string;type:'shape';z:number;createdAt:string;kind:
 export type TextElement={id:string;type:'text';z:number;createdAt:string;x:number;y:number;w:number;text:string;fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right';fontFamily?:TextFontFamily;minHeight?:number;erasures?:{points:number[];radius:number}[];bbox:Bounds};
 export type Element=StrokeElement|ShapeElement|TextElement;
 export type PageImage={id:string;uri:string;x:number;y:number;width:number;height:number;rotation?:number};
-export type PageContent={v:2;elements:Element[];textBoxes?:import('./engine/textBoxModel').TextBox[];images?:PageImage[];backgroundImage?:PageImage;h?:number};
+export type PageContent={v:2;elements:Element[];pdfSource?:{file:string;pageIndex:number};pdfPageLayout?:{x:number;y:number;width:number;height:number;pageHeight:number};textBoxes?:import('./engine/textBoxModel').TextBox[];images?:PageImage[];backgroundImage?:PageImage;h?:number};
 export const emptyContent=():PageContent=>({v:2,elements:[]});
