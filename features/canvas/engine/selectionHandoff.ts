@@ -17,7 +17,14 @@ export function isSelectionHandoffCommitted<T extends Identified>(
  const byId=new Map(contentElements.map(element=>[element.id,element]));
  return handoffElements.every(element=>{
   const stored=byId.get(element.id);
-  return !!stored&&(stored===element||stableValue(stored)===stableValue(element));
+  if(!stored)return false;
+  if(stored===element)return true;
+  const normalize=(item:Identified)=>{
+   const value=item as Identified&{type?:string;bbox?:number[];minHeight?:number;fontFamily?:string;italic?:boolean;underline?:boolean};
+   if(value.type!=='text')return value;
+   return {...value,fontFamily:value.fontFamily??'Inter',italic:value.italic??false,underline:value.underline??false,minHeight:value.bbox?Math.max(24,value.bbox[3]-value.bbox[1]):value.minHeight};
+  };
+  return stableValue(normalize(stored))===stableValue(normalize(element));
  });
 }
 
