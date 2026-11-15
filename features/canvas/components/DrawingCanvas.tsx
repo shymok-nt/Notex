@@ -582,7 +582,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   // Before the page commit, keep the frozen source paths under the live
  // transform. As soon as the exact final objects are in content, swap the
  // selected overlay to those same objects and remove the preview transform.
- const renderCommittedSelection=shouldUseCommittedSelectionGeometry(handoffIsCommitted,handoffMatchesSelection);
+ const renderCommittedSelection=!moveFrozenRef.current&&shouldUseCommittedSelectionGeometry(handoffIsCommitted,handoffMatchesSelection);
   if(moveSelectionKeyRef.current!==selectionKey){moveSelectionKeyRef.current=selectionKey;moveBaselineRef.current=content;movePendingRef.current=null;moveFrozenRef.current=false;}
   if(renderCommittedSelection)frozenSelection.current={key:selectionKey,elements:handoff!.elements,frame:{bounds:handoff!.bounds,rotation:handoff!.rotation}};
  const paintedElements=renderCommittedSelection?handoff!.elements:frozenSelection.current.elements;
@@ -635,7 +635,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const selectionPaddingValue=useSharedValue(0);
  useEffect(()=>{selectionPaddingValue.value=selectionPadding;},[selectionPadding]);
  const selectedRotationValue=useSharedValue(0);
- useEffect(()=>{selectedRotationValue.value=selectedRotation;},[selectedRotation]);
+ useEffect(()=>{selectedRotationValue.value=paintedFrame?.rotation??0;},[paintedFrame?.rotation]);
  // As soon as persisted geometry arrives, the handoff draws that geometry
  // instead of re-projecting the old path. This prevents stale-size flashes.
  // The handoff always contains the FINAL geometry, never an old path.
@@ -645,7 +645,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // The frame and shape share exactly one live Group transform.
  // Avoid double-scaling the frame on the first gesture.
  const selectionBoundsValue=useSharedValue<readonly [number,number,number,number]|null>(null);
- useEffect(()=>{selectionBoundsValue.value=selectedBounds;},[selectedBounds]);
+ useEffect(()=>{selectionBoundsValue.value=paintedFrame?.bounds??null;},[paintedFrame?.bounds]);
  const dragTransform=useDerivedValue(()=>[{translateX:dragX.value},{translateY:dragY.value}]);
  // A fixed-length transform keeps Skia's animated property binding intact
  // for the first and every subsequent gesture.
