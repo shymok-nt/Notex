@@ -1,6 +1,6 @@
 # Notex çizim ekranı — kaynak kod teşhisi
 
-> **15 Kasım 2026 güncellemesi:** Bu belge tarihsel bir statik performans teşhisidir. Güncel `NoteCanvasScreen.tsx` içinde `onHistory={()=>{}}` kullanılır; aşağıdaki `setHistoryVersion` render zinciri artık geçerli değildir. Sayfa sarmalayıcısında `marginHorizontal`, `marginTop`, `marginBottom` ve `borderRadius` artık `0`'dır; aşağıdaki kenar/gölge teşhisi eski sürüme aittir. Kayıt gecikmesi `pagePersistence.ts` içinde 500 ms'dir. Güncel performans sonucu için cihaz ölçümü gerekir.
+> **15 Kasım 2026 (`main`, PR #43 sonrası) güncellemesi:** Bu belge tarihsel bir statik performans teşhisidir. Güncel `NoteCanvasScreen.tsx` içinde `onHistory={()=>{}}` kullanılır; aşağıdaki `setHistoryVersion` render zinciri artık geçerli değildir. Sayfa sarmalayıcısında `marginHorizontal`, `marginTop`, `marginBottom` ve `borderRadius` artık `0`'dır; aşağıdaki kenar/gölge teşhisi eski sürüme aittir. Kayıt gecikmesi `pagePersistence.ts` içinde 500 ms'dir. Güncel performans sonucu için cihaz ölçümü gerekir.
 
 > İnceleme: kaynak kod üzerinden statik teşhis. Gerçek cihaz React Profiler ve Skia frame ölçümü henüz yapılmadı. Bu belge çalışma zamanı ölçümü yapılmış gibi değerlendirilmemelidir.
 
@@ -8,7 +8,7 @@
 
 1. `DrawingCanvas.endStroke` → `onChange({v:2,elements:[...content.elements,stroke]})`.
 2. `CanvasPage.change` → `record(page.id,content)`, `setContent(next)`, `onHistory()`, `onDrawStart()`.
-3. `onHistory` üst `NoteCanvasScreen` içinde `setHistoryVersion` çağırıyor: üst ekran tekrar render olur.
+3. **Tarihsel gözlem:** Eski sürümde `onHistory` üst ekranda `setHistoryVersion` çağırıyordu. Güncel `NoteCanvasScreen.tsx` içinde `onHistory={()=>{}}` kullanıldığından bu render tetikleyicisi artık yok.
 4. `onDrawStart` üst ekranda `setPanel(null)` çağırıyor (zaten null ise React bail-out yapabilir).
 5. `CanvasPage` yeni `content` ile render olur; `Completed` içerik değiştiği için yeniden render olur; `content.elements.map` her çizgide tekrar yürütülür. `StrokeLayer` memo ve `cachedPath` mevcut çizgilerin geometri üretimini azaltır, ancak tüm çizim Skia scene graph içinde vektör olarak kalır.
 6. `CanvasPage` içindeki `useEffect([content,error,saving])` → `onController(controller)` üst ekrandaki controller state'ini günceller; kaydetme durumunda da üst ekran tekrar render olabilir.
@@ -33,7 +33,7 @@
 
 ## Sayfa teşhisi
 
-Dış sarmalayıcıda `marginHorizontal:12`, `marginTop:12`, telefonda `marginBottom:100`, `shadowOpacity`, `shadowRadius`, `elevation`, `borderRadius:6` var. `DrawingCanvas` fitWidth hesabında da 4px pay bulunuyor.
+**Tarihsel durum:** Eski sürümde dış sarmalayıcıda `marginHorizontal:12`, `marginTop:12`, telefonda `marginBottom:100`, gölge/elevation ve `borderRadius:6` bulunuyordu. 15 Kasım 2026 itibarıyla sayfa sarmalayıcısının margin ve borderRadius değerleri 0 olarak güncellendi; eski kenar/gölge teşhisi güncel sorun olarak yorumlanmamalı.
 
 ## Gerçek cihazda doğrulanacaklar
 
@@ -46,3 +46,9 @@ Dış sarmalayıcıda `marginHorizontal:12`, `marginTop:12`, telefonda `marginBo
 ## Hedef mimari
 
 Kağıt şablonu sabit bir SkPicture; kalem ve vurgulayıcı için ayrı, sayfa/zoom bölgesi meta verili SkSurface önbellekleri; aktif stroke UI-thread; çizgi bitişinde aynı geometri ve paint ile yüzeye ekleme ve tek karede draft temizleme; silgi sırasında iki yüzeyde Clear; undo/redo ve zoom sonrası eski bitmap'i tutarak atomik yüzey takası. Bu mimari bu teşhis dokümanıyla **uygulanmış sayılmaz**.
+
+## 15 Kasım 2026 — Lasso bırakma sıçraması (güncel sonuç)
+
+Taşıma ve büyütme/küçültme sıçramaları önceki sürümde, React/Skia üzerinden güncellenen seçili geometri ile Reanimated shared transform'un farklı anlarda yenilenebilmesiyle ilişkiliydi. PR #42 ve #43 ile `DrawingCanvas.tsx` taşıma/ölçekleme yolu güncellendi: `frozenSelection` çizilen temel geometriyi korur; `committedDX/committedDY` ve `committedScale` bırakma worklet'inde biriktirilir; `commitSelectionMove`/`commitResize` kalıcı `PageContent` güncellemesini görüntüden ayrı yapar. Hit-test, birikmiş kaydırma ve ölçeği hesaba katar. Döndürme yolu mevcut `commitGesture`/handoff yapısını korur.
+
+**Saha sonucu:** Kullanıcı Windows/Tauri'de önce taşımanın, ardından büyütme/küçültmenin düzeldiğini bildirdi. Bu, gerçek cihazda gözlenen sonuçtur; Skia kare düzeyinde ölçüm veya diğer platformlar için kapsamlı doğrulama değildir. Eski `setHistoryVersion`, sayfa gölgesi ve render zinciri hipotezleri tarihsel inceleme olarak saklanmıştır; güncel davranışı açıklamak için yukarıdaki kod akışını esas alın.
