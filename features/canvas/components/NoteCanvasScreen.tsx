@@ -49,6 +49,7 @@ export default function NoteCanvasScreen(){
  const [pdfPreparation,setPdfPreparation]=useState<{completed:number;total:number}|null>(null);
  const [pdfRenderError,setPdfRenderError]=useState<string|null>(null);
  const [pageLoadError,setPageLoadError]=useState<string|null>(null);
+ const [selectedPdfError,setSelectedPdfError]=useState<string|null>(null);
  const [pageRetryVersion,setPageRetryVersion]=useState(0);
  const [pdfErrorDetails,setPdfErrorDetails]=useState(false);
  useEffect(()=>{
@@ -56,7 +57,7 @@ export default function NoteCanvasScreen(){
   let active=true;let unsubscribe:(()=>void)|undefined;
   void import('@/utils/pdfRenderQueue.web').then(queue=>{
    if(!active)return;
-   const update=()=>{setPdfPreparation(queue.getPdfProgress(id));setPdfRenderError(queue.getPdfError(id))};
+   const update=()=>{setPdfPreparation(queue.getPdfProgress(id));setPdfRenderError(queue.getPdfError(id));setSelectedPdfError(selectedId?queue.getPdfPageError(selectedId):null)};
    unsubscribe=queue.subscribePdfProgress(update);update();
    return queue.resumePdfNotebook(id);
   }).catch(error=>console.error('[Notex PDF] Kuyruk devam ettirilemedi',error));
@@ -64,7 +65,7 @@ export default function NoteCanvasScreen(){
  },[id]);
  useEffect(()=>{
   if(!selectedId||!isTauriDesktop())return;
-  void import('@/utils/pdfRenderQueue.web').then(queue=>queue.prioritizePdfPage(selectedId)).catch(()=>{});
+  void import('@/utils/pdfRenderQueue.web').then(queue=>{setSelectedPdfError(queue.getPdfPageError(selectedId));queue.prioritizePdfPage(selectedId)}).catch(()=>{});
  },[selectedId]);
  const [multiSelect,setMultiSelect]=useState(false),[selectedPageIds,setSelectedPageIds]=useState<string[]>([]),[pendingDelete,setPendingDelete]=useState<Page[]|null>(null);
  const deleteTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -359,7 +360,7 @@ export default function NoteCanvasScreen(){
   {selected&&selected.contentLoaded!==false?<CanvasPage key={selected.id} page={selected} tool={tool} brush={brush} eraserSize={eraserSize} eraserMode={eraserMode} onController={setController} onHistory={()=>{}} onDrawStart={()=>setPanel(null)} onStrokeComplete={recordStroke} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={setSelectedElements} onSelectionClipboardChange={setInkClipboardAvailable} onSelectionActionComplete={version=>setSelectionAction(current=>current?.version===version?undefined:current)} onTextSelectionChange={setSelectedText} selectionAction={selectionAction} imageRequest={imageRequest} onImageRequestConsumed={version=>setImageRequest(current=>current?.version===version?null:current)} imageAction={imageAction} onImageSelectionChange={setSelectedImageId} onImageLoadError={message=>Alert.alert('Görsel yüklenemedi',message)}/>:<Text style={{color:ink}}>{selected?.contentLoaded===false?'Sayfa yükleniyor…':pagesReady?'Sayfa bulunamadı':'Sayfalar yükleniyor…'}</Text>}
   {selected&&selected.contentLoaded===false&&pageLoadError&&<View style={{position:'absolute',top:'35%',alignSelf:'center',padding:16,backgroundColor:colors.surfaceRaised,borderRadius:12,maxWidth:'90%',gap:10}}><Text style={{color:ink}}>Sayfa yüklenemedi</Text><Text selectable style={{color:colors.coral}}>{pageLoadError}</Text><Pressable onPress={retryPdfPage}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable></View>}
   {pdfPending&&<View pointerEvents="box-none" style={{position:'absolute',top:18,alignSelf:'center',alignItems:'center',gap:6,padding:10,backgroundColor:colors.surfaceRaised,borderRadius:10,maxWidth:'90%'}}>
-   {pdfRenderError?<><Text style={{color:colors.coral}}>Bu sayfa hazırlanamadı</Text><Text selectable style={{color:colors.coral}}>{pdfRenderError}</Text><Pressable onPress={retryPdfPage}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable></>:<><ActivityIndicator size="small" color={colors.accent}/><Text style={{color:ink}}>Sayfa hazırlanıyor…</Text></>}
+   {selectedPdfError?<><Text style={{color:colors.coral}}>Bu sayfa hazırlanamadı</Text><Text selectable style={{color:colors.coral}}>{selectedPdfError}</Text><Pressable onPress={retryPdfPage}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable></>:<><ActivityIndicator size="small" color={colors.accent}/><Text style={{color:ink}}>Sayfa hazırlanıyor…</Text></>}
   </View>}
  </View>
  {isPdfNotebook&&pagesReady&&pages.length>1&&<View style={{position:'absolute',right:16,top:'36%',gap:9,zIndex:12,alignItems:'center'}}>
