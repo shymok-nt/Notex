@@ -8,6 +8,7 @@ import * as Crypto from 'expo-crypto';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
 import {makeStroke,strokePath,strokePathString,cacheFinalizedStrokePath} from '@/features/canvas/engine/geometry';
 import {defaultBrush,pressureValue} from '@/features/canvas/engine/penEngineV2';
+import {ribbonPath} from '@/features/canvas/engine/pressureRibbon';
 import {appendPolylinePoint,centerlinePathString} from '@/features/canvas/engine/centerlinePath';
 import {appendSample,emptySampleBuffer,flattenSamples,normalizeStylusPressure,sampleBufferAt,sampleBufferFromPoint,type Sample,type SampleBuffer} from '@/features/canvas/engine/sampleBuffer';
 import {interruptedStrokeAction,isCurrentStrokeCommit} from '@/features/canvas/engine/strokeInterruption';
@@ -987,11 +988,11 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     // Snapshot brush parameters per stroke; never reinterpret saved legacy strokes.
     const brushId=tool==='highlighter'?'highlighter':'fountain';
     stroke.brushId=brushId;
-    stroke.brush={...defaultBrush(brushId),size:brush.width,opacity:brush.opacity};
-    stroke.aux=points.flatMap(()=>[0,0,0]);
+    stroke.brush={...defaultBrush(brushId),size:brush.width,opacity:brush.opacity,pressurePreset,stabilization};
+    // Native gesture events do not expose per-point timestamps in this buffer yet.
     // Keep raw rendering until the shared live/committed renderer is active.
     // This avoids the historical pressure-outline jump on pen lift.
-    stroke.renderMode='raw';
+    stroke.renderMode=tool==='pen'&&pressureEnabled?'brush-v2':'raw';
    }
   const finalizedSvg=strokePathString(stroke);cacheFinalizedStrokePath(stroke,finalizedSvg);
   if(isCurrentStrokeCommit(handoffGeneration.value,commitGeneration)){handoffDraft.value=finalizedSvg;handoffColor.value=stroke.color;handoffOpacity.value=stroke.opacity;handoffWidth.value=stroke.width;handoffTool.value=stroke.tool;handoffIsOutline.value=stroke.renderMode==='outline'}
@@ -1207,7 +1208,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   }
   const start=pagePoint(e.x,e.y);
   if(!Number.isFinite(start[0])||!Number.isFinite(start[1])){samples.value=emptySampleBuffer();drawing.value=false;draft.value='';return;}
-  samples.value=sampleBufferFromPoint(start);drawing.value=false;draft.value=centerlinePathString([start]);draftIsOutline.value=false;
+  samples.value=sampleBufferFromPoint(start);drawing.value=false;draftIsOutline.value=tool==='pen'&&pressureEnabled;draft.value=draftIsOutline.value?ribbonPath([start],brush.width,.3,1,pressurePreset):centerlinePathString([start]);
   if(tool==='eraser'){
     const q=sampleBufferAt(samples.value,0);
     draft.value='M'+q[0]+' '+q[1]+' L'+(q[0]+0.01)+' '+q[1];
@@ -1295,7 +1296,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     draft.value=previewShape(shapeKind,x0,y0,x1,y1);
     return;
   }
-  draft.value=startingDrawing?centerlinePathString(flattenSamples(samples.value)):appendPolylinePoint(draft.value,p);
+  draft.value=draftIsOutline.value?ribbonPath(flattenSamples(samples.value),brush.width,.3,1,pressurePreset):(startingDrawing?centerlinePathString(flattenSamples(samples.value)):appendPolylinePoint(draft.value,p));
   if(tool==='eraser'){cursorX.value=p[0];cursorY.value=p[1];cursorOn.value=true}
  }).onEnd(e=>{
   if(tool==='text'&&textDragStart.value){
