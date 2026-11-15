@@ -1,11 +1,31 @@
 type Identified={id:string};
 
-/** A transform is committed only when the exact final element objects are in page content. */
+/** Stable comparison across JSON round-trips, where object key insertion order can change. */
+function stableValue(value:unknown):string{
+ if(Array.isArray(value))return '['+value.map(stableValue).join(',')+']';
+ if(value!==null&&typeof value==='object')return '{'+Object.entries(value).filter(([,v])=>v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+stableValue(v)).join(',')+'}';
+ return JSON.stringify(value)??'null';
+}
+
+
+/** Serialized page content recreates element objects. Compare their saved values, not object identity. */
 export function isSelectionHandoffCommitted<T extends Identified>(
  handoffElements:readonly T[]|null,
  contentElements:readonly Identified[]
 ):boolean{
- return !!handoffElements&&handoffElements.every(element=>contentElements.find(current=>current.id===element.id)===element);
+ if(!handoffElements)return false;
+ const byId=new Map(contentElements.map(element=>[element.id,element]));
+ return handoffElements.every(element=>{
+  const stored=byId.get(element.id);
+  if(!stored)return false;
+  if(stored===element)return true;
+  const normalize=(item:Identified)=>{
+   const value=item as Identified&{type?:string;bbox?:number[];minHeight?:number;fontFamily?:string;italic?:boolean;underline?:boolean};
+   if(value.type!=='text')return value;
+   return {...value,fontFamily:value.fontFamily??'Inter',italic:value.italic??false,underline:value.underline??false,minHeight:value.bbox?Math.max(24,value.bbox[3]-value.bbox[1]):value.minHeight};
+  };
+  return stableValue(normalize(stored))===stableValue(normalize(element));
+ });
 }
 
 /** Keep a final-geometry overlay visible after dismissal until page content catches up. */

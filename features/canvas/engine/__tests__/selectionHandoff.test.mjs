@@ -35,3 +35,17 @@ test('committed geometry accepts every repeated live drag until its next handoff
  assert.equal(shouldApplySelectionPreviewTransform(true,false,true,4,4),false);
  assert.equal(shouldApplySelectionPreviewTransform(false,false,true,4,4),true);
 });
+
+test('hydrated stroke with equal geometry confirms the handoff despite new object identity',()=>{
+ const before={id:'s',type:'stroke',points:[0,0,0.5,10,0,0.5],bbox:[0,0,10,0],width:2};
+ const after={...before,points:[20,0,0.5,30,0,0.5],bbox:[20,0,30,0]};
+ const hydrated=JSON.parse(JSON.stringify(after));
+ assert.equal(isSelectionHandoffCommitted([after],[hydrated]),true);
+ assert.equal(isSelectionHandoffCommitted([after],[before]),false);
+});
+test('persisted textBoxes rehydration does not flash old geometry',()=>{
+ const moved={id:'t',type:'text',z:1,createdAt:'now',x:80,y:40,w:150,text:'Merhaba',fontSize:20,color:'#000',bold:false,align:'left',bbox:[80,40,230,80]};
+ const restored={id:'t',type:'text',z:1,createdAt:'now',x:80,y:40,w:150,text:'Merhaba',fontSize:20,color:'#000',bold:false,italic:false,underline:false,align:'left',fontFamily:'Inter',minHeight:40,bbox:[80,40,230,80]};
+ assert.equal(isSelectionHandoffCommitted([moved],[restored]),true);
+ assert.equal(isSelectionHandoffCommitted([moved],[{...restored,x:0,bbox:[0,40,150,80]}]),false);
+});
