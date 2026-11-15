@@ -12,6 +12,11 @@ export type RecentPageRecord={page:Page;notebookTitle:string};
 const now=()=>new Date().toISOString();
 export const pageRepository={
  async getByNotebook(notebookId:string){const started=__DEV__?perfNow():0;const db=await getDatabase(),queryStarted=__DEV__?perfNow():0;const rows=await db.getAllAsync<PageRow>('SELECT id,notebook_id,position,template,paper_color,thumbnail_path,created_at,updated_at FROM pages WHERE notebook_id=? AND EXISTS(SELECT 1 FROM notebooks WHERE id=? AND deleted_at IS NULL) ORDER BY position',notebookId,notebookId);const queryFinished=__DEV__?perfNow():0;const pages=rows.map(row=>({...convert({...row,content:''}),contentLoaded:false}));if(__DEV__)console.log('[Notex perf] sqlite_pages_read',{duration_ms:Math.round((perfNow()-started)*10)/10,db_ready_ms:Math.round((queryStarted-started)*10)/10,query_ms:Math.round((queryFinished-queryStarted)*10)/10,map_ms:Math.round((perfNow()-queryFinished)*10)/10,page_count:pages.length,content_characters:pages.reduce((total,page)=>total+page.content.length,0)});return pages;},
+ async getByNotebookFull(notebookId:string):Promise<Page[]>{
+  const db=await getDatabase();
+  const rows=await db.getAllAsync<PageRow>('SELECT * FROM pages WHERE notebook_id=? AND EXISTS(SELECT 1 FROM notebooks WHERE id=? AND deleted_at IS NULL) ORDER BY position',notebookId,notebookId);
+  return rows.map(convert);
+ },
  async getByIds(ids:string[]):Promise<Page[]>{
   if(!ids.length)return [];
   const db=await getDatabase();
