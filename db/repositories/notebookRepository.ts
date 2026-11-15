@@ -70,6 +70,7 @@ export const notebookRepository={
  async remove(id:string){
   const db=await getDatabase();
   await db.runAsync('UPDATE notebooks SET deleted_at=? WHERE id=? AND deleted_at IS NULL',now(),id);
+  if(isTauriDesktop())void import('@/utils/pdfRenderQueue.web').then(queue=>queue.cancelPdfNotebook(id)).catch(()=>{});
  },
  async removeMany(ids:readonly string[]){
   const started=__DEV__?perfNow():0;
@@ -92,6 +93,7 @@ export const notebookRepository={
    }
    return active;
   });
+  if(isTauriDesktop())void import('@/utils/pdfRenderQueue.web').then(queue=>removed.forEach(id=>queue.cancelPdfNotebook(id))).catch(()=>{});
   if(__DEV__)console.log('[Notex perf] notebook_bulk_remove_repository',{requested_count:ids.length,unique_count:unique.length,id_prep_ms:Math.round((preparedAt-started)*10)/10,db_open_ms:Math.round((openedAt-preparedAt)*10)/10,transaction_ms:Math.round((perfNow()-openedAt)*10)/10,moved_count:removed.length,total_ms:Math.round((perfNow()-started)*10)/10});
   return removed;
  },
