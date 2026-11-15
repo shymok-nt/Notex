@@ -48,13 +48,38 @@ export const usePageStore=create<State>((set,get)=>({
   const notebookId=state.notebookId;
   const ids=state.pages.slice(Math.max(0,index-3),index+4).filter(page=>page.contentLoaded===false).map(page=>page.id);
   if(!ids.length)return;
-  const rows=await pageRepository.getByIds(ids);
-  const restored=await migrateLegacyDrafts(rows);
+  // Read again after legacy migrations. A PDF background may have committed
+  // between the first SELECT and hydration; the final SELECT is authoritative.
+  const initial=await pageRepository.getByIds(ids);
+  await migrateLegacyDrafts(initial);
+  const restored=await pageRepository.getByIds(ids);
   if(get().notebookId!==notebookId)return;
   const byId=new Map(restored.map(page=>[page.id,page]));
   set(current=>({pages:current.pages.map(page=>{
    const loaded=byId.get(page.id);
-   return loaded&&page.contentLoaded===false?{...loaded,contentLoaded:true}:page;
+   if(!loaded||page.contentLoaded!==false)return page;
+   // A render can finish after the SELECT but before this synchronous set.
+   // Preserve its thumbnail, then recheck SQLite for any later commit.
+   return {...loaded,thumbnailPath:page.thumbnailPath??loaded.thumbnailPath,contentLoaded:true};
+  })}));
+  // A render can also commit between the final SELECT and store publication.
+  // Refresh from SQLite once more, but never replace a locally edited page.
+  const latest=await pageRepository.getByIds(ids);
+  if(get().notebookId!==notebookId)return;
+  const latestById=new Map(latest.map(page=>[page.id,page]));
+  set(current=>({pages:current.pages.map(page=>{
+   const row=latestById.get(page.id);
+   if(!row)return page;
+   const local=page.content;
+   // Preserve any unsaved local strokes; only refresh PDF background metadata.
+   try{
+    const stored=JSON.parse(row.content) as Record<string,unknown>;
+    const shown=JSON.parse(local) as Record<string,unknown>;
+    if(stored.backgroundImage&&!shown.backgroundImage){
+     return {...page,thumbnailPath:row.thumbnailPath??page.thumbnailPath,content:JSON.stringify({...shown,backgroundImage:stored.backgroundImage}),contentLoaded:true};
+    }
+   }catch{}
+   return {...page,thumbnailPath:row.thumbnailPath??page.thumbnailPath};
   })}));
  },
  cacheContent:(pageId,content)=>{
