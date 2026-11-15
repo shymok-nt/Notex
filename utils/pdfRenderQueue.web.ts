@@ -125,6 +125,8 @@ export function cancelPdfNotebook(notebookId:string){
 }
 export async function resumePdfNotebook(notebookId:string){
  cancelled.delete(notebookId);
+ // Reopening a notebook is an explicit retry of pages that previously failed.
+ for(const [id,item] of failedJobs)if(item.job.notebookId===notebookId)failedJobs.delete(id);
  const db=await getDatabase();
  const rows=await db.getAllAsync<{id:string;position:number;content:string}>('SELECT id,position,content FROM pages WHERE notebook_id=? ORDER BY position',notebookId);
  let total=0,completed=0;
