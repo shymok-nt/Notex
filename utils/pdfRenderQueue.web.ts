@@ -1,6 +1,5 @@
 import * as Crypto from 'expo-crypto';
 import {getDatabase,withSafeTransaction} from '@/db/database';
-import {pageRepository} from '@/db/repositories/pageRepository';
 import {usePageStore} from '@/store/pageStore';
 import {renderPdfPage} from '@/utils/pdfImport.web';
 import {deleteStoredFile,storedFileAssetUri,readStoredFile} from '@/utils/tauriFiles';
