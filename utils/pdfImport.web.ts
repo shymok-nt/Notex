@@ -26,7 +26,7 @@ async function saveJpeg(bytes:Uint8Array,assetPaths:string[]){
  return path;
 }
 
-export async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,assetPaths:string[]):Promise<ImportedPdfPage>{
+export async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,assetPaths:string[],signal?:AbortSignal):Promise<ImportedPdfPage>{
  const page=await pdfDocument.getPage(pageNumber);
  const baseViewport=page.getViewport({scale:1});
  const scale=Math.min(1.6,PAGE_RENDER_MAX_EDGE/Math.max(baseViewport.width,baseViewport.height));
@@ -37,10 +37,17 @@ export async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:numb
  const context=canvas.getContext('2d',{alpha:false});
  if(!context)throw new Error('PDF sayfası çizim alanı oluşturulamadı.');
  context.fillStyle='#FFFFFF';context.fillRect(0,0,pixelWidth,pixelHeight);
- await page.render({canvas,viewport}).promise;
+ const task=page.render({canvas,viewport});
+ const abort=()=>task.cancel();
+ if(signal?.aborted)abort();
+ signal?.addEventListener('abort',abort,{once:true});
+ try{await task.promise}finally{signal?.removeEventListener('abort',abort)}
+ if(signal?.aborted)throw new Error('PDF sayfa render işlemi zaman aşımına uğradı');
  const jpeg=await canvasJpeg(canvas);
+ if(signal?.aborted)throw new Error('PDF sayfa render işlemi iptal edildi');
  const layout=pdfPageLayout(pixelWidth,pixelHeight,PAGE_WIDTH,PAGE_HEIGHT);
  const backgroundPath=await saveJpeg(jpeg,assetPaths);
+ if(signal?.aborted)throw new Error('PDF sayfa render işlemi iptal edildi');
 
  const thumbnailCanvas=globalThis.document.createElement('canvas');
  const thumbnailHeight=Math.max(1,Math.round(PAGE_THUMBNAIL_WIDTH*pixelHeight/pixelWidth));
@@ -50,6 +57,7 @@ export async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:numb
  thumbnailContext.fillStyle='#FFFFFF';thumbnailContext.fillRect(0,0,thumbnailCanvas.width,thumbnailCanvas.height);
  thumbnailContext.drawImage(canvas,0,0,thumbnailCanvas.width,thumbnailCanvas.height);
  const thumbnailPath=await saveJpeg(await canvasJpeg(thumbnailCanvas),assetPaths);
+ if(signal?.aborted)throw new Error('PDF sayfa render işlemi iptal edildi');
  canvas.width=0;canvas.height=0;thumbnailCanvas.width=0;thumbnailCanvas.height=0;
  await page.cleanup();
 
