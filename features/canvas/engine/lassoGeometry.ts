@@ -99,17 +99,55 @@ function elementHitsLasso(element:Element,polygon:readonly number[],edges:readon
  return false;
 }
 
-/**
- * Select whole elements whose visible geometry intersects a freehand polygon.
- * Even-odd ray casting makes self-crossing lassos deterministic.
- */
+/** Minimum proportion of sampled stroke geometry that must lie inside the lasso. */
+export const LASSO_STROKE_INSIDE_RATIO = 0.5;
+export const LASSO_TEXT_INSIDE_RATIO = 0.5;
+const MAX_SEGMENT_SAMPLES=64;
+const SAMPLE_SPACING=6;
+
+/** Uniform distance sampling avoids bias toward densely captured pen points. */
+function strokeInsideRatio(stroke:StrokeElement,polygon:readonly number[]):number{
+ const samples=stroke.points;
+ if(samples.length<3)return 0;
+ if(samples.length===3)return pointInLasso(polygon,[samples[0],samples[1]])?1:0;
+ let inside=0,total=0;
+ for(let i=0;i+5<samples.length;i+=3){
+  const x=samples[i],y=samples[i+1],dx=samples[i+3]-x,dy=samples[i+4]-y;
+  const count=Math.min(MAX_SEGMENT_SAMPLES,Math.max(1,Math.ceil(Math.hypot(dx,dy)/SAMPLE_SPACING)));
+  for(let j=0;j<count;j++){
+   const t=(j+0.5)/count;
+   if(pointInLasso(polygon,[x+dx*t,y+dy*t]))inside++;
+  }
+  total+=count;
+ }
+ return total?inside/total:0;
+}
+function textInsideRatio(bounds:Bounds,polygon:readonly number[]):number{
+ let inside=0;
+ for(let y=0;y<5;y++)for(let x=0;x<5;x++){
+  const px=bounds[0]+(bounds[2]-bounds[0])*(x+0.5)/5;
+  const py=bounds[1]+(bounds[3]-bounds[1])*(y+0.5)/5;
+  if(pointInLasso(polygon,[px,py]))inside++;
+ }
+ return inside/25;
+}
+/** Only select elements belonging to this page; reject explicitly locked elements. */
 export function lassoSelect(elements:readonly Element[],polygon:readonly number[]):string[]{
  if(polygon.length<6||polygon.length%2!==0||polygon.some(value=>!Number.isFinite(value)))return [];
  const bounds=lassoBounds(polygon);
  if(!bounds.every(Number.isFinite))return [];
  const edges=makeLassoEdges(polygon);
  const out:string[]=[];
- for(const element of elements)if(elementHitsLasso(element,polygon,edges,bounds))out.push(element.id);
+ for(const element of elements){
+  if((element as Element&{locked?:boolean}).locked===true)continue;
+  if(!Array.isArray(element.bbox)||!boundsOverlap(bounds,element.bbox))continue;
+  if(element.type==='stroke'){
+   if(strokeInsideRatio(element,polygon)>LASSO_STROKE_INSIDE_RATIO)out.push(element.id);
+  }else if(element.type==='text'){
+   const center:XY=[(element.bbox[0]+element.bbox[2])/2,(element.bbox[1]+element.bbox[3])/2];
+   if(pointInLasso(polygon,center)||textInsideRatio(element.bbox,polygon)>LASSO_TEXT_INSIDE_RATIO)out.push(element.id);
+  }else if(elementHitsLasso(element,polygon,edges,bounds))out.push(element.id);
+ }
  return out;
 }
 
