@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "core:default",
+    { "identifier": "fs:allow-mkdir", "allow": [{ "path": "$APPDATA/pdf-sources" }] },
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-message",
@@ -16,7 +17,8 @@
         { "path": "$APPDATA/covers/**" },
         { "path": "$APPDATA/images/**" },
         { "path": "$APPDATA/page-assets/**" },
-        { "path": "$APPDATA/thumbnails/**" }
+        { "path": "$APPDATA/thumbnails/**" },
+        { "path": "$APPDATA/pdf-sources/**" }
       ]
     },
     {
@@ -25,7 +27,8 @@
         { "path": "$APPDATA/covers/**" },
         { "path": "$APPDATA/images/**" },
         { "path": "$APPDATA/page-assets/**" },
-        { "path": "$APPDATA/thumbnails/**" }
+        { "path": "$APPDATA/thumbnails/**" },
+        { "path": "$APPDATA/pdf-sources/**" }
       ]
     },
     {
@@ -34,7 +37,8 @@
         { "path": "$APPDATA/covers/**" },
         { "path": "$APPDATA/images/**" },
         { "path": "$APPDATA/page-assets/**" },
-        { "path": "$APPDATA/thumbnails/**" }
+        { "path": "$APPDATA/thumbnails/**" },
+        { "path": "$APPDATA/pdf-sources/**" }
       ]
     },
     {
@@ -43,7 +47,8 @@
         { "path": "$APPDATA/covers/**" },
         { "path": "$APPDATA/images/**" },
         { "path": "$APPDATA/page-assets/**" },
-        { "path": "$APPDATA/thumbnails/**" }
+        { "path": "$APPDATA/thumbnails/**" },
+        { "path": "$APPDATA/pdf-sources/**" }
       ]
     },
     {
@@ -52,7 +57,8 @@
         { "path": "$APPDATA/covers/**" },
         { "path": "$APPDATA/images/**" },
         { "path": "$APPDATA/page-assets/**" },
-        { "path": "$APPDATA/thumbnails/**" }
+        { "path": "$APPDATA/thumbnails/**" },
+        { "path": "$APPDATA/pdf-sources/**" }
       ]
     }
   ]
