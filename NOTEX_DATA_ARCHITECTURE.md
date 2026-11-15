@@ -1,6 +1,6 @@
 # Notex — Veri Mimarisi, Çizim ve Kalıcı Kayıt Rehberi
 
-> **15 Kasım 2026 kaynak kodu kontrolü:** `db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretlenmiş fakat tabloları eksik kalmış kurulumları idempotent olarak onarır. Aşağıdaki kart açıklamasında yalnız sürüm 3'ün anılması tarihsel uygulama sırasını ifade eder. `NoteCanvasScreen.tsx` içindeki `onHistory` artık boş callback'tir; eski render teşhisi için [TESHIS.md](./TESHIS.md) dosyasının güncel notuna bakın.
+> **15 Kasım 2026 (`main`, PR #43 sonrası) kaynak kodu kontrolü:** `db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretlenmiş fakat tabloları eksik kalmış kurulumları idempotent olarak onarır. Aşağıdaki kart açıklamasında yalnız sürüm 3'ün anılması tarihsel uygulama sırasını ifade eder. `NoteCanvasScreen.tsx` içindeki `onHistory` artık boş callback'tir; eski render teşhisi için [TESHIS.md](./TESHIS.md) dosyasının güncel notuna bakın.
 
 ## Kartlar eklentisi (15 Kasım 2026)
 
@@ -50,8 +50,8 @@ Editör her değişikliği ortak store'a aktarır; aynı işlem güncel sayfanı
 | Repository | `db/repositories/pageRepository.ts` | SQLite CRUD, transaction, kayıt doğrulama |
 | Veritabanı | `db/database.ts`, `db/migrations.ts` | Bağlantı, WAL, foreign keys, şema geçişleri |
 | Windows | Tauri 2, `db/tauriDatabase.ts` | Rust/SQLite köprüsü üzerinden yerel kayıt |
-| Android / iOS | Expo SQLite | Yerel SQLite bağlantısı |
-| Web | Expo SQLite web | Tarayıcı tabanlı SQLite; bağlantı kilidi |
+| Android / iOS | Expo SQLite bağımlılıkları | Mevcut kodda bulunan platform altyapısı; güncel ürün hedefi değil |
+| React Native Web | Expo Router / web altyapısı | Windows/Tauri arayüzünün temeli; bağımsız web ürün desteği varsayılmamalı |
 
 Doğrulanan `package.json` bağımlılık örnekleri: Expo `~58.0.23`, React Native `0.88.1`, React `19.3.0`, Skia `2.14.0`, Reanimated `4.7.1`, Gesture Handler `~3.3.0`, Zustand `^5.0.8`, Expo SQLite `~58.0.15`, TypeScript `~6.0.3`. Sürüm yükseltmeden önce uyumluluk kontrolü yapılmalıdır.
 
@@ -448,8 +448,18 @@ PR #12 ile şu eski veya mükerrer kayıt yolu dosyaları kaldırıldı:
 ### 14.3 Referans PR'lar
 
 - [PR #12 — Tek SQLite kayıt mimarisi](https://github.com/shymok-nt/Notex/pull/12)
+- [PR #42 — Lasso taşıma sıçraması düzeltmesi](https://github.com/shymok-nt/Notex/pull/42)
+- [PR #43 — Lasso ölçekleme sıçraması düzeltmesi](https://github.com/shymok-nt/Notex/pull/43)
 - [Notex GitHub Actions](https://github.com/shymok-nt/Notex/actions)
 
 ---
 
 **Belge bakım politikası:** Bu rehber **çalışan kodun güncel mimarisini** belgelemek içindir. Veri yapısı, kaydetme kuyruğu, silgi, sayfa yükleme, SQLite migrasyonları, yedek veya platform davranışı değişirse belge güncellenmelidir. Kod ile rehber çeliştiğinde önce güncel kod doğrulanır, ardından rehber düzeltilir.
+
+## 15. Güncel Lasso seçim mimarisi (15 Kasım 2026)
+
+`DrawingCanvas.tsx` içinde `selectionKey` ile ilişkili `frozenSelection`, seçilen stroke/shape/text öğelerinin Skia üzerinde çizilen temel geometrisini tutar. Taşıma sırasında `dragX/dragY` canlı hareketi gösterir; bırakma worklet'inde delta `committedDX/committedDY` içine aktarılır. Köşe büyütme/küçültmesinde `gestureScale` bırakılırken `committedScale` içine çarpılarak biriktirilir; pinch ölçeklemesi ayrıca konum deltası biriktirebilir. Böylece çizilen geometri ile shared transform kayıt onayında iki farklı karede yeniden kurulmaz.
+
+`commitSelectionMove` ve `commitResize`, güncel `moveBaselineRef` içeriğini dönüştürür ve `onChange` ile ortak `useCanvasPageContent` → `pagePersistence` → SQLite yoluna gönderir. `moveFrozenRef`, hareket/ölçekleme commit'leri boyunca eski Skia temel geometrisinin korunmasını sağlar; `movePendingRef` kayıt edilen öğeleri izler. Seçim tutamacı hit-test'i birikmiş öteleme ve ölçeği dikkate alır. Döndürme ve diğer dönüşümler için mevcut `commitGesture`, `handoff` ve `selectionHandoff.ts` yardımcıları kullanılmaya devam eder.
+
+**Regresyon kontrolü:** art arda taşıma, art arda ölçekleme, taşıma→ölçekleme, ölçekleme→taşıma, metin kutusu çift tıklama, undo/redo ve seçim/araç değiştirme. Kullanıcı Windows'ta taşıma ve ölçekleme sıçramalarının düzeldiğini doğruladı; tüm bu kombinasyonların otomatik uçtan uca test edildiği iddia edilmez.
