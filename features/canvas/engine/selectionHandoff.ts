@@ -1,11 +1,16 @@
 type Identified={id:string};
 
-/** A transform is committed only when the exact final element objects are in page content. */
+/** Serialized page content recreates element objects. Compare their saved values, not object identity. */
 export function isSelectionHandoffCommitted<T extends Identified>(
  handoffElements:readonly T[]|null,
  contentElements:readonly Identified[]
 ):boolean{
- return !!handoffElements&&handoffElements.every(element=>contentElements.find(current=>current.id===element.id)===element);
+ if(!handoffElements)return false;
+ const byId=new Map(contentElements.map(element=>[element.id,element]));
+ return handoffElements.every(element=>{
+  const stored=byId.get(element.id);
+  return !!stored&&(stored===element||JSON.stringify(stored)===JSON.stringify(element));
+ });
 }
 
 /** Keep a final-geometry overlay visible after dismissal until page content catches up. */
