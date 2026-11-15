@@ -24,6 +24,7 @@ Gerçek kalem, silgi, sayfa geçişi ve yeniden açma akışlarını hedef platf
 
 - Defter oluşturma ve düzenleme; kapak, şablon, klasör, favoriler, sıralama, silinenler ve geri yükleme.
 - Skia sayfa editöründe kalem, vurgulayıcı, şekil, metin, görsel, lasso seçim, taşıma, köşeden büyütme/küçültme, silgi, undo/redo, uzayan sayfa ve PDF arka planı.
+- Windows/Tauri'de PDF içe aktarma: PDF kaynak dosyasını yerel saklama, sayfa metaverisini okuyup defteri hızlı açma, JPEG arka planları en fazla iki eşzamanlı iş ile arka planda oluşturma, seçili sayfaya öncelik verme, hata/yeniden deneme ve kayıp arka planı onarma.
 - Defter başlığı araması, tema ve kalem ayarları.
 - Ayarlardan açılan kart desteleri ve tekrar çalışma alanı.
 - `.notex` dışa ve içe aktarma. Biçim 2 kartları ve çalışma geçmişini taşır; biçim 1 de okunur.
@@ -39,6 +40,9 @@ Gerçek kalem, silgi, sayfa geçişi ve yeniden açma akışlarını hedef platf
 | `db/` | SQLite bağlantısı, migrasyonlar ve repository'ler |
 | `services/notexBackup.ts` | Yedekleme ve geri yükleme |
 | `src-tauri/` | Masaüstü köprüsü |
+| `utils/pdfImport.web.ts` | PDF metaverisi ve JPEG sayfa üretimi |
+| `utils/pdfRenderQueue.web.ts` | PDF arka plan kuyruğu, öncelik, hata ve onarım |
+| `utils/tauriFiles.ts` | Yerel PDF/görsel dosyaları |
 
 Sayfa içeriği `PageContent v2` JSON olarak `pages.content` alanında saklanır. Düzenleme önce `usePageStore` durumuna yansır. `pagePersistence.ts` içindeki sayfa bazlı kuyruk 500 ms debounce uygular; sayfa geçişi bekleyen yazmayı tamamlar ve SQLite geri okumasıyla doğrular. Sayfa CRUD işlemleri repository transaction'ından sonra ortak store'a yansır.
 
@@ -54,3 +58,13 @@ Ayrıntılı veri ve kayıt akışı için [NOTEX_DATA_ARCHITECTURE.md](./NOTEX_
 - [PR #43 — büyütme/küçültme sıçraması düzeltmesi](https://github.com/shymok-nt/Notex/pull/43)
 
 Kullanıcı Windows/Tauri üzerinde taşıma ve büyütme/küçültme sıçramalarının düzeldiğini bildirmiştir. Bu gözlem diğer platformlar veya bütün köşe durumları için otomatik test garantisi değildir.
+
+## PDF defterlerinin güncel işleyişi (16 Kasım 2026)
+
+Windows/Tauri üzerinde `preparePdfImport` seçilen PDF'yi uygulama verisine kopyalar; sayfa boyutları ve `pdfSource: {file,pageIndex}` ile `pdfPageLayout` bilgilerini `PageContent v2` içine kaydeder. Defter, bütün sayfaların JPEG olarak işlenmesini beklemeden açılır. `resumePdfNotebook` eksik arka planları kuyruğa alır; `prioritizePdfPage` seçili sayfayı öne çeker. `renderPdfPage` arka plan ve küçük resmi `page-assets/*.jpg` olarak üretir. Kuyruk aynı anda en fazla iki iş yürütür.
+
+`pageStore.load` sayfaların hafif metaverisini yükler; `hydrateAround` seçilen sayfa ve yakınındaki sayfaların tam içeriğini SQLite'dan getirir. `complete`, `flushPageSave` sonrası sayfa içeriğine arka plan ekler. Bu iki yolun eşzamanlı çalışmasında yeni küçük resim ve PDF arka planını korumaya yönelik uzlaştırma kodu bulunur. PDF yükleme/render başarısızlıklarında durum ve tekrar deneme gösterilir; eksik arka plan görseli yeniden oluşturulabilir. Kaynak PDF `pdf-sources/` altında tutulur ve `.notex` yedeğine dahil edilir.
+
+**Sınırlar:** Bu yol Tauri/web'e özeldir; diğer platformlarda PDF içe aktarma desteği varsayılmamalıdır. URL ile PDF okuma 15 saniyelik sınırdan sonra yerel baytlara düşer; render 30 saniye sınırı ve iki tekrar denemesi kullanır. Bunlar kodda bulunan korumalardır, her tür PDF'de garanti edilen performans süreleri değildir. Büyük PDF, eksik kaynak, bozuk JPEG, eşzamanlı çizim ve yedek geri yükleme senaryoları Windows'ta ayrıca doğrulanmalıdır.
+
+**Son kullanıcı doğrulaması:** `NoteCanvasScreen.tsx` içinde `selectedId` tanımlanmadan önce bağımlılık dizisinde okunmasından kaynaklanan açılış çökmesi, `f8b7eaf` commit'iyle giderildi; kullanıcı ekranın düzeldiğini bildirdi. Bu bildirim tüm PDF sayfalarının sorunsuz render edildiği anlamına gelmez.
