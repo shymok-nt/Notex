@@ -1,6 +1,6 @@
 import React,{memo,useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {View,PixelRatio,Platform,TextInput,BackHandler,Keyboard,Animated,Text,Modal,Pressable,type LayoutChangeEvent,type ViewStyle} from 'react-native';
-import {Canvas,Group,Path,Rect,Line,Circle,Image as SkiaImage,Skia,vec,Paragraph,TextAlign,TextDecoration,FontSlant} from '@shopify/react-native-skia';
+import {Canvas,Group,Path,Rect,Line,Circle,DashPathEffect,Image as SkiaImage,Skia,vec,Paragraph,TextAlign,TextDecoration,FontSlant} from '@shopify/react-native-skia';
 import {Gesture,GestureDetector,PointerType} from 'react-native-gesture-handler';
 import {useSettingsStore} from '@/store/settingsStore';
 import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
@@ -26,7 +26,7 @@ import type {ShapeMode,Element} from '@/features/canvas/types';
 import type {PageTemplate,PaperColor} from '@/types/notebook';
 export type Tool='pen'|'highlighter'|'eraser'|'hand'|'select'|'shape'|'text';
 export type Brush={color:string;width:number;opacity:number};
-type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onFinishEditingReady?:(finish:()=>void)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut';pageId:string;value?:number;color?:string;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}};
+type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onFinishEditingReady?:(finish:()=>void)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back';pageId:string;value?:number;color?:string;dx?:number;dy?:number;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}};
 const normalizeShapeSize=(kind:string,w:number,h:number):[number,number]=>{ 'worklet';
  if(kind==='triangle'){
   const side=Math.max(Math.abs(w),Math.abs(h)*2/Math.sqrt(3));
@@ -399,7 +399,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const scheduleTextSave=()=>{clearTextSaveTimer();textSaveTimer.current=setTimeout(()=>{textSaveTimer.current=null;persistTextRef.current()},500)};
  useEffect(()=>()=>clearTextSaveTimer(),[]);
  useEffect(()=>{onFinishEditingReady?.(()=>finishRef.current())},[onFinishEditingReady]);
- useEffect(()=>{if(tool!=='text'&&editingRef.current)finishRef.current()},[tool]);
+ useEffect(()=>{if(tool!=='text'&&tool!=='select'&&editingRef.current)finishRef.current()},[tool]);
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{if(!editingRef.current)return false;finishRef.current();return true});return()=>sub.remove()},[]);
  const beginText=(x:number,y:number,requestedWidth?:number,requestedHeight?:number)=>{
    if(editingRef.current){finishRef.current();return;}
@@ -432,7 +432,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  useEffect(()=>{
   if(!selectionAction||selectionAction.pageId!==pageId)return;
   if(selectionAction.kind==='selectAll'){
-   const allIds=content.elements.map(element=>element.id);
+   const allIds=content.elements.filter(element=>(element as Element&{locked?:boolean}).locked!==true).map(element=>element.id);
    resetPaintedTransform();setHandoff(null);setSelectedIds(allIds);onSelectionChange?.(allIds);
    onSelectionActionComplete?.(selectionAction.version);return;
   }
@@ -457,9 +457,16 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(!ids.size){onSelectionActionComplete?.(selectionAction.version);return;}
   let next:Element[]=content.elements;
   if(selectionAction.kind==='delete')next=next.filter(e=>!ids.has(e.id));
- if(selectionAction.kind==='move')next=next.map(e=>ids.has(e.id)?moveElement(e,selectionAction.value??20,selectionAction.value??20):e);
+ if(selectionAction.kind==='move')next=next.map(e=>ids.has(e.id)?moveElement(e,selectionAction.dx??selectionAction.value??20,selectionAction.dy??selectionAction.value??20):e);
  if(selectionAction.kind==='scale')next=next.map(e=>ids.has(e.id)?scaleElement(e,(e.bbox[0]+e.bbox[2])/2,(e.bbox[1]+e.bbox[3])/2,selectionAction.value??1.1,selectionAction.value??1.1):e);
  if(selectionAction.kind==='rotate')next=next.map(e=>ids.has(e.id)?rotateElement(e,(e.bbox[0]+e.bbox[2])/2,(e.bbox[1]+e.bbox[3])/2,selectionAction.value??Math.PI/12):e);
+ if(selectionAction.kind==='width')next=next.map(e=>ids.has(e.id)&&e.type==='stroke'?{...e,width:Math.max(0.1,Math.min(200,selectionAction.value??e.width))}:e);
+ if(selectionAction.kind==='fontSize')next=next.map(e=>{if(!ids.has(e.id)||e.type!=='text')return e;const fontSize=Math.max(16,Math.min(200,selectionAction.value??e.fontSize));return {...e,fontSize};});
+ if(selectionAction.kind==='front'||selectionAction.kind==='back'){
+  const sorted=[...next].sort((a,b)=>a.z-b.z);
+  const selected=sorted.filter(e=>ids.has(e.id)),others=sorted.filter(e=>!ids.has(e.id));
+  next=(selectionAction.kind==='front'?[...others,...selected]:[...selected,...others]).map((e,z)=>({...e,z}));
+ }
  if(selectionAction.kind==='color')next=next.map(e=>{if(!ids.has(e.id))return e;if(e.type==='stroke')return {...e,color:selectionAction.color??e.color};if(e.type==='text')return {...e,color:selectionAction.color??e.color};return {...e,stroke:{...e.stroke,color:selectionAction.color??e.stroke.color}}});
  if(selectionAction.kind==='textStyle'&&selectionAction.textStyle)next=next.map(e=>{if(!ids.has(e.id)||e.type!=='text')return e;const updated={...e,...selectionAction.textStyle};let height=Math.max(updated.fontSize*1.25,e.bbox[3]-e.bbox[1]);if(textFonts){const builder=Skia.ParagraphBuilder.Make({textAlign:paragraphAlign(updated.align)},textFonts);builder.pushStyle(paragraphTextStyle(updated));builder.addText(updated.text);builder.pop();const paragraph=builder.build();paragraph.layout(updated.w);height=Math.max(updated.fontSize*1.25,paragraph.getHeight())}return {...updated,bbox:[updated.x,updated.y,updated.x+updated.w,updated.y+height] as [number,number,number,number]};});
   if(next!==content.elements){onChange(withHeight(next));if(selectionAction.kind==='delete'){setSelectedIds([]);onSelectionChange?.([])}}
@@ -510,7 +517,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const gestureCenterX=useSharedValue(0),gestureCenterY=useSharedValue(0);
 
  const selectedElements=useMemo(()=>content.elements.filter(e=>selectedIds.includes(e.id)),[content,selectedIds]);
- const selectionCanRotate=selectedElements.every(element=>element.type!=='text');
+ const selectionCanRotate=false; // Rotation is intentionally outside the new Lasso scope.
  const selectionCanRotateValue=useSharedValue(selectionCanRotate);
  useEffect(()=>{selectionCanRotateValue.value=selectionCanRotate;},[selectionCanRotate]);
   // Only retain a handoff while it represents the same selection.
@@ -631,7 +638,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(image){setImageId(image.id);onImageSelectionChange?.(image.id);clearElementSelection();return;}
   setImageId(null);onImageSelectionChange?.(null);
   const margin=16/fitWidth;
-  const hit=[...content.elements].reverse().find(e=>x>=e.bbox[0]-margin&&x<=e.bbox[2]+margin&&y>=e.bbox[1]-margin&&y<=e.bbox[3]+margin);
+  const hit=[...content.elements].reverse().find(e=>(e as Element&{locked?:boolean}).locked!==true&&x>=e.bbox[0]-margin&&x<=e.bbox[2]+margin&&y>=e.bbox[1]-margin&&y<=e.bbox[3]+margin);
   if(hit){
    const ids=extend?(selectedRef.current.includes(hit.id)?selectedRef.current.filter(id=>id!==hit.id):[...selectedRef.current,hit.id]):[hit.id];
    if(ids.join('|')!==selectedRef.current.join('|')){resetPaintedTransform();setHandoff(null)}
@@ -747,7 +754,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const selectionStart=useSharedValue<Sample|null>(null);
   const textDragStart=useSharedValue<Sample|null>(null);
   const lassoDrawing=useSharedValue(false);
-  useEffect(()=>{if(tool!=='select'&&lassoDrawing.value){lassoDrawing.value=false;samples.value=emptySampleBuffer();draft.value=''}},[tool]);
+  useEffect(()=>{if(tool!=='select'){if(lassoDrawing.value){lassoDrawing.value=false;samples.value=emptySampleBuffer();draft.value=''}if(selectedRef.current.length){setSelectedIds([]);onSelectionChange?.([])}}},[tool]);
  const originX=useDerivedValue(()=>(size.width-PAGE_WIDTH*fitWidth*zoom.value)/2+offsetX.value);
  const originY=useDerivedValue(()=>offsetY.value);
  const transform=useDerivedValue(()=>[{translateX:originX.value},{translateY:originY.value},{scale:fitWidth*zoom.value}]);
@@ -1348,10 +1355,20 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    }
   }
  }).runOnJS(false);
+ const openSelectedText=(x:number,y:number)=>{
+  if(tool!=='select')return;
+  const hit=[...content.elements].reverse().find(e=>e.type==='text'&&x>=e.bbox[0]&&x<=e.bbox[2]&&y>=e.bbox[1]&&y<=e.bbox[3]);
+  if(!hit)return;
+  clearElementSelection();
+  beginText(x,y);
+ };
+ const doubleTap=Gesture.Tap().numberOfTaps(2).maxDuration(280).maxDistance(12).onEnd(e=>{
+  if(tool==='select'){const p=pagePoint(e.x,e.y);runOnJS(openSelectedText)(p[0],p[1]);}
+ }).runOnJS(false);
  const singleTap=Gesture.Tap().numberOfTaps(1).maxDuration(250).maxDistance(12).onEnd(e=>{
   if(!blocked.value){const p=pagePoint(e.x,e.y);if(tool==='text')runOnJS(beginText)(p[0],p[1]);else runOnJS(selectAt)(p[0],p[1],shiftDown.value);}
  }).runOnJS(false);
- const gestures=Gesture.Simultaneous(pan,pinch,rotation,singleTap);
+ const gestures=Gesture.Simultaneous(pan,pinch,rotation,Gesture.Exclusive(doubleTap,singleTap));
 
  return <View ref={desktopSurfaceRef} onLayout={layout} style={{flex:1,overflow:'hidden',touchAction:'none',backgroundColor:paperColor==='krem'?'#FFF5DF':'#FFFFFF'} as ViewStyle}>
  <GestureDetector gesture={gestures}><View style={{flex:1,touchAction:'none'} as ViewStyle}><Canvas style={{flex:1}}>
@@ -1387,8 +1404,8 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  <Path path={handoffDraft} color={handoffColor} opacity={handoffOpacity} blendMode={handoffBlendMode} style={handoffPaintStyle} strokeWidth={handoffWidth} strokeCap="round" strokeJoin="round"/>
  {tool!=='eraser'&&tool!=='select'&&<Path path={draft} color={brush.color} opacity={brush.opacity} blendMode={tool==='highlighter'?'multiply':'srcOver'} style={draftPaintStyle} strokeWidth={brush.width} strokeCap="round" strokeJoin="round"/>}
   {tool==='select'&&<>
-   <Path path={draft} color="#3388EE" opacity={0.1} style="fill"/>
-   <Path path={draft} color="#3388EE" opacity={0.95} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round"/>
+   
+   <Path path={draft} color="#3388EE" opacity={0.95} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round"><DashPathEffect intervals={[8,6]}/></Path>
   </>}
  {tool==='eraser'&&<Circle cx={cursorX} cy={cursorY} r={eraserRadius} color="#808080" opacity={cursorOpacity} style="stroke" strokeWidth={1.5}/>}
  </Group></Canvas></View></GestureDetector>{editing&&<InlineTextEditorErrorBoundary key={editing.id} fallbackStyle={{left:12,top:12,right:12}} onClose={()=>finishRef.current()}><InlineTextEditor

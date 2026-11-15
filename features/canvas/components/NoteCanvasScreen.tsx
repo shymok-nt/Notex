@@ -61,7 +61,7 @@ export default function NoteCanvasScreen(){
  const [selectedText,setSelectedText]=useState(false);
  const cardsEnabled=true; // The Cards tab is currently always available.
  const [cardTextChoice,setCardTextChoice]=useState<string|null>(null);
- const [selectedElements,setSelectedElements]=useState<string[]>([]),[selectionAction,setSelectionAction]=useState<{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut';pageId:string;value?:number;color?:string;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}>;version:number}>();
+ const [selectedElements,setSelectedElements]=useState<string[]>([]),[selectionAction,setSelectionAction]=useState<{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back';pageId:string;value?:number;color?:string;dx?:number;dy?:number;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}>;version:number}>();
   const [inkClipboardAvailable,setInkClipboardAvailable]=useState(hasSelectionClipboard());
  const selectionMenuVisible=tool==='select'&&(selectedElements.length>0||inkClipboardAvailable);
  const [selectionMenuMounted,setSelectionMenuMounted]=useState(selectionMenuVisible);
@@ -73,7 +73,7 @@ export default function NoteCanvasScreen(){
   return()=>animation.stop();
  },[selectionMenuVisible,selectionMenuProgress]);
   const selectionActionVersion=useRef(0);
-  const action=(kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut',value?:number,color?:string,textStyle?:Partial<typeof defaultTextStyle>)=>setSelectionAction({kind,value,color,textStyle,version:++selectionActionVersion.current,pageId:selectedId??''});
+  const action=(kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back',value?:number,color?:string,textStyle?:Partial<typeof defaultTextStyle>,dx?:number,dy?:number)=>setSelectionAction({kind,value,color,textStyle,dx,dy,version:++selectionActionVersion.current,pageId:selectedId??''});
  const [recent,setRecent]=useState<string[]>([]);
  const [presets,setPresets]=useState<Preset[]>(defaults);
  const [hexInput,setHexInput]=useState('#1B1B2F');
@@ -110,6 +110,14 @@ export default function NoteCanvasScreen(){
    if(!modifier&&!event.altKey&&!event.shiftKey){
     if(event.key.toLowerCase()==='t'){event.preventDefault();chooseTool('text');return}
     if(event.key.toLowerCase()==='l'){event.preventDefault();chooseTool('select');return}
+   }
+   if(tool==='select'&&selectedElements.length&&!modifier&&!event.altKey&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){
+    event.preventDefault();
+    const step=event.shiftKey?10:1;
+    const dx=event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0;
+    const dy=event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0;
+    action('move',undefined,undefined,undefined,dx,dy);
+    return;
    }
    if(modifier&&event.key.toLowerCase()==='z'){
     event.preventDefault();
@@ -242,6 +250,13 @@ export default function NoteCanvasScreen(){
  const selectionActionButton=(label:string,Icon:typeof Copy,onPress:()=>void,tone:'normal'|'danger'|'accent'='normal')=><Pressable key={label} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({pressed})=>({width:64,height:58,alignItems:'center',justifyContent:'center',gap:4,borderRadius:12,opacity:pressed?0.7:1,backgroundColor:tone==='danger'?colors.coral+'12':tone==='accent'?colors.accent+'12':'transparent'})}><Icon size={18} strokeWidth={1.8} color={tone==='danger'?colors.coral:tone==='accent'?colors.accent:colors.ink}/><Text numberOfLines={1} style={{fontSize:10.5,color:tone==='danger'?colors.coral:tone==='accent'?colors.accent:colors.ink}}>{label}</Text></Pressable>;
  const selectionActionCount=(selectedElements.length>0?4:0)+(cardsEnabled&&selectedCardText?1:0)+(inkClipboardAvailable?1:0);
  const selectionMenuWidth=Math.min(Math.max(0,width-24),selectionActionCount*64+16+Math.max(0,selectionActionCount-1)*3);
+ const lassoStyleBar=tool==='select'&&selectedElements.length>0?<View style={{position:'absolute',top:tablet?12:56,right:12,zIndex:42,flexDirection:'row',flexWrap:'wrap',gap:6,padding:8,borderRadius:12,backgroundColor:colors.surfaceRaised,borderWidth:1,borderColor:colors.divider,maxWidth:310}}>
+  {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Seçili öğelerin rengi '+color} onPress={()=>action('color',undefined,color)} style={{width:24,height:24,borderRadius:12,backgroundColor:color,borderWidth:1,borderColor:colors.divider}}/>)}
+  {([['İnce',2],['Orta',5],['Kalın',10]] as const).map(([label,w])=><Pressable key={label} accessibilityLabel={'Çizgi '+label} onPress={()=>action('width',w)} style={{padding:5}}><Text style={{color:colors.ink,fontSize:11}}>{label}</Text></Pressable>)}
+  {([['A−',-2],['A+',2]] as const).map(([label,delta])=><Pressable key={label} onPress={()=>action('fontSize',Math.max(16,Math.min(200,textStyle.fontSize+delta)))} style={{padding:5}}><Text style={{color:colors.ink,fontSize:11}}>{label}</Text></Pressable>)}
+  <Pressable onPress={()=>action('front')} accessibilityLabel="Öne getir" style={{padding:5}}><Text style={{color:colors.ink,fontSize:11}}>Öne</Text></Pressable>
+  <Pressable onPress={()=>action('back')} accessibilityLabel="Arkaya gönder" style={{padding:5}}><Text style={{color:colors.ink,fontSize:11}}>Arkaya</Text></Pressable>
+ </View>:null;
  const selectionControls=selectionMenuMounted?<Animated.View style={{position:'absolute',bottom:tablet?20:98,left:0,right:0,zIndex:41,alignItems:'center',opacity:selectionMenuProgress,transform:[{translateY:selectionMenuProgress.interpolate({inputRange:[0,1],outputRange:[5,0]})}]}}>
   <View style={{width:selectionMenuWidth,maxWidth:width-24,overflow:'hidden',borderRadius:18,borderWidth:1,borderColor:colors.divider,backgroundColor:colors.surfaceRaised,shadowColor:'#000',shadowOpacity:0.12,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:9}}>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{flexGrow:1,alignItems:'center',justifyContent:'center',gap:3,padding:7}}>
@@ -309,7 +324,7 @@ export default function NoteCanvasScreen(){
  {!tablet&&!focus&&<View style={{position:'absolute',bottom:28,left:12,right:12}}><CanvasToolbar tablet={false} tool={tool} colors={colors} onTool={chooseTool} onPages={()=>setSheet(true)} onImage={()=>void insertImage()} toolPanel={toolPanel} panelOpen={panel==='tool'} onClosePanel={()=>setPanel(null)}/></View>}
 
  
- {selectionControls}
+ {selectionControls}{lassoStyleBar}
  <Modal visible={cardTextChoice!==null} transparent animationType="fade" onRequestClose={()=>setCardTextChoice(null)}><View style={{flex:1,backgroundColor:colors.overlay,alignItems:'center',justifyContent:'center',padding:20}}><View style={{backgroundColor:colors.surfaceRaised,borderRadius:18,padding:20,gap:12,maxWidth:440,width:'100%'}}><Text style={{color:ink,fontSize:20,fontWeight:'700'}}>Seçili yazıyı karta çevir</Text><Text numberOfLines={3} style={{color:muted}}>{cardTextChoice}</Text><Pressable accessibilityRole="button" accessibilityLabel="Ön yüze koy" onPress={()=>{const value=cardTextChoice??'';setCardTextChoice(null);router.push({pathname:'/(tabs)/cards',params:{front:value,sourceNoteId:id}} as unknown as Href)}} style={{padding:12,backgroundColor:colors.surface,borderRadius:10}}><Text style={{color:ink}}>Ön yüze koy</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Arka yüze koy" onPress={()=>{const value=cardTextChoice??'';setCardTextChoice(null);router.push({pathname:'/(tabs)/cards',params:{back:value,sourceNoteId:id}} as unknown as Href)}} style={{padding:12,backgroundColor:colors.surface,borderRadius:10}}><Text style={{color:ink}}>Arka yüze koy</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Vazgeç" onPress={()=>setCardTextChoice(null)}><Text style={{color:colors.accent}}>Vazgeç</Text></Pressable></View></View></Modal>
  {pendingDelete&&<View style={{position:'absolute',bottom:tablet?18:170,left:16,right:16,backgroundColor:colors.surfaceRaised,padding:12,borderRadius:12,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={{color:ink}}>{pendingDelete.length} sayfa silindi</Text><Pressable onPress={()=>void undoDelete()}><Text style={{color:colors.accent}}>Geri al</Text></Pressable></View>}
  {ruler&&<View pointerEvents="none" style={{position:'absolute',top:'45%',left:'15%',width:'70%',height:64,backgroundColor:colors.accent+'55',borderWidth:1,borderColor:colors.accent,borderRadius:6,justifyContent:'center',alignItems:'center'}}><Text style={{color:ink}}>0°   | | | | | | | | | | | |</Text></View>}
@@ -344,7 +359,7 @@ export default function NoteCanvasScreen(){
 
  </SafeAreaView>;
 }
-function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistory,onDrawStart,onStrokeComplete,shapeKind,shapeFill,textStyle,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,onTextSelectionChange,selectionAction,imageRequest,onImageRequestConsumed,imageAction,onImageSelectionChange,onImageLoadError}:{page:Page;tool:Tool;brush:Brush;eraserSize:number;eraserMode:'pixel'|'stroke';onController:(value:CanvasController|null)=>void;onHistory:()=>void;onDrawStart:()=>void;onStrokeComplete:(tool:PenTool,color:string)=>void;shapeKind:ShapeMode;shapeFill:boolean;textStyle:{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'};onSelectionChange:(ids:string[])=>void;onSelectionClipboardChange:(hasItems:boolean)=>void;onSelectionActionComplete:(version:number)=>void;onTextSelectionChange:(selected:boolean)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut';pageId:string;value?:number;color?:string;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}>;version:number};imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};onImageSelectionChange:(id:string|null)=>void;onImageLoadError?:(message:string)=>void}){
+function CanvasPage({page,tool,brush,eraserSize,eraserMode,onController,onHistory,onDrawStart,onStrokeComplete,shapeKind,shapeFill,textStyle,onSelectionChange,onSelectionClipboardChange,onSelectionActionComplete,onTextSelectionChange,selectionAction,imageRequest,onImageRequestConsumed,imageAction,onImageSelectionChange,onImageLoadError}:{page:Page;tool:Tool;brush:Brush;eraserSize:number;eraserMode:'pixel'|'stroke';onController:(value:CanvasController|null)=>void;onHistory:()=>void;onDrawStart:()=>void;onStrokeComplete:(tool:PenTool,color:string)=>void;shapeKind:ShapeMode;shapeFill:boolean;textStyle:{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'};onSelectionChange:(ids:string[])=>void;onSelectionClipboardChange:(hasItems:boolean)=>void;onSelectionActionComplete:(version:number)=>void;onTextSelectionChange:(selected:boolean)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back';pageId:string;value?:number;color?:string;dx?:number;dy?:number;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}>;version:number};imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};onImageSelectionChange:(id:string|null)=>void;onImageLoadError?:(message:string)=>void}){
  useCanvasAwake();
  const finishEditingRef=useRef<(()=>void)|null>(null);
  const {content,change,addImage,back,forward,error,saving,retry,flush,setDrawingActive,canUndo,canRedo}=
