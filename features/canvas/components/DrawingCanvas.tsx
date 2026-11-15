@@ -552,6 +552,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // Saving a gesture updates document data, NOT the visible path tree.
  const selectionKey=selectedIds.join('|');
  const frozenSelection=useRef<{key:string;elements:Element[];frame:ReturnType<typeof selectionFrame>}|null>(null);
+ const moveBaselineRef=useRef(content);
+ const movePendingRef=useRef<Element[]|null>(null);
+ const moveFrozenRef=useRef(false);
+ const moveSelectionKeyRef=useRef('');
   const frozenContentElements=useRef(content.elements);
  if(!frozenSelection.current||frozenSelection.current.key!==selectionKey){
   frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
@@ -561,16 +565,25 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const handoffIsCommitted=isSelectionHandoffCommitted(handoff?.elements??null,content.elements);
   const handoffNeedsReleaseRender=needsReleasedSelectionHandoff(!!handoff,handoffIsCommitted,tool==='select',handoffMatchesSelection);
   if(frozenContentElements.current!==content.elements){
-   // During a pending move, the frozen paths must remain at their pointerdown geometry.
-   // Replacing them with the newly committed paths while the preview offset is live
-   // would apply the same movement twice and cause a forward jump.
-   if(!handoffIsCommitted&&!(handoffMatchesSelection&&pendingHandoff.current))frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
    frozenContentElements.current=content.elements;
+   const pendingMove=movePendingRef.current;
+   if(moveFrozenRef.current){
+    // A move's persisted geometry and the selected overlay are independent.
+    // Keep the original paths even after persistence acknowledges the move.
+    if(pendingMove&&isSelectionHandoffCommitted(pendingMove,content.elements)){
+     movePendingRef.current=null;
+     moveBaselineRef.current=content;
+    }
+   }else if(!handoffIsCommitted&&!(handoffMatchesSelection&&pendingHandoff.current)){
+    frozenSelection.current={key:selectionKey,elements:selectedElements,frame:selectionFrame(selectedElements)};
+    moveBaselineRef.current=content;
+   }
   }
- // Before the page commit, keep the frozen source paths under the live
+  // Before the page commit, keep the frozen source paths under the live
  // transform. As soon as the exact final objects are in content, swap the
  // selected overlay to those same objects and remove the preview transform.
- const renderCommittedSelection=shouldUseCommittedSelectionGeometry(handoffIsCommitted,handoffMatchesSelection);
+ const renderCommittedSelection=!moveFrozenRef.current&&shouldUseCommittedSelectionGeometry(handoffIsCommitted,handoffMatchesSelection);
+  if(moveSelectionKeyRef.current!==selectionKey){moveSelectionKeyRef.current=selectionKey;moveBaselineRef.current=content;movePendingRef.current=null;moveFrozenRef.current=false;}
   if(renderCommittedSelection)frozenSelection.current={key:selectionKey,elements:handoff!.elements,frame:{bounds:handoff!.bounds,rotation:handoff!.rotation}};
  const paintedElements=renderCommittedSelection?handoff!.elements:frozenSelection.current.elements;
  const paintedFrame=renderCommittedSelection?{bounds:handoff!.bounds,rotation:handoff!.rotation}:frozenSelection.current.frame;
@@ -622,7 +635,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const selectionPaddingValue=useSharedValue(0);
  useEffect(()=>{selectionPaddingValue.value=selectionPadding;},[selectionPadding]);
  const selectedRotationValue=useSharedValue(0);
- useEffect(()=>{selectedRotationValue.value=selectedRotation;},[selectedRotation]);
+ useEffect(()=>{selectedRotationValue.value=paintedFrame?.rotation??0;},[paintedFrame?.rotation]);
  // As soon as persisted geometry arrives, the handoff draws that geometry
  // instead of re-projecting the old path. This prevents stale-size flashes.
  // The handoff always contains the FINAL geometry, never an old path.
@@ -632,7 +645,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  // The frame and shape share exactly one live Group transform.
  // Avoid double-scaling the frame on the first gesture.
  const selectionBoundsValue=useSharedValue<readonly [number,number,number,number]|null>(null);
- useEffect(()=>{selectionBoundsValue.value=selectedBounds;},[selectedBounds]);
+ useEffect(()=>{selectionBoundsValue.value=paintedFrame?.bounds??null;},[paintedFrame?.bounds]);
  const dragTransform=useDerivedValue(()=>[{translateX:dragX.value},{translateY:dragY.value}]);
  // A fixed-length transform keeps Skia's animated property binding intact
  // for the first and every subsequent gesture.
@@ -642,8 +655,8 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const selectionTransform=useDerivedValue(()=>{
    const applyPreview=shouldApplySelectionPreviewTransform(renderCommittedSelection,draggingSelection.value||cornerActive.value||transformActive.value,dragPending.value||transformPending.value,paintedHandoffGeneration,selectionGestureGeneration.value);
    return [
-   {translateX:applyPreview?committedDX.value+dragX.value+gestureDX.value:0},
-   {translateY:applyPreview?committedDY.value+dragY.value+gestureDY.value:0},
+   {translateX:committedDX.value+dragX.value+(applyPreview?gestureDX.value:0)},
+   {translateY:committedDY.value+dragY.value+(applyPreview?gestureDY.value:0)},
   {translateX:paintedCenterX},
   {translateY:paintedCenterY},
    {rotate:applyPreview?committedAngle.value+gestureAngle.value:0},
@@ -683,24 +696,17 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   frozenContentElements.current=content.elements;
   setSelectedIds(ids);onSelectionChange?.(ids);
  };
- const commitSelectionMove=(dx:number,dy:number,generation:number)=>{
-  trace('runOnJS_commit_start',{kind:'move',dx,dy});
+ const commitSelectionMove=(dx:number,dy:number,_generation:number)=>{
   if(Math.hypot(dx,dy)<0.1)return;
   const ids=new Set(selectedRef.current);
   if(!ids.size)return;
-  const b=selectedBounds;
-  if(!b)return;
-  const baseline=new Map(baselineElements.map(e=>[e.id,e]));
-  const next=content.elements.map(e=>ids.has(e.id)?moveElement(baseline.get(e.id)??e,dx,dy):e);
-  const finalElements=next.filter(e=>ids.has(e.id));
-  const finalFrame=selectionFrame(finalElements);
-  if(!finalFrame)return;
-  trace('final_bbox',finalElements.slice(0,12).map(e=>({id:e.id,bbox:e.bbox})));
-  pendingHandoff.current=true;
-  trace('handoff_created',{bounds:finalFrame.bounds});
-  setHandoff({elements:finalElements,bounds:finalFrame.bounds,rotation:finalFrame.rotation,dx:0,dy:0,scale:1,angle:0,generation});
-  trace('onChange',{count:next.length});
-  onChange(withHeight(next));
+  const baseline=moveBaselineRef.current;
+  const next=baseline.elements.map(e=>ids.has(e.id)?moveElement(e,dx,dy):e);
+  moveFrozenRef.current=true;
+  movePendingRef.current=next.filter(e=>ids.has(e.id));
+  moveBaselineRef.current={...baseline,elements:next};
+  trace('move_persist',{dx,dy});
+  onChange({...moveBaselineRef.current,h:Math.max(pageHeight,baseline.h??pageHeight)});
  };
  const commitGesture=(dx:number,dy:number,scale:number,angle:number,generation:number)=>{
   trace('runOnJS_commit_start',{kind:'transform',dx,dy,scale,angle});
@@ -1119,8 +1125,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   // Drag an already selected element immediately; don't wait for a long press.
   // The previous zero-distance Pan gesture prevented LongPress from reliably activating.
   if(tool==='select'&&selectionBoundsValue.value){
-    if(renderCommittedSelection){committedDX.value=0;committedDY.value=0;committedScale.value=1;committedAngle.value=0;gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
-   const p=pagePoint(e.x,e.y),b=selectionBoundsValue.value;
+    if(renderCommittedSelection){committedScale.value=1;committedAngle.value=0;gestureScale.value=1;gestureAngle.value=0;gestureDX.value=0;gestureDY.value=0}
+   const p=pagePoint(e.x,e.y),raw=selectionBoundsValue.value;
+   const b:readonly [number,number,number,number]=[raw[0]+committedDX.value,raw[1]+committedDY.value,raw[2]+committedDX.value,raw[3]+committedDY.value];
    const cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;
    const cornerRadius=22/(fitWidth*zoom.value);
    const rotation=selectedRotationValue.value,cos=Math.cos(rotation),sin=Math.sin(rotation);
@@ -1284,10 +1291,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    dragX.value=dx;dragY.value=dy;
    if(__DEV__)runOnJS(trace)('gesture_end',{kind:'move',dx,dy});
    const shouldCommit=!blocked.value&&Math.hypot(dx,dy)>0.1;
-   if(shouldCommit)dragPending.value=true;
-   draggingSelection.value=false;
-    if(shouldCommit){runOnJS(commitSelectionMove)(dx,dy,selectionGestureGeneration.value);}
-    else {dragX.value=0;dragY.value=0;dragPending.value=false}
+   if(shouldCommit){committedDX.value+=dx;committedDY.value+=dy;}
+   dragX.value=0;dragY.value=0;draggingSelection.value=false;
+   if(shouldCommit)runOnJS(commitSelectionMove)(dx,dy,selectionGestureGeneration.value);
    drawing.value=false;
    runOnJS(notify)(false);return;
   }
