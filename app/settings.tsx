@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 import { ArrowLeft,ChevronRight } from 'lucide-react-native';
 import { Pressable,SafeAreaView,ScrollView,Text,View } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
-import { useSettingsStore } from '@/store/settingsStore';
+import { defaultPenSettings,useSettingsStore } from '@/store/settingsStore';
 import { PagePreview } from '@/components/PagePreview';
 import type { PageTemplate,PaperColor } from '@/types/notebook';
 export default function SettingsScreen(){
@@ -26,6 +26,31 @@ export default function SettingsScreen(){
   <Text style={{color:colors.ink}}>Çizim girişi</Text><View style={{flexDirection:'row',gap:8}}>{segment('Kalem + parmak',!penSettings.stylusOnly,()=>void setPenSettings({stylusOnly:false,fingerDraw:true}))}{segment('Yalnızca kalem',penSettings.stylusOnly,()=>void setPenSettings({stylusOnly:true,fingerDraw:false}))}</View>
   <Text style={{color:colors.ink}}>Basınç hassasiyeti</Text><View style={{flexDirection:'row',gap:8}}>{segment('Kapalı',!penSettings.pressureEnabled,()=>void setPenSettings({pressureEnabled:false}))}{segment('Hafif',penSettings.pressureEnabled&&penSettings.pressureSensitivity===0.6,()=>void setPenSettings({pressureEnabled:true,pressureSensitivity:0.6}))}{segment('Normal',penSettings.pressureEnabled&&penSettings.pressureSensitivity===1,()=>void setPenSettings({pressureEnabled:true,pressureSensitivity:1}))}{segment('Güçlü',penSettings.pressureEnabled&&penSettings.pressureSensitivity===1.6,()=>void setPenSettings({pressureEnabled:true,pressureSensitivity:1.6}))}</View>
   <Text style={{color:colors.muted,fontSize:12}}>Parmakla sayfa yakınlaştırma ve nesne düzenleme hareketleri kullanılabilir. Basınç ve kalem algılama cihaz, işletim sistemi ve kalem modeline göre değişir.</Text>
+  <Text style={{color:colors.ink,fontWeight:'700'}}>Giriş ve avuç içi reddi</Text>
+  <View style={{flexDirection:'row',gap:8}}>{segment('Avuç içi reddi açık',penSettings.palmRejection,()=>void setPenSettings({palmRejection:true}))}{segment('Kapalı',!penSettings.palmRejection,()=>void setPenSettings({palmRejection:false}))}</View>
+  <View style={{flexDirection:'row',gap:8}}>{segment('Parmakla çiz',penSettings.fingerDraw&&!penSettings.stylusOnly,()=>void setPenSettings({fingerDraw:true,stylusOnly:false}))}{segment('Parmakla çizme',!penSettings.fingerDraw||penSettings.stylusOnly,()=>void setPenSettings({fingerDraw:false}))}</View>
+  <Pressable onPress={()=>void setPenSettings({palmRejection:defaultPenSettings.palmRejection,palmDelayMs:defaultPenSettings.palmDelayMs})}><Text style={{color:colors.accent}}>Giriş ayarlarını sıfırla</Text></Pressable>
+  <Text style={{color:colors.ink,fontWeight:'700'}}>Basınç eğrisi</Text>
+  <View style={{flexDirection:'row',gap:6}}>{(['soft','normal','hard','linear'] as const).map(v=>segment(({soft:'Yumuşak',normal:'Normal',hard:'Sert',linear:'Doğrusal'} as const)[v],penSettings.pressureCurve===v,()=>void setPenSettings({pressureCurve:v})))}</View>
+  <Text style={{color:colors.muted,fontSize:12}}>Basınç eğrisi, ölü bölge ve maksimum basınç yeni fırça motorunun tamamlanmasıyla çizime uygulanacak.</Text>
+  <Pressable onPress={()=>void setPenSettings({pressureCurve:defaultPenSettings.pressureCurve,pressureDeadZone:defaultPenSettings.pressureDeadZone,pressureMax:defaultPenSettings.pressureMax,pressureSensitivity:defaultPenSettings.pressureSensitivity})}><Text style={{color:colors.accent}}>Basıncı sıfırla</Text></Pressable>
+  <Text style={{color:colors.ink,fontWeight:'700'}}>Stabilizasyon</Text>
+  <View style={{flexDirection:'row',gap:6}}>{([0,25,50,75,100] as const).map(v=>segment(String(v),penSettings.stabilization===v,()=>void setPenSettings({stabilization:v})))}</View>
+  <Pressable onPress={()=>void setPenSettings({stabilization:defaultPenSettings.stabilization})}><Text style={{color:colors.accent}}>Stabilizasyonu sıfırla</Text></Pressable>
+  <Text style={{color:colors.ink,fontWeight:'700'}}>Eğim</Text>
+  <View style={{flexDirection:'row',gap:8}}>{segment('Açık',penSettings.tiltEnabled,()=>void setPenSettings({tiltEnabled:true}))}{segment('Kapalı',!penSettings.tiltEnabled,()=>void setPenSettings({tiltEnabled:false}))}</View>
+  <Pressable onPress={()=>void setPenSettings({tiltEnabled:defaultPenSettings.tiltEnabled})}><Text style={{color:colors.accent}}>Eğimi sıfırla</Text></Pressable>
+  <Text style={{color:colors.ink,fontWeight:'700'}}>Kalem yan düğmesi</Text>
+  <View style={{flexDirection:'row',gap:6}}>{(['eraser','select','hand','none'] as const).map(v=>segment(({eraser:'Silgi',select:'Lasso',hand:'El',none:'Hiçbiri'} as const)[v],penSettings.buttonAction===v,()=>void setPenSettings({buttonAction:v})))}</View>
+  <Text style={{color:colors.ink}}>Silgi ucu</Text>
+  <View style={{flexDirection:'row',gap:8}}>{segment('Etkin',penSettings.eraserTipEnabled,()=>void setPenSettings({eraserTipEnabled:true}))}{segment('Kapalı',!penSettings.eraserTipEnabled,()=>void setPenSettings({eraserTipEnabled:false}))}</View>
+  <Pressable onPress={()=>void setPenSettings({buttonAction:defaultPenSettings.buttonAction,eraserTipEnabled:defaultPenSettings.eraserTipEnabled})}><Text style={{color:colors.accent}}>Düğmeleri sıfırla</Text></Pressable>
+  <Text style={{color:colors.ink,fontWeight:'700'}}>Hover imleci</Text>
+  <View style={{flexDirection:'row',gap:8}}>{segment('Açık',penSettings.hoverCursor,()=>void setPenSettings({hoverCursor:true}))}{segment('Kapalı',!penSettings.hoverCursor,()=>void setPenSettings({hoverCursor:false}))}</View>
+  <Pressable onPress={()=>void setPenSettings({hoverCursor:defaultPenSettings.hoverCursor})}><Text style={{color:colors.accent}}>Hover ayarını sıfırla</Text></Pressable>
+  <Pressable accessibilityRole="button" onPress={()=>router.push('/pen-test')} style={{padding:12,backgroundColor:colors.surface,borderRadius:10}}><Text style={{color:colors.ink,fontWeight:'700'}}>Kalemi test et</Text></Pressable>
+  <Text style={{color:colors.muted,fontSize:12}}>Gelişmiş fırça ayarları çizim motoruna bağlanma aşamasındadır.</Text>
+
  </View>
  {heading('DÜZEN')}<Pressable accessibilityRole="button" accessibilityLabel="Klasörleri yönet" onPress={()=>router.push('/(tabs)/folders')} style={{minHeight:56,backgroundColor:colors.surfaceRaised,borderRadius:16,paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={{color:colors.ink,fontSize:16}}>Klasörleri yönet</Text><ChevronRight color={colors.muted}/></Pressable>
  <Pressable accessibilityRole="button" accessibilityLabel="Silinenler" onPress={()=>router.push('/trash')} style={{minHeight:56,backgroundColor:colors.surfaceRaised,borderRadius:16,paddingHorizontal:16,marginTop:10,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={{color:colors.ink,fontSize:16}}>Silinenler</Text><View style={{flexDirection:'row',alignItems:'center',gap:12}}><Text style={{color:colors.muted}}>{deletedCount}</Text><ChevronRight color={colors.muted}/></View></Pressable>
