@@ -122,145 +122,74 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
 });
 const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void}){
  const [value,setValue]=useState(item.text);
- const [typing,setTyping]=useState(false);
- const [moving,setMoving]=useState(false);
- const [measuredHeight,setMeasuredHeight]=useState(Math.max(0,item.bbox[3]-item.bbox[1]-8));
- const [textareaContentHeight,setTextareaContentHeight]=useState<number|null>(null);
- const textareaRef=useRef<HTMLTextAreaElement|null>(null);
- const parentRef=useRef<View|null>(null);
- const measureTextareaContentHeight=(input:HTMLTextAreaElement)=>{
-  const previousHeight=input.style.height;
-  const previousOverflow=input.style.overflowY;
-  try{
-   input.style.height='auto';
-   input.style.overflowY='hidden';
-   return Math.ceil(input.scrollHeight);
-  }finally{
-   input.style.height=previousHeight;
-   input.style.overflowY=previousOverflow;
-   input.scrollTop=0;
-  }
- };
- const handleMirrorLayout=useCallback((event:LayoutChangeEvent)=>{
-  const height=Math.ceil(event.nativeEvent.layout.height);
-  if(Number.isFinite(height))setMeasuredHeight(current=>current===height?current:height);
- },[]);
- const handleTextContentSizeChange=useCallback((event:{nativeEvent:{contentSize:{height:number}}})=>{
-  if(Platform.OS!=='web')return;
-  const input=textareaRef.current;
-  const height=input?measureTextareaContentHeight(input):Math.ceil(event.nativeEvent.contentSize.height);
-  if(Number.isFinite(height))setTextareaContentHeight(current=>current===height?current:height);
- },[]);
+ const [typing,setTyping]=useState(true);
+ const [preview,setPreview]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
  const valueRef=useRef(value);valueRef.current=value;
  const done=useRef(false);
  const commit=()=>{if(done.current)return;done.current=true;onCommit(valueRef.current)};
- const drag=useRef(new Animated.ValueXY()).current;
- const renderedHeightRef=useRef(0);
- const moveRef=useRef(onMove);moveRef.current=onMove;
- const resizeRef=useRef(onResize);resizeRef.current=onResize;
- const geometryCommitRef=useRef(onGeometryCommit);geometryCommitRef.current=onGeometryCommit;
- const previousPosition=useRef({x:item.x,y:item.y});
- const dragCommitted=useRef(false);
- const resizeStart=useRef<{w:number;heightPx:number;minHeight:number|null}>({w:item.w,heightPx:0,minHeight:item.minHeight??null});
- const desktop=Platform.OS==='web'&&isTauriDesktop();
- useLayoutEffect(()=>{
-  if(previousPosition.current.x!==item.x||previousPosition.current.y!==item.y){
-   previousPosition.current={x:item.x,y:item.y};
-   drag.setValue({x:0,y:0});
-  }
- },[item.x,item.y,drag]);
- const hold=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(12).enabled(!typing&&!desktop)
-  .onStart(()=>{dragCommitted.current=false;drag.setValue({x:0,y:0})})
-  .onUpdate(e=>{drag.setValue({x:e.translationX,y:e.translationY})})
-  .onEnd(e=>{if(Math.hypot(e.translationX,e.translationY)>=12){dragCommitted.current=true;moveRef.current(e.translationX,e.translationY,renderedHeightRef.current)}})
-  .onFinalize(()=>{if(!dragCommitted.current)drag.setValue({x:0,y:0})})
-  .runOnJS(true),[drag,typing,desktop]);
- const tap=useMemo(()=>Gesture.Tap().maxDuration(250).maxDistance(8).numberOfTaps(1).enabled(!typing).onEnd(e=>{
-  if(desktop&&(e.y<=10||(e.x>=item.w*scale-14&&e.y>=renderedHeightRef.current-14)))return;
-  setTyping(true);
- }).runOnJS(true),[desktop,item.w,scale,typing]);
- const textGesture=useMemo(()=>Gesture.Exclusive(hold,tap),[hold,tap]);
- const blankDrag=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(8)
-  .onStart(()=>{dragCommitted.current=false;drag.setValue({x:0,y:0})})
-  .onUpdate(e=>drag.setValue({x:e.translationX,y:e.translationY}))
-  .onEnd(e=>{if(Math.hypot(e.translationX,e.translationY)>=8){dragCommitted.current=true;moveRef.current(e.translationX,e.translationY,renderedHeightRef.current)}})
-  .onFinalize(()=>{if(!dragCommitted.current)drag.setValue({x:0,y:0})}).runOnJS(true),[drag]);
- const lineHeight=item.fontSize*1.3*scale;
- const minHeight=Math.max(48,lineHeight+8);
- const autoHeight=Math.max(minHeight,Platform.OS==='web'&&textareaContentHeight!==null?textareaContentHeight+2:measuredHeight+8);
- const manualHeight=desktop?Math.max(0,item.minHeight??0)*scale:0;
- const availableHeight=Math.max(0,(pageHeight-item.y)*scale);
- const inputHeight=Math.min(availableHeight,Math.max(autoHeight,manualHeight));
- renderedHeightRef.current=inputHeight;
- const availableWidth=Math.max(1,(PAGE_WIDTH-item.x)*scale);
- const width=Math.min(availableWidth,item.w*scale);
- const resizeConfigRef=useRef({x:item.x,y:item.y,width:item.w,scale,pageHeight,minimumEditorHeight:minHeight,contentHeightPx:autoHeight,inputHeight,manualMinHeight:item.minHeight??null});
- resizeConfigRef.current={x:item.x,y:item.y,width:item.w,scale,pageHeight,minimumEditorHeight:minHeight,contentHeightPx:autoHeight,inputHeight,manualMinHeight:item.minHeight??null};
- const reportEditorMetrics=(stage:string)=>{
-  if(!isTauriTextWidthDebugEnabled()||!typing)return;
-  const input=textareaRef.current;
-  const parent=parentRef.current as unknown as HTMLElement|null;
-  if(!input||!parent)return;
-  const inputStyle=window.getComputedStyle(input);
-  const parentStyle=window.getComputedStyle(parent);
-  const inputRect=input.getBoundingClientRect();
-  const parentRect=parent.getBoundingClientRect();
-  console.info('[Notex text-width]',{stage,id:item.id,textElementW:item.w,textareaClientWidth:input.clientWidth,textareaScrollWidth:input.scrollWidth,textareaClientHeight:input.clientHeight,textareaScrollHeight:input.scrollHeight,textareaScrollTop:input.scrollTop,textareaOffsetHeight:input.offsetHeight,textareaRectTop:inputRect.top,textareaRectHeight:inputRect.height,textareaComputedHeight:inputStyle.height,textareaOverflowY:inputStyle.overflowY,textareaBoxSizing:inputStyle.boxSizing,textareaPaddingTop:inputStyle.paddingTop,textareaPaddingBottom:inputStyle.paddingBottom,expectedParentWidth:width,parentWidth:parentRect.width,parentRectLeft:parentRect.left,parentRectTop:parentRect.top,parentClientHeight:parent.clientHeight,parentRectHeight:parentRect.height,parentComputedHeight:parentStyle.height,parentOverflowY:parentStyle.overflowY,parentBoxSizing:parentStyle.boxSizing,parentTransform:parentStyle.transform,mirrorMeasuredHeight:measuredHeight,textareaContentHeight,requestedParentHeight:inputHeight,canvasScale:scale,canvasZoom});
- };
- const handleMove=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(2).enabled(desktop)
-  .onStart(()=>{dragCommitted.current=false;setMoving(true);drag.setValue({x:0,y:0})})
-  .onUpdate(e=>{
-   const factor=Math.max(0.01,scale);
-   const height=renderedHeightRef.current/factor;
-   const dx=Math.max(-item.x*factor,Math.min((PAGE_WIDTH-item.x-item.w)*factor,e.translationX));
-   const dy=Math.max(-item.y*factor,Math.min((pageHeight-item.y-height)*factor,e.translationY));
-   drag.setValue({x:dx,y:dy});
-  })
-  .onEnd(e=>{
-   const factor=Math.max(0.01,scale);
-   const height=renderedHeightRef.current/factor;
-   const dx=Math.max(-item.x*factor,Math.min((PAGE_WIDTH-item.x-item.w)*factor,e.translationX));
-   const dy=Math.max(-item.y*factor,Math.min((pageHeight-item.y-height)*factor,e.translationY));
-   if(Math.hypot(dx,dy)>1){dragCommitted.current=true;moveRef.current(dx,dy,renderedHeightRef.current);geometryCommitRef.current()}
-   setMoving(false);
-  })
-  .onFinalize(()=>{setMoving(false);if(!dragCommitted.current)drag.setValue({x:0,y:0})}).runOnJS(true),[desktop,drag,scale,item.x,item.y,item.w,pageHeight]);
- const handleResize=useMemo(()=>Gesture.Pan().minPointers(1).maxPointers(1).minDistance(1).enabled(desktop)
-  .onStart(()=>{const config=resizeConfigRef.current;dragCommitted.current=false;resizeStart.current={w:config.width,heightPx:config.inputHeight,minHeight:config.manualMinHeight}})
-  .onUpdate(e=>{
-   const config=resizeConfigRef.current;
-   const resized=resizeTextBox({
-    x:config.x,y:config.y,startWidth:resizeStart.current.w,startHeightPx:resizeStart.current.heightPx,
-    deltaX:e.translationX,deltaY:e.translationY,scale:config.scale,pageWidth:PAGE_WIDTH,pageHeight:config.pageHeight,
-    minimumEditorHeight:config.minimumEditorHeight,contentHeightPx:config.contentHeightPx,manualMinHeight:resizeStart.current.minHeight,
-   });
-   resizeRef.current(resized.width,resized.manualMinHeight,resized.heightPx);
-  })
-  .onEnd(()=>{dragCommitted.current=true;geometryCommitRef.current()})
-  .onFinalize(()=>{if(!dragCommitted.current)resizeRef.current(resizeStart.current.w,resizeStart.current.minHeight,resizeStart.current.heightPx)})
-  .runOnJS(true),[desktop]);
+ const width=Math.max(40*scale,Math.min((PAGE_WIDTH-item.x)*scale,item.w*scale));
+ const height=Math.max(24*scale,Math.min((pageHeight-item.y)*scale,(item.minHeight??Math.max(24,item.bbox[3]-item.bbox[1]))*scale));
+ const latest=useRef({item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit});
+ latest.current={item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit};
+ useEffect(()=>{setPreview({dx:0,dy:0,width,height})},[item.x,item.y,item.w,item.minHeight,item.bbox[3],width,height]);
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{commit();return true});return()=>sub.remove()},[]);
- useLayoutEffect(()=>{
-  if(Platform.OS!=='web'||!typing)return;
-  const input=textareaRef.current;
-  if(!input)return;
-  const height=measureTextareaContentHeight(input);
-  if(Number.isFinite(height))setTextareaContentHeight(current=>current===height?current:height);
- },[typing,value,width]);
- useLayoutEffect(()=>{
-  if(Platform.OS!=='web'||!typing)return;
-  const input=textareaRef.current;
-  reportEditorMetrics('before_scroll_reset');
-  if(input)input.scrollTop=0;
-  reportEditorMetrics('after_scroll_reset');
- },[typing,value,inputHeight,item.id,item.w,width,scale,canvasZoom,left]);
- const resizeHandleStyle={position:'absolute' as const,right:-11,bottom:-11,width:24,height:24,alignItems:'center' as const,justifyContent:'center' as const,zIndex:12,cursor:'nwse-resize',userSelect:'none',touchAction:'none'};
- return <GestureDetector gesture={textGesture}><Animated.View ref={parentRef as any} style={{position:'absolute',left,top,width,height:typing?inputHeight:Math.max(minHeight,Math.min(availableHeight,measuredHeight+8)),borderWidth:1,borderColor:'#9AA0AA',borderRadius:3,backgroundColor:'transparent',overflow:'visible',transform:drag.getTranslateTransform()}}>
-  {typing?<><Text pointerEvents="none" onLayout={handleMirrorLayout} style={{position:'absolute',left:4,top:4,width:Math.max(1,width-8),opacity:0,fontSize:item.fontSize*scale,lineHeight,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,includeFontPadding:false}}>{value+'\u200b'}</Text><TextInput ref={textareaRef as any} multiline autoFocus scrollEnabled={false} value={value} onContentSizeChange={Platform.OS==='web'?handleTextContentSizeChange:undefined} onFocus={Platform.OS==='web'?()=>{window.requestAnimationFrame(()=>{reportEditorMetrics('focus_before_scroll_reset');const input=textareaRef.current;if(input)input.scrollTop=0;reportEditorMetrics('focus_after_scroll_reset')})}:undefined} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{setTyping(false);onValueChange(valueRef.current);if(valueRef.current!==item.text)commit()}} underlineColorAndroid="transparent" style={{position:'absolute',left:0,top:0,width:'100%',height:'100%',fontSize:item.fontSize*scale,lineHeight,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,color:item.color,backgroundColor:'transparent',padding:4,margin:0,borderWidth:0,overflow:'hidden',textAlignVertical:'top',verticalAlign:'top',whiteSpace:'pre-wrap',wordBreak:'break-word',boxSizing:'border-box'} as any}/> </>:
-   <Text style={{height:'100%',padding:4,fontSize:item.fontSize*scale,lineHeight,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,includeFontPadding:false,verticalAlign:'top'}}>{value}</Text>}
-  {desktop&&<GestureDetector gesture={handleMove}><View style={{position:'absolute',top:-15,left:'50%',marginLeft:-24,width:48,height:24,alignItems:'center',justifyContent:'center',zIndex:12,cursor:moving?'grabbing':'grab',userSelect:'none',touchAction:'none'} as any}><View pointerEvents="none" style={{width:30,height:5,borderRadius:4,backgroundColor:'#9AA0AA'}}/></View></GestureDetector>}
-  {desktop&&<GestureDetector gesture={handleResize}><View style={resizeHandleStyle as any}><View pointerEvents="none" style={{width:10,height:10,borderRightWidth:2,borderBottomWidth:2,borderColor:'#7B8492',borderBottomRightRadius:2}}/></View></GestureDetector>}
- </Animated.View></GestureDetector>;
+ const dragRef=useRef<{kind:'move'|'resize';handle:string;startX:number;startY:number;dx:number;dy:number}|null>(null);
+ const begin=(kind:'move'|'resize',handle:string,event:any)=>{
+  if(Platform.OS!=='web')return;
+  event.preventDefault?.();event.stopPropagation?.();
+  const native=event.nativeEvent??event;
+  dragRef.current={kind,handle,startX:native.clientX??0,startY:native.clientY??0,dx:0,dy:0};
+  (event.currentTarget as HTMLElement)?.setPointerCapture?.(native.pointerId);
+ };
+ const move=(event:any)=>{
+  const d=dragRef.current;if(!d)return;
+  const native=event.nativeEvent??event;
+  const {item,scale,pageHeight,width,height}=latest.current;
+  const factor=Math.max(0.01,scale);
+  const dx=(native.clientX??d.startX)-d.startX,dy=(native.clientY??d.startY)-d.startY;
+  d.dx=dx;d.dy=dy;
+  if(d.kind==='move'){
+   const x=Math.max(-item.x*factor,Math.min((PAGE_WIDTH-item.x-item.w)*factor,dx));
+   const y=Math.max(-item.y*factor,Math.min((pageHeight-item.y-height/factor)*factor,dy));
+   setPreview({dx:x,dy:y,width,height});return;
+  }
+  const west=d.handle.includes('w'),east=d.handle.includes('e'),north=d.handle.includes('n'),south=d.handle.includes('s');
+  let w=width+(east?dx:west?-dx:0),h=height+(south?dy:north?-dy:0);
+  if(d.handle.length===2){
+   const ratio=width/Math.max(1,height);
+   if(Math.abs(dx)/Math.max(1,width)>Math.abs(dy)/Math.max(1,height))h=w/ratio;
+   else w=h*ratio;
+  }
+  w=Math.max(40*factor,Math.min(PAGE_WIDTH*factor,w));
+  h=Math.max(24*factor,Math.min(pageHeight*factor,h));
+  setPreview({dx:west?width-w:0,dy:north?height-h:0,width:w,height:h});
+ };
+ const end=(event:any)=>{
+  const d=dragRef.current;if(!d)return;
+  event.stopPropagation?.();
+  dragRef.current=null;
+  const {item,scale,pageHeight,onMove,onResize,onGeometryCommit}=latest.current;
+  const factor=Math.max(0.01,scale);
+  if(d.kind==='move'){
+   if(Math.abs(preview.dx)+Math.abs(preview.dy)>0.5){onMove(preview.dx,preview.dy,preview.height);onGeometryCommit();}
+  }else{
+   if(d.handle.includes('w')||d.handle.includes('n'))onMove(preview.dx,preview.dy,preview.height);
+   onResize(Math.max(40,preview.width/factor),Math.max(24,preview.height/factor),preview.height);
+   onGeometryCommit();
+  }
+ };
+ const handles=['nw','n','ne','e','se','s','sw','w'] as const;
+ const positions:Record<string,{left?:number;top?:number;right?:number;bottom?:number;cursor:string}>={
+  nw:{left:-6,top:-6,cursor:'nwse-resize'},n:{left:preview.width/2-6,top:-6,cursor:'ns-resize'},
+  ne:{right:-6,top:-6,cursor:'nesw-resize'},e:{right:-6,top:preview.height/2-6,cursor:'ew-resize'},
+  se:{right:-6,bottom:-6,cursor:'nwse-resize'},s:{left:preview.width/2-6,bottom:-6,cursor:'ns-resize'},
+  sw:{left:-6,bottom:-6,cursor:'nesw-resize'},w:{left:-6,top:preview.height/2-6,cursor:'ew-resize'}
+ };
+ return <View style={{position:'absolute',left:left+preview.dx,top:top+preview.dy,width:preview.width,height:preview.height,borderWidth:1,borderColor:'#496AE8',backgroundColor:'transparent',overflow:'visible'} as any}>
+  <TextInput multiline autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',wordBreak:'break-word',boxSizing:'border-box'} as any}/>
+  <View onPointerDown={(e:any)=>begin('move','move',e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',left:0,top:-13,right:0,height:12,cursor:'grab',touchAction:'none',backgroundColor:'#496AE844'} as any}/>
+  {handles.map(handle=><View key={handle} onPointerDown={(e:any)=>begin('resize',handle,e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',width:12,height:12,borderRadius:2,borderWidth:1,borderColor:'#FFFFFF',backgroundColor:'#496AE8',touchAction:'none',zIndex:20,...positions[handle]} as any}/>)}
+ </View>;
 });
 type InlineTextEditorBoundaryProps={children:React.ReactNode;fallbackStyle:object;onClose:()=>void};
 type InlineTextEditorBoundaryState={error:Error|null;componentStack:string};
