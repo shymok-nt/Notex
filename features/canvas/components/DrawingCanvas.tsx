@@ -985,8 +985,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const stroke=makeStroke(points,{tool:tool==='highlighter'?'highlighter':'pen',...brush},Crypto.randomUUID(),content.elements.length);
   if(tool==='pen'||tool==='highlighter'){
     // Snapshot brush parameters per stroke; never reinterpret saved legacy strokes.
-    stroke.brushId=tool==='highlighter'?'highlighter':'fountain';
-    stroke.brush={...defaultBrush(stroke.brushId),size:brush.width,opacity:brush.opacity};
+    const brushId=tool==='highlighter'?'highlighter':'fountain';
+    stroke.brushId=brushId;
+    stroke.brush={...defaultBrush(brushId),size:brush.width,opacity:brush.opacity};
     stroke.aux=points.flatMap(()=>[0,0,0]);
     // Keep raw rendering until the shared live/committed renderer is active.
     // This avoids the historical pressure-outline jump on pen lift.
