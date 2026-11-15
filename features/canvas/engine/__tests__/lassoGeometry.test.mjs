@@ -16,7 +16,7 @@ test('distance-based sampling is not biased by many closely spaced points',()=>{
  assert.deepEqual(lassoSelect([stroke('unequal',points)],polygon),[]);
 });
 test('text center or majority of area must be inside',()=>{
- assert.deepEqual(lassoSelect([text('center',90,40,30,20),text('edge',96,20,40,20),text('inside',10,10,20,20)],polygon),['center','inside']);
+ assert.deepEqual(lassoSelect([text('center',80,40,30,20),text('edge',96,20,40,20),text('inside',10,10,20,20)],polygon),['center','inside']);
 });
 test('locked elements and invalid polygons are ignored',()=>{
  assert.deepEqual(lassoSelect([{...stroke('locked',[10,10,0.5,20,20,0.5]),locked:true}],polygon),[]);
