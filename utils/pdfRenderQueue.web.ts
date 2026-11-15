@@ -64,6 +64,7 @@ async function complete(job:Job,backgroundPath:string,thumbnailPath:string){
  usePageStore.setState(state=>({
   pages:state.pages.map(page=>{
    if(page.id!==job.id)return page;
+   if(page.contentLoaded===false)return {...page,thumbnailPath};
    const content=JSON.parse(page.content) as Record<string,unknown>;
    if(content.backgroundImage)return {...page,thumbnailPath};
    const layout=content.pdfPageLayout as {x:number;y:number;width:number;height:number}|undefined;
