@@ -1,9 +1,10 @@
+import type { BrushSnapshot } from './engine/penEngineV2';
 export const PAGE_WIDTH=1000;
 export const PAGE_HEIGHT=1414;
 export type Point=[number,number,number];
 export type Bounds=[number,number,number,number];
 export type TextFontFamily='Inter'|'SpaceGrotesk';
-export type StrokeElement={id:string;type:'stroke';renderMode?:'centerline'|'raw'|'outline';z:number;createdAt:string;tool:'pen'|'highlighter';color:string;width:number;opacity:number;points:number[];bbox:Bounds};
+export type StrokeElement={id:string;type:'stroke';renderMode?:'centerline'|'raw'|'outline'|'brush-v2';z:number;createdAt:string;tool:'pen'|'highlighter';color:string;width:number;opacity:number;points:number[];aux?:number[];brushId?:string;brush?:BrushSnapshot;bbox:Bounds};
 export type ShapeKind='line'|'arrow'|'rect'|'ellipse'|'triangle'|'polygon';
 export type ShapeMode=ShapeKind|'auto';
 export type ShapeElement={id:string;type:'shape';z:number;createdAt:string;kind:ShapeKind;params:{x:number;y:number;w:number;h:number;rotation:number;points?:number[]};stroke:{color:string;width:number;opacity:number};fill:null|{color:string;opacity:number};bbox:Bounds};
