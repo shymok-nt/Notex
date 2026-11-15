@@ -502,14 +502,6 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const [size,setSize]=useState({width:300,height:450});
  const spacePan=useSharedValue(false),handPanActive=useSharedValue(false);
   const eraserCommitRef=useRef<{elements:Element[];generation:number}|null>(null);
-  // Tool and size changes must not replay a stale clear-blend preview over
-  // unrelated handwriting. Eraser edits themselves remain committed to content.
-  useEffect(()=>{
-   eraserHandoffDraft.value='';
-   if(tool!=='eraser')return;
-   if(!drawing.value){draft.value='';cursorOn.value=false;}
-  },[tool,eraserSize,pageId]);
-
  const canvasMountedAt=useRef(__DEV__?perfNow():0),firstCanvasLayoutLogged=useRef(false);
  const strokeTelemetryStart=useRef(0),strokeTelemetryPointer=useRef('unknown');
  const fitWidth=Math.max(0.01,size.width/PAGE_WIDTH);
@@ -530,6 +522,14 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const handoffBlendMode=useDerivedValue(()=>handoffTool.value==='highlighter'?'multiply':'srcOver');
  const pinchPageX=useSharedValue(0),pinchPageY=useSharedValue(0);
  const samples=useSharedValue<SampleBuffer>(emptySampleBuffer()),blocked=useSharedValue(false),drawing=useSharedValue(false);
+  // Tool and size changes must not replay a stale clear-blend preview over
+  // unrelated handwriting. Eraser edits themselves remain committed to content.
+  useEffect(()=>{
+   eraserHandoffDraft.value='';
+   if(tool!=='eraser')return;
+   if(!drawing.value){draft.value='';cursorOn.value=false;}
+  },[tool,eraserSize,pageId]);
+
  const shiftDown=useSharedValue(false);
  const dragX=useSharedValue(0),dragY=useSharedValue(0),draggingSelection=useSharedValue(false);
 
