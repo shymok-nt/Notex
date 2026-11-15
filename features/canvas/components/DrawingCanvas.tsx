@@ -426,12 +426,16 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   const hit=[...content.elements].reverse().find(e=>e.type==='text'&&x>=e.bbox[0]&&x<=e.bbox[2]&&y>=e.bbox[1]&&y<=e.bbox[3]) as TextElement|undefined;
   const scale=Math.max(0.01,fitWidth*zoom.value);
   const initialWidth=Math.min(PAGE_WIDTH,Math.max(60,requestedWidth??280/scale));
-  const initialHeight=Math.max(textStyle.fontSize*1.3+8,requestedHeight??textStyle.fontSize*1.3*3+8);
+  const initialHeight=Math.max(textStyle.fontSize*1.3+8,requestedHeight??0);
   const initialX=Math.max(0,Math.min(PAGE_WIDTH-initialWidth,x));
   const initialY=Math.max(0,Math.min(Math.max(0,pageHeight-initialHeight),y));
   const current=hit??{id:Crypto.randomUUID(),type:'text' as const,z:content.elements.length,createdAt:new Date().toISOString(),x:initialX,y:initialY,w:initialWidth,text:'',fontSize:textStyle.fontSize,color:textStyle.color,bold:textStyle.bold,italic:textStyle.italic??false,underline:textStyle.underline??false,align:textStyle.align,fontFamily:'Inter' as const,bbox:[initialX,initialY,initialX+initialWidth,initialY+initialHeight] as [number,number,number,number]};
+  // Old text boxes may contain an oversized saved height; the editor frame
+  // should reflect the current text, not the obsolete three-line placeholder.
+  const textHeight=measureTextHeight(current,current.text,current.w);
+  const fitted={...current,bbox:[current.x,current.y,current.x+current.w,current.y+textHeight] as [number,number,number,number]};
   pendingCloseRef.current=null;
-  editingRef.current=current;editValueRef.current=current.text;setEditing(current);
+  editingRef.current=fitted;editValueRef.current=fitted.text;setEditing(fitted);
  };
  const [selectedIds,setSelectedIds]=useState<string[]>([]);
  const selectedRef=useRef<string[]>([]);selectedRef.current=selectedIds;
