@@ -497,6 +497,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const samples=useSharedValue<SampleBuffer>(emptySampleBuffer()),blocked=useSharedValue(false),drawing=useSharedValue(false);
  const shiftDown=useSharedValue(false);
  const dragX=useSharedValue(0),dragY=useSharedValue(0),draggingSelection=useSharedValue(false);
+ const dragStartPageX=useSharedValue(0),dragStartPageY=useSharedValue(0);
  const dragPending=useSharedValue(false);
  const selectionGestureGeneration=useSharedValue(0);
  const cornerActive=useSharedValue(false),cornerStartX=useSharedValue(0),cornerStartY=useSharedValue(0);
@@ -1123,7 +1124,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     const localY=cy-(p[0]-cx)*sin+(p[1]-cy)*cos;
     if(localX>=b[0]-hitSlop&&localX<=b[2]+hitSlop&&localY>=b[1]-hitSlop&&localY<=b[3]+hitSlop){
     selectionPreviewLive.value=true;
-    selectionGestureGeneration.value+=1;draggingSelection.value=true;dragX.value=0;dragY.value=0;(__DEV__&&runOnJS(beginTrace)('move',b));
+    selectionGestureGeneration.value+=1;draggingSelection.value=true;dragStartPageX.value=p[0];dragStartPageY.value=p[1];dragX.value=0;dragY.value=0;(__DEV__&&runOnJS(beginTrace)('move',b));
     samples.value=emptySampleBuffer();drawing.value=false;draft.value='';
     return;
    }
@@ -1189,8 +1190,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    return;
   }
   if(draggingSelection.value){
-   dragX.value=e.translationX/(fitWidth*zoom.value);
-   dragY.value=e.translationY/(fitWidth*zoom.value);
+   const current=pagePoint(e.x,e.y);
+   dragX.value=current[0]-dragStartPageX.value;
+   dragY.value=current[1]-dragStartPageY.value;
    return;
   }
   if(tool==='select'&&lassoDrawing.value){
@@ -1248,7 +1250,10 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    runOnJS(notify)(false);return;
   }
   if(draggingSelection.value){
-   const dx=dragX.value,dy=dragY.value;
+   // Use the actual release pointer, never the potentially one-frame-old preview.
+   const release=pagePoint(e.x,e.y);
+   const dx=release[0]-dragStartPageX.value,dy=release[1]-dragStartPageY.value;
+   dragX.value=dx;dragY.value=dy;
    if(__DEV__)runOnJS(trace)('gesture_end',{kind:'move',dx,dy});
    const shouldCommit=!blocked.value&&Math.hypot(dx,dy)>0.1;
    if(shouldCommit)dragPending.value=true;
