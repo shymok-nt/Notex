@@ -506,7 +506,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  const strokeTelemetryStart=useRef(0),strokeTelemetryPointer=useRef('unknown');
  const fitWidth=Math.max(0.01,size.width/PAGE_WIDTH);
  const pageHeight=Math.max(PAGE_HEIGHT,content.h??PAGE_HEIGHT,Math.ceil(size.height/fitWidth));
- const withHeight=(elements:Element[],minimum=pageHeight):PageContent=>({v:2,elements,images:content.images,backgroundImage:content.backgroundImage,h:Math.max(pageHeight,minimum)});
+ const withHeight=(elements:Element[],minimum=pageHeight):PageContent=>({...content,elements,h:Math.max(pageHeight,minimum)});
  const fitAll=Math.max(0.01,Math.min(fitWidth,size.height/pageHeight));
  const minZoom=1;
  const zoom=useSharedValue(1),offsetX=useSharedValue(0),offsetY=useSharedValue(0);
