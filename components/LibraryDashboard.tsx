@@ -95,6 +95,7 @@ export function LibraryDashboard() {
       const notebookId = await notebookRepository.createFromPdf(prepared.title,prepared.pages);
       const firstPageId = prepared.pages[0].id;
       prepared = null;
+      void import('@/utils/pdfRenderQueue.web').then(queue=>queue.resumePdfNotebook(notebookId)).catch(error=>console.error('[Notex PDF] Render kuyruğu başlatılamadı',error));
       await useNotebookStore.getState().refresh();
       markNotebookNavigationStart(notebookId);
       router.push({pathname:'/note/[id]',params:{id:notebookId,pageId:firstPageId}});

@@ -1,10 +1,9 @@
 import * as Crypto from 'expo-crypto';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import { pdfPageLayout } from '@/features/canvas/engine/pdfPageLayout';
 import { PAGE_HEIGHT, PAGE_WIDTH } from '@/features/canvas/types';
-import { isTauriDesktop, writeStoredFile } from '@/utils/tauriFiles';
+import { isTauriDesktop, writeStoredFile,storePdfSource,storedFileAssetUri } from '@/utils/tauriFiles';
 import type { ImportedPdfPage, PdfImportProgress, PreparedPdfImport } from './pdfImport';
 
 const WORKER_URL='/pdfjs/pdf.worker.min.mjs';
@@ -27,7 +26,7 @@ async function saveJpeg(bytes:Uint8Array,assetPaths:string[]){
  return path;
 }
 
-async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,assetPaths:string[]):Promise<ImportedPdfPage>{
+export async function renderPdfPage(pdfDocument:PDFDocumentProxy,pageNumber:number,assetPaths:string[]):Promise<ImportedPdfPage>{
  const page=await pdfDocument.getPage(pageNumber);
  const baseViewport=page.getViewport({scale:1});
  const scale=Math.min(1.6,PAGE_RENDER_MAX_EDGE/Math.max(baseViewport.width,baseViewport.height));
@@ -69,32 +68,29 @@ export async function preparePdfImport(onProgress:PdfImportProgress):Promise<Pre
  const assetPaths:string[]=[];
  try{
   onProgress(0,1,'PDF okunuyor…');
-  const response=await fetch(convertFileSrc(selected));
-  if(!response.ok)throw new Error(`Seçilen PDF okunamadı (HTTP ${response.status}).`);
-  const bytes=new Uint8Array(await response.arrayBuffer());
-  if(!bytes.length)throw new Error('Seçilen PDF dosyası boş.');
+  const source=await storePdfSource(selected);
+  assetPaths.push(source);
+  const sourceUrl=storedFileAssetUri(source);
+  if(!sourceUrl)throw new Error('PDF kaynak dosyasına erişilemedi.');
   const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc=WORKER_URL;
-  loadingTask=pdfjs.getDocument({data:bytes,cMapUrl:'/pdfjs/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdfjs/standard_fonts/',wasmUrl:'/pdfjs/wasm/',iccUrl:'/pdfjs/iccs/'});
+  loadingTask=pdfjs.getDocument({url:sourceUrl,cMapUrl:'/pdfjs/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdfjs/standard_fonts/',wasmUrl:'/pdfjs/wasm/',iccUrl:'/pdfjs/iccs/'});
   document=await loadingTask.promise;
   const pdfDocument=document;
   if(pdfDocument.numPages<1)throw new Error('PDF içinde görüntülenebilir sayfa bulunamadı.');
-  const pages=new Array<ImportedPdfPage>(pdfDocument.numPages);
-  onProgress(0,pdfDocument.numPages,'PDF sayfaları hazırlanıyor…');
-  // Limit concurrent canvas allocations; preserve the original page ordering.
-  let nextPage=1,completed=0;
-  const worker=async()=>{
-   while(nextPage<=pdfDocument.numPages){
-    const pageNumber=nextPage++;
-    pages[pageNumber-1]=await renderPdfPage(pdfDocument,pageNumber,assetPaths);
-    completed++;
-    onProgress(completed,pdfDocument.numPages,`PDF sayfası ${completed}/${pdfDocument.numPages} işleniyor…`);
-    // Yield between expensive renders without waiting for the next animation frame.
-    await new Promise<void>(resolve=>setTimeout(resolve,0));
-   }
-  };
-  await Promise.all([worker(),worker()]);
-  return {title,pages,assetPaths};
+  const pages:ImportedPdfPage[]=[];
+  onProgress(0,pdfDocument.numPages,'PDF sayfa boyutları okunuyor…');
+  for(let index=0;index<pdfDocument.numPages;index++){
+   const page=await pdfDocument.getPage(index+1);
+   const viewport=page.getViewport({scale:1});
+   const layout=pdfPageLayout(viewport.width,viewport.height,PAGE_WIDTH,PAGE_HEIGHT);
+   const content={v:2 as const,elements:[],images:[],pdfSource:{file:source,pageIndex:index},pdfPageLayout:layout,h:Math.max(PAGE_HEIGHT,layout.pageHeight)};
+   pages.push({id:Crypto.randomUUID(),content:JSON.stringify(content),thumbnailPath:null});
+   await page.cleanup();
+   if(index%12===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
+   onProgress(index+1,pdfDocument.numPages,`PDF sayfa bilgileri ${index+1}/${pdfDocument.numPages}`);
+  }
+  return {title,pages,assetPaths,pdfSourcePath:source};
  }catch(error){
   await Promise.allSettled(assetPaths.map(async path=>{const {deleteStoredFile}=await import('@/utils/tauriFiles');await deleteStoredFile(path)}));
   if(error instanceof Error&&/password|encrypted/i.test(error.name+' '+error.message))throw new Error('Bu PDF şifre korumalı. Şifresiz bir PDF seçin.');

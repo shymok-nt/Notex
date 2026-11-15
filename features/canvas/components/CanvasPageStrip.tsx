@@ -36,6 +36,13 @@ export const CanvasPageStrip=memo(function CanvasPageStrip({pages,selectedId,tab
  const [contentHeight,setContentHeight]=useState(0);
  const [scrollY,setScrollY]=useState(0);
  const selectedIndex=pages.findIndex(page=>page.id===selectedId);
+ // Mount only thumbnails near the viewport; offscreen image decoders are released.
+ const virtual=pdfMode&&tablet;
+ const itemExtent=PAGE_ITEM_HEIGHT+PAGE_ITEM_GAP;
+ const first=virtual?Math.max(0,Math.floor(scrollY/itemExtent)-5):0;
+ const last=virtual?Math.min(pages.length,Math.ceil((scrollY+Math.max(1,viewportHeight))/itemExtent)+5):pages.length;
+ const visiblePages=pages.slice(first,last);
+
  useEffect(()=>{if(!pdfMode||!tablet||selectedIndex<0||viewportHeight<=0)return;const target=Math.max(0,selectedIndex*(PAGE_ITEM_HEIGHT+PAGE_ITEM_GAP)-Math.max(0,(viewportHeight-PAGE_ITEM_HEIGHT)/2));scrollRef.current?.scrollTo({y:target,animated:true})},[pdfMode,tablet,selectedIndex,viewportHeight]);
  const showScrubber=pdfMode&&tablet&&contentHeight>viewportHeight+1&&viewportHeight>0;
  const thumbHeight=Math.max(40,viewportHeight*viewportHeight/Math.max(contentHeight,1));
@@ -49,7 +56,9 @@ export const CanvasPageStrip=memo(function CanvasPageStrip({pages,selectedId,tab
   onContentSizeChange={(_,height)=>{if(tablet)setContentHeight(height)}}
   onScroll={event=>{if(tablet)setScrollY(event.nativeEvent.contentOffset.y)}}
   contentContainerStyle={{padding:12,alignItems:'center',gap:tablet?PAGE_ITEM_GAP:0,flexGrow:tablet?0:1}}>
- {pages.map((page,index)=><PageItem key={page.id} page={page} index={index} count={pages.length} tablet={tablet} pdfMode={pdfMode} colors={colors} selected={page.id===selectedId} checked={selectedPageIds.includes(page.id)} multiSelect={multiSelect} onSelect={onSelect} onMove={onMove} onActions={onActions} onToggle={onToggle??onSelect} onEnterSelection={onEnterSelection??onSelect}/>)}
+ {virtual&&first>0&&<View style={{height:first*itemExtent-PAGE_ITEM_GAP,width:1}}/>}
+ {visiblePages.map((page,offset)=><PageItem key={page.id} index={first+offset} page={page} count={pages.length} tablet={tablet} pdfMode={pdfMode} colors={colors} selected={page.id===selectedId} checked={selectedPageIds.includes(page.id)} multiSelect={multiSelect} onSelect={onSelect} onMove={onMove} onActions={onActions} onToggle={onToggle??onSelect} onEnterSelection={onEnterSelection??onSelect}/>)}
+ {virtual&&last<pages.length&&<View style={{height:(pages.length-last)*itemExtent-PAGE_ITEM_GAP,width:1}}/>}
  {!pdfMode&&!multiSelect&&<View style={{width:tablet?108:100,height:PAGE_ITEM_HEIGHT,alignItems:'center',justifyContent:'center'}}><Pressable accessibilityRole="button" accessibilityLabel="Sayfa ekle" onPress={onAdd} style={{width:90,height:108,borderWidth:1,borderStyle:'dashed',borderColor:colors.border,borderRadius:8,alignItems:'center',justifyContent:'center',gap:5}}><Plus size={24} color={colors.accent}/><Text style={{fontSize:12,color:colors.accent}}>Sayfa ekle</Text></Pressable></View>}
  </ScrollView>
  {showScrubber&&<View accessibilityLabel="PDF sayfa listesi hızlı kaydırma" style={{width:18,paddingHorizontal:5,paddingVertical:0,justifyContent:'flex-start'}}

@@ -8,7 +8,7 @@ import {perfNow} from '@/features/canvas/engine/performance';
 import {enqueuePageSave,flushPageSave,finishPageSave,finishManyPageSaves} from '@/features/canvas/store/pagePersistence';
 import {isTauriDesktop} from '@/utils/tauriFiles';
 type State={pages:Page[];notebookId:string|null;loading:boolean;
- load:(id:string)=>Promise<void>;cacheContent:(id:string,content:string)=>boolean;add:(afterPosition:number)=>Promise<string|undefined>;remove:(id:string)=>Promise<void>;move:(id:string,position:number)=>Promise<void>;duplicateMany:(ids:string[])=>Promise<string[]>;removeMany:(ids:string[])=>Promise<Page[]>;restoreMany:(pages:Page[])=>Promise<void>;updateTemplate:(id:string,template:PageTemplate,paperColor:PaperColor)=>Promise<void>};
+ load:(id:string)=>Promise<void>;hydrateAround:(pageId:string)=>Promise<void>;cacheContent:(id:string,content:string)=>boolean;add:(afterPosition:number)=>Promise<string|undefined>;remove:(id:string)=>Promise<void>;move:(id:string,position:number)=>Promise<void>;duplicateMany:(ids:string[])=>Promise<string[]>;removeMany:(ids:string[])=>Promise<Page[]>;restoreMany:(pages:Page[])=>Promise<void>;updateTemplate:(id:string,template:PageTemplate,paperColor:PaperColor)=>Promise<void>};
 const showError=(e:unknown)=>Alert.alert('Sayfa işlemi başarısız',e instanceof Error?e.message:'Tekrar dene.');
 const timed=async<T>(operation:string,run:()=>Promise<T>):Promise<T>=>{if(!__DEV__)return run();const started=perfNow();try{return await run()}finally{console.log('[Notex perf] page_operation',{operation,duration_ms:Math.round((perfNow()-started)*10)/10})}};
 let latestLoadRevision=0;
@@ -41,10 +41,25 @@ const migrateLegacyDrafts=async(pages:Page[]):Promise<Page[]>=>{
 };
 export const usePageStore=create<State>((set,get)=>({
  pages:[],notebookId:null,loading:false,
- load:async id=>{if(get().notebookId===id&&!get().loading&&get().pages.length>0)return;const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await migrateLegacyDrafts(await pageRepository.getByNotebook(id));if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
+ load:async id=>{if(get().notebookId===id&&!get().loading&&get().pages.length>0)return;const revision=++latestLoadRevision;set({notebookId:id,loading:true,pages:[]});const started=__DEV__?perfNow():0;try{const pages=await pageRepository.getByNotebook(id);if(get().notebookId===id&&revision===latestLoadRevision){set({pages})}if(__DEV__)console.log('[Notex perf] page_store_load',{duration_ms:Math.round((perfNow()-started)*10)/10,page_count:pages.length})}catch(e){showError(e)}finally{if(get().notebookId===id&&revision===latestLoadRevision)set({loading:false})}},
+ hydrateAround:async pageId=>{
+  const state=get(),index=state.pages.findIndex(page=>page.id===pageId);
+  if(index<0||!state.notebookId)return;
+  const notebookId=state.notebookId;
+  const ids=state.pages.slice(Math.max(0,index-3),index+4).filter(page=>page.contentLoaded===false).map(page=>page.id);
+  if(!ids.length)return;
+  const rows=await pageRepository.getByIds(ids);
+  const restored=await migrateLegacyDrafts(rows);
+  if(get().notebookId!==notebookId)return;
+  const byId=new Map(restored.map(page=>[page.id,page]));
+  set(current=>({pages:current.pages.map(page=>{
+   const loaded=byId.get(page.id);
+   return loaded&&page.contentLoaded===false?{...loaded,contentLoaded:true}:page;
+  })}));
+ },
  cacheContent:(pageId,content)=>{
   const current=get().pages.find(page=>page.id===pageId);
-  if(!current)return false;
+  if(!current||current.contentLoaded===false)return false;
   if(current.content===content)return true;
   // This is the only page-content mutation path.
   // Immediate state makes ink responsive; queued SQLite writes are serialized.

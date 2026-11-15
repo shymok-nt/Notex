@@ -35,7 +35,10 @@ export function parseContent(raw:string):PageContent{
  const images=Array.isArray(obj.images)?obj.images.filter((value):value is import('@/features/canvas/types').PageImage=>{if(!value||typeof value!=='object')return false;const i=value as Record<string,unknown>;return typeof i.id==='string'&&typeof i.uri==='string'&&(i.uri.startsWith('data:image/')||isStoredImagePath(i.uri))&&['x','y','width','height'].every(k=>typeof i[k]==='number'&&Number.isFinite(i[k]))&&Number(i.width)>0&&Number(i.height)>0}):[];
  const isPageImage=(value:unknown):value is import('@/features/canvas/types').PageImage=>{if(!value||typeof value!=='object')return false;const i=value as Record<string,unknown>;return typeof i.id==='string'&&typeof i.uri==='string'&&(i.uri.startsWith('data:image/')||isStoredImagePath(i.uri))&&['x','y','width','height'].every(k=>typeof i[k]==='number'&&Number.isFinite(i[k]))&&Number(i.width)>0&&Number(i.height)>0};
  const backgroundImage=isPageImage(obj.backgroundImage)?obj.backgroundImage:undefined;
- return {...(h===undefined?{v:2 as const,elements:mergedElements,textBoxes:boxes,images}:{v:2 as const,elements:mergedElements,textBoxes:boxes,images,h}),...(backgroundImage?{backgroundImage}:{})};
+ const pdfSource=obj.pdfSource&&typeof obj.pdfSource==='object'&&typeof (obj.pdfSource as {file?:unknown}).file==='string'&&typeof (obj.pdfSource as {pageIndex?:unknown}).pageIndex==='number'&&Number.isSafeInteger((obj.pdfSource as {pageIndex:number}).pageIndex)&&((obj.pdfSource as {pageIndex:number}).pageIndex)>=0?obj.pdfSource as PageContent['pdfSource']:undefined;
+ const rawLayout=obj.pdfPageLayout as Record<string,unknown>|undefined;
+ const pdfPageLayout=rawLayout&&['x','y','width','height','pageHeight'].every(k=>typeof rawLayout[k]==='number'&&Number.isFinite(rawLayout[k] as number))?rawLayout as PageContent['pdfPageLayout']:undefined;
+ return {...(h===undefined?{v:2 as const,elements:mergedElements,textBoxes:boxes,images}:{v:2 as const,elements:mergedElements,textBoxes:boxes,images,h}),...(backgroundImage?{backgroundImage}:{}),...(pdfSource?{pdfSource}:{}),...(pdfPageLayout?{pdfPageLayout}:{})};
  }catch{return emptyContent()}
 }
 export function serializeContent(content:PageContent){
