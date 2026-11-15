@@ -1,19 +1,16 @@
 # Notex
 
-Notex, yerel çalışan, el yazısı odaklı bir defter uygulamasıdır. React Native, Expo Router ve TypeScript kullanır. Windows masaüstünde Tauri, Android/iOS'ta Expo SQLite, web'de tarayıcı SQLite bağlantısı kullanılır. Hesap veya bulut arka uç zorunlu değildir.
+Notex, yerel çalışan, el yazısı odaklı bir defter uygulamasıdır. React Native, Expo Router ve TypeScript kullanır. Windows masaüstünde Tauri ve web tabanlı arayüz kullanır. Expo Router ve React Native Web, masaüstü arayüzünün mevcut altyapısıdır; mobil uygulama hedefleri kaldırılmıştır. Hesap veya bulut arka uç zorunlu değildir.
 
 ## Başlatma ve doğrulama
 
 ```bash
 npm ci
-npm start
 npm run web
-npm run android
-npm run ios
 npm run tauri:dev
 ```
 
-`npm run tauri:build` Windows paketi üretir. Değişikliklerden sonra kapsamına göre:
+`npm run tauri:dev` Windows masaüstü geliştirme uygulamasını açar; `npm run tauri:build` Windows paketi üretir. `app/` ve `index.web.ts` masaüstü arayüzü için gereklidir; Expo/React Native Web paketlerini mobil kalıntısı sanarak kaldırmayın. Değişikliklerden sonra kapsamına göre:
 
 ```bash
 npm run typecheck
