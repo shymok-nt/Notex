@@ -3,6 +3,8 @@ import {View,PixelRatio,Platform,TextInput,BackHandler,Keyboard,Animated,Text,Mo
 import {Canvas,Group,Path,Rect,Line,Circle,DashPathEffect,Image as SkiaImage,Skia,vec,Paragraph,TextAlign,TextDecoration,FontSlant} from '@shopify/react-native-skia';
 import {Gesture,GestureDetector,PointerType} from 'react-native-gesture-handler';
 import {useSettingsStore} from '@/store/settingsStore';
+import {readPointerBatch,type PointerBatch} from '@/features/canvas/engine/inputSample';
+import {makePenProximity,observePenPointer,shouldBlockDrawing,type PointerDescriptor} from '@/features/canvas/engine/penInputPolicy';
 import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
 import * as Crypto from 'expo-crypto';
 import {PAGE_WIDTH,PAGE_HEIGHT,type PageContent,type PageImage,type StrokeElement,type TextElement,type TextFontFamily} from '@/features/canvas/types';
@@ -342,6 +344,9 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   }catch(error){logImageDebug('isolated_render_probe_decode_failed',{format:'png',persistent:false,error:String(error)});return null}
  },[imageRenderProbeEnabled]);
  const desktopSurfaceRef=useRef<any>(null);
+ const desktopPointerBatch=useRef<PointerBatch|null>(null);
+ const desktopPenProximity=useRef(makePenProximity());
+ const penSettings=useSettingsStore(state=>state.penSettings);
  const pressureEnabled=useSettingsStore(state=>state.penSettings.pressureEnabled);
  const pressureSensitivity=useSettingsStore(state=>state.penSettings.pressureSensitivity);
  const fingerDraw=useSettingsStore(state=>state.penSettings.fingerDraw);
@@ -826,6 +831,33 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   if(!isTauriDesktop()||typeof window==='undefined')return;
   const surface=desktopSurfaceRef.current as HTMLElement|null;
   if(!surface)return;
+  const pointerIds=new Set<number>();
+  const descriptor=(event:PointerEvent):PointerDescriptor=>({pointerType:event.pointerType==='pen'?'pen':event.pointerType==='touch'?'touch':'mouse',buttons:event.buttons,button:event.button,pressure:event.pressure,timeStamp:event.timeStamp});
+  const release=(event:PointerEvent)=>{
+   pointerIds.delete(event.pointerId);
+   observePenPointer(desktopPenProximity.current,event.pointerId,descriptor(event),'cancel');
+   try{if(surface.hasPointerCapture(event.pointerId))surface.releasePointerCapture(event.pointerId)}catch{}
+  };
+  const collect=(event:PointerEvent)=>{
+   const d=descriptor(event);
+   observePenPointer(desktopPenProximity.current,event.pointerId,d,event.type==='pointerdown'?'down':event.type==='pointermove'?'move':'up');
+   if(d.pointerType==='touch'&&shouldBlockDrawing(d,penSettings,desktopPenProximity.current)&&event.type==='pointerdown'&&desktopPenProximity.current.activePenPointers.size>0){
+    event.preventDefault();event.stopImmediatePropagation();return;
+   }
+   desktopPointerBatch.current=readPointerBatch(event,surface.getBoundingClientRect());
+   if(event.type==='pointerdown'&&event.button===0){
+    event.preventDefault();
+    pointerIds.add(event.pointerId);
+    try{surface.setPointerCapture(event.pointerId)}catch{}
+   }
+   if(event.type==='pointerup')release(event);
+  };
+  const resetPointers=()=>{
+   for(const id of pointerIds){try{if(surface.hasPointerCapture(id))surface.releasePointerCapture(id)}catch{}}
+   pointerIds.clear();desktopPointerBatch.current=null;desktopPenProximity.current=makePenProximity();
+  };
+  const lost=(event:PointerEvent)=>release(event);
+  const visibility=()=>{if(document.hidden)resetPointers()};
   const stopNonPrimaryPointer=(event:PointerEvent)=>{
    if(event.button===0)return;
    event.preventDefault();event.stopImmediatePropagation();
@@ -863,7 +895,13 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
    }
   };
   const keyUp=(event:KeyboardEvent)=>{if(event.code==='Space')spacePan.value=false;if(event.key==='Shift')shiftDown.value=false};
-  const blur=()=>{spacePan.value=false;shiftDown.value=false;handPanActive.value=false};
+  const blur=()=>{spacePan.value=false;shiftDown.value=false;handPanActive.value=false;resetPointers()};
+  surface.addEventListener('pointerdown',collect,{capture:true,passive:false});
+  surface.addEventListener('pointermove',collect,true);
+  surface.addEventListener('pointerup',collect,true);
+  surface.addEventListener('pointercancel',lost,true);
+  surface.addEventListener('lostpointercapture',lost,true);
+  document.addEventListener('visibilitychange',visibility);
   surface.addEventListener('pointerdown',stopNonPrimaryPointer,true);
   surface.addEventListener('contextmenu',stopContextMenu,true);
   surface.addEventListener('wheel',wheel,{passive:false});
@@ -871,13 +909,20 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
   window.addEventListener('keyup',keyUp);
   window.addEventListener('blur',blur);
   return()=>{
+   resetPointers();
+   surface.removeEventListener('pointerdown',collect,true);
+   surface.removeEventListener('pointermove',collect,true);
+   surface.removeEventListener('pointerup',collect,true);
+   surface.removeEventListener('pointercancel',lost,true);
+   surface.removeEventListener('lostpointercapture',lost,true);
+   document.removeEventListener('visibilitychange',visibility);
    surface.removeEventListener('pointerdown',stopNonPrimaryPointer,true);
    surface.removeEventListener('contextmenu',stopContextMenu,true);
    surface.removeEventListener('wheel',wheel);
    window.removeEventListener('keydown',keyDown);window.removeEventListener('keyup',keyUp);window.removeEventListener('blur',blur);
    spacePan.value=false;handPanActive.value=false;
   };
- },[clamp,fitWidth,minZoom,originX,size.height,size.width]);
+ },[clamp,fitWidth,minZoom,originX,size.height,size.width,penSettings]);
  const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(__DEV__&&!firstCanvasLayoutLogged.current){firstCanvasLayoutLogged.current=true;const dimensions={width:Math.round(width),height:Math.round(height)};requestAnimationFrame(()=>requestAnimationFrame(()=>console.log('[Notex perf] first_canvas_visible',{duration_ms:Math.round((perfNow()-canvasMountedAt.current)*10)/10,...dimensions})))}if(width===size.width&&height===size.height)return;setSize({width,height});if(!isTauriDesktop()){zoom.value=1;offsetX.value=0;offsetY.value=0;return;}const fit=Math.max(0.01,width/PAGE_WIDTH),pageH=Math.max(PAGE_HEIGHT,content.h??PAGE_HEIGHT,Math.ceil(height/fit)),z=zoom.value,limitX=Math.max(0,(PAGE_WIDTH*fit*z-width)/2),minY=Math.min(0,height-pageH*fit*z);offsetX.value=Math.max(-limitX,Math.min(limitX,offsetX.value));offsetY.value=Math.max(minY,Math.min(0,offsetY.value))};
  const pagePoint=(x:number,y:number):Sample=>{ 'worklet';return [(x-originX.value)/(fitWidth*zoom.value),(y-originY.value)/(fitWidth*zoom.value),0.5]};
  const imageProbeCenter=imageRenderProbe?pagePoint(size.width/2,size.height/2):null;
