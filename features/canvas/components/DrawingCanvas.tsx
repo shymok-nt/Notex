@@ -122,6 +122,8 @@ const StaticPaper=memo(function StaticPaper({template,paperColor,pageHeight,fitW
 const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canvasZoom,pageHeight,onCommit,onValueChange,onMove,onResize,onGeometryCommit,onStyleChange}:{item:TextElement;left:number;top:number;scale:number;canvasZoom:number;pageHeight:number;onCommit:(value:string)=>void;onValueChange:(value:string)=>void;onMove:(dx:number,dy:number,heightPx:number)=>void;onResize:(width:number,minHeight:number|null,heightPx:number)=>void;onGeometryCommit:()=>void;onStyleChange:(patch:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>)=>void}){
  const [value,setValue]=useState(item.text);
  const [typing,setTyping]=useState(true);
+ const editorHostRef=useRef<any>(null);
+ const [webTextHeight,setWebTextHeight]=useState(0);
  const [preview,setPreviewState]=useState({dx:0,dy:0,width:item.w*scale,height:Math.max(24,item.bbox[3]-item.bbox[1])*scale});
  const previewRef=useRef(preview);
  const setPreview=(next:typeof preview)=>{previewRef.current=next;setPreviewState(next)};
@@ -130,11 +132,27 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
  const done=useRef(false);
  const commit=()=>{if(done.current)return;done.current=true;onCommit(valueRef.current)};
  const width=Math.max(40*scale,Math.min((PAGE_WIDTH-item.x)*scale,item.w*scale));
- const height=Math.max(24*scale,(item.bbox[3]-item.bbox[1])*scale);
+ const height=Math.max(24*scale,(item.bbox[3]-item.bbox[1])*scale,webTextHeight);
  const latest=useRef({item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit});
  latest.current={item,scale,pageHeight,width,height,onMove,onResize,onGeometryCommit};
  useLayoutEffect(()=>{if(!dragRef.current)setPreview({dx:0,dy:0,width,height})},[item.x,item.y,item.w,item.minHeight,item.bbox[3],width,height]);
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{commit();return true});return()=>sub.remove()},[]);
+ // Measure the actual browser textarea after each edit, not from a size-change event.
+ // This avoids React #185 and prevents the browser scrolling text inside the box.
+ useLayoutEffect(()=>{
+  if(Platform.OS!=='web')return;
+  const host=editorHostRef.current as HTMLElement|null;
+  const textarea=host?.querySelector?.('textarea') as HTMLTextAreaElement|null;
+  if(!textarea)return;
+  const needed=Math.ceil(textarea.scrollHeight+2);
+  if(Number.isFinite(needed)&&needed>0){
+   textarea.style.height=needed+'px';
+   textarea.style.overflowY='hidden';
+   textarea.style.resize='none';
+   textarea.scrollTop=0;
+   setWebTextHeight(previous=>Math.abs(previous-needed)>1?needed:previous);
+  }
+ },[value,width,item.fontSize,item.fontFamily,item.bold,item.italic,scale]);
  const dragRef=useRef<{kind:'resize';handle:string;startX:number;startY:number;dx:number;dy:number}|null>(null);
  const begin=(handle:string,event:any)=>{
   if(Platform.OS!=='web')return;
@@ -179,12 +197,12 @@ const InlineTextEditor=memo(function InlineTextEditor({item,left,top,scale,canva
   se:{right:-6,bottom:-6,cursor:'nwse-resize'},s:{left:preview.width/2-6,bottom:-6,cursor:'ns-resize'},
   sw:{left:-6,bottom:-6,cursor:'nesw-resize'},w:{left:-6,top:preview.height/2-6,cursor:'ew-resize'}
  };
- return <View style={{position:'absolute',left:left+preview.dx,top:top+preview.dy,width:preview.width,height:preview.height,borderWidth:1,borderColor:'#496AE8',backgroundColor:'transparent',overflow:'visible'} as any}>
+ return <View ref={editorHostRef} style={{position:'absolute',left:left+preview.dx,top:top+preview.dy,width:preview.width,height:preview.height,borderWidth:1,borderColor:'#496AE8',backgroundColor:'transparent',overflow:'visible'} as any}>
   <View onPointerDown={(event:any)=>event.preventDefault?.()} style={{position:'absolute',left:0,bottom:'100%',marginBottom:19,flexDirection:'row',alignItems:'center',gap:4,padding:4,borderRadius:6,backgroundColor:'#FFFFFF',borderWidth:1,borderColor:'#C9D0E8',zIndex:30} as any}>
    {([{label:'B',patch:{bold:!item.bold}},{label:'I',patch:{italic:!item.italic}},{label:'U',patch:{underline:!item.underline}},{label:'Sol',patch:{align:'left'}},{label:'Orta',patch:{align:'center'}},{label:'Sağ',patch:{align:'right'}},{label:'−',patch:{fontSize:Math.max(16,item.fontSize-2)}},{label:'+',patch:{fontSize:Math.min(200,item.fontSize+2)}}] as {label:string;patch:Partial<Pick<TextElement,'fontSize'|'bold'|'italic'|'underline'|'align'>>}[]).map(action=><Pressable key={action.label} accessibilityLabel={action.label} onPress={()=>onStyleChange(action.patch)} style={{paddingHorizontal:6,paddingVertical:4,borderRadius:4,backgroundColor:'#F1F3FA'}}><Text style={{fontSize:12,color:'#25355B'}}>{action.label}</Text></Pressable>)}
    {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Yazı rengi '+color} onPress={()=>onStyleChange({color})} style={{width:16,height:16,borderRadius:8,backgroundColor:color,borderWidth:1,borderColor:'#DDD'}}/>)}
   </View>
-  <TextInput multiline scrollEnabled={false} autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',overflowWrap:'anywhere',wordBreak:'break-word',overflow:'visible',boxSizing:'border-box'} as any}/>
+  <TextInput multiline scrollEnabled={false} autoFocus={typing} value={value} onChangeText={next=>{valueRef.current=next;setValue(next);onValueChange(next)}} onBlur={()=>{if(!dragRef.current){setTyping(false);commit()}}} onFocus={()=>setTyping(true)} underlineColorAndroid="transparent" style={{width:'100%',height:Platform.OS==='web'?Math.max(height,webTextHeight):'100%',padding:4,margin:0,fontSize:item.fontSize*scale,lineHeight:item.fontSize*1.3*scale,color:item.color,fontFamily:nativeFontFamily(item.fontFamily,item.bold),fontStyle:item.italic?'italic':'normal',textDecorationLine:item.underline?'underline':'none',textAlign:item.align,textAlignVertical:'top',backgroundColor:'transparent',borderWidth:0,whiteSpace:'pre-wrap',overflowWrap:'anywhere',wordBreak:'break-word',overflow:'visible',overflowY:'hidden',resize:'none',boxSizing:'border-box'} as any}/>
   {handles.map(handle=><View key={handle} onPointerDown={(e:any)=>begin(handle,e)} onPointerMove={move} onPointerUp={end} style={{position:'absolute',width:12,height:12,borderRadius:2,borderWidth:1,borderColor:'#FFFFFF',backgroundColor:'#496AE8',touchAction:'none',zIndex:20,...positions[handle]} as any}/>)}
  </View>;
 });
