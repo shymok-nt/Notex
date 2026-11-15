@@ -3,7 +3,7 @@ import { join } from '@tauri-apps/api/path';
 
 let appDataRoot: string | null = null;
 
-const folders = ['covers', 'images', 'page-assets', 'thumbnails'] as const;
+const folders = ['covers', 'images', 'page-assets', 'thumbnails', 'pdf-sources'] as const;
 type StoredFolder = (typeof folders)[number];
 const safeRelativePath = (path: string) =>
   (() => {
@@ -45,7 +45,7 @@ async function storedAbsolutePath(relativePath: string) {
 
 function makeName(folder: StoredFolder, extension: string) {
   const ext = extension.toLowerCase().replace(/^\./, '');
-  if (!['jpg', 'jpeg', 'png', 'webp', 'heic', 'gif'].includes(ext)) {
+  if (!['jpg', 'jpeg', 'png', 'webp', 'heic', 'gif', 'pdf'].includes(ext)) {
     throw new Error('Bu görsel biçimi desteklenmiyor.');
   }
   return `${folder}/${crypto.randomUUID()}.${ext}`;
@@ -133,6 +133,20 @@ export async function storeSelectedImage(sourcePath: string, folder: 'covers' | 
   }
 }
 
+/** Copy a selected PDF once into app data without loading its bytes in JS. */
+export async function storePdfSource(sourcePath:string):Promise<string>{
+ const {copyFile,mkdir}=await import('@tauri-apps/plugin-fs');
+ const relativePath=`pdf-sources/${crypto.randomUUID()}.pdf`;
+ try{
+  await mkdir(await join(requireRoot(),'pdf-sources'),{recursive:true});
+  await copyFile(sourcePath,await storedAbsolutePath(relativePath));
+  return relativePath;
+ }catch(error){
+  await deleteStoredFile(relativePath).catch(()=>{});
+  throw new Error('PDF kaynak dosyası kopyalanamadı: '+errorMessage(error));
+ }
+}
+
 export async function copyStoredFile(sourcePath: string, folder: StoredFolder) {
   try {
     const { copyFile } = await import('@tauri-apps/plugin-fs');
@@ -169,6 +183,10 @@ export async function restoreBackupAsset(originalPath: string, bytes: Uint8Array
   const prefix = originalPath.split('/')[0];
   const folder: StoredFolder = folders.includes(prefix as StoredFolder) ? prefix as StoredFolder : 'covers';
   const relativePath = makeName(folder, extensionFromPath(originalPath));
+  if(folder==='pdf-sources'){
+    const {mkdir}=await import('@tauri-apps/plugin-fs');
+    await mkdir(await join(requireRoot(),'pdf-sources'),{recursive:true});
+  }
   await writeStoredFile(relativePath, bytes);
   return relativePath;
 }
