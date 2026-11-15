@@ -39,7 +39,8 @@ export async function createBackup(progress:Progress){
   const p=transformed.pages[i];let parsed:unknown;
   try{parsed=JSON.parse(p.content)}catch{throw new Error('Sayfa içeriği okunamadı')}
    if(parsed&&typeof parsed==='object'){
-    const data=parsed as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+    const data=parsed as {images?:{uri?:string}[];backgroundImage?:{uri?:string};pdfSource?:{file?:string}};
+    if(typeof data.pdfSource?.file==='string'){if(!safePath(data.pdfSource.file))throw new Error('Geçersiz PDF kaynak yolu');filePaths.add(data.pdfSource.file)}
     const images=[...(Array.isArray(data.images)?data.images:[]),...(data.backgroundImage?[data.backgroundImage]:[])];
     for(const img of images){
     if(typeof img.uri!=='string')continue;
@@ -108,7 +109,8 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
   for(const n of data.notebooks)if(n.cover_image_path)paths.add(n.cover_image_path);
   for(const p of data.pages){
    if(p.thumbnail_path)paths.add(p.thumbnail_path);
-    const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+    const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string};pdfSource?:{file?:string}};
+    if(typeof parsed.pdfSource?.file==='string')paths.add(parsed.pdfSource.file);
     for(const img of [...(parsed.images??[]),...(parsed.backgroundImage?[parsed.backgroundImage]:[])])if(typeof img.uri==='string'&&!img.uri.startsWith('data:'))paths.add(img.uri);
   }
   // On web, expo-file-system's Directory.create may call an unavailable validatePath native method.
@@ -118,7 +120,7 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
   let i=0;for(const path of paths){
    if(!safePath(path))throw Error('invalid path');
    const entry=zip.file('files/'+path);if(!entry)throw Error('missing image');
-   const ext=path.split('.').pop()!.toLowerCase();if(!['jpg','jpeg','png','webp','heic','gif'].includes(ext))throw Error('invalid image');
+   const ext=path.split('.').pop()!.toLowerCase();if(!['jpg','jpeg','png','webp','heic','gif','pdf'].includes(ext))throw Error('invalid image');
    const blob=await entry.async('uint8array');
    let relative:string;
    if(isTauriDesktop())relative=await restoreBackupAsset(path,blob);
