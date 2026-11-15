@@ -18,7 +18,6 @@ import {getPaperGuideMetrics,nearestPaperGuide,PAPER_GUIDE_SPACING,PAPER_GUIDE_L
 import {recognizeShape} from '@/features/canvas/engine/recognizeShape';
 import {deleteStoredFile,imageDebugError,isTauriDesktop,isStoredAppDataPath,isTauriDevelopmentRuntime,logImageDebug,readStoredFile} from '@/utils/tauriFiles';
 import {shapePath,makeShape,moveElement,scaleElement,rotateElement} from '@/features/canvas/engine/shapes';
-import {resizeTextBox} from '@/features/canvas/engine/textBoxResize';
 import {lassoSelect,lassoPathLength} from '@/features/canvas/engine/lassoGeometry';
 import {shouldGrabSelectionCorner} from '@/features/canvas/engine/selectionGestureTarget';
 import {readSelectionClipboard,writeSelectionClipboard,hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
