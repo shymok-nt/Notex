@@ -177,7 +177,13 @@ export function LibraryDashboard() {
         </View>
       </View>
 
-      {selectionKind==='notebooks'&&<View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:20,minHeight:48,backgroundColor:colors.surface}}><Text style={{color:colors.ink,fontFamily:fonts.medium}}>{selectedNotebookIds.length} seçili</Text><Pressable accessibilityRole="button" accessibilityLabel="Tümünü seç" onPress={()=>setSelectedNotebookIds(notebooks.map(notebook=>notebook.id))}><Text style={{color:colors.accent,fontFamily:fonts.medium}}>Tümünü seç</Text></Pressable></View>}
+      {selectionKind==='notebooks'&&<View style={{flexDirection:'row',alignItems:'center',gap:18,paddingHorizontal:24,minHeight:42,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:colors.divider,backgroundColor:colors.background}}>
+        <Text style={{fontFamily:fonts.medium,fontSize:12,color:colors.muted,marginRight:'auto'}}>{selectedNotebookIds.length} seçili</Text>
+        <Pressable accessibilityRole="button" onPress={()=>setSelectedNotebookIds(notebooks.map(n=>n.id))}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.ink}}>Tümünü seç</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>setSelectedNotebookIds([])}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.muted}}>Temizle</Text></Pressable>
+        <Pressable disabled={working||selectedNotebookIds.length===0} accessibilityRole="button" onPress={()=>setConfirmNotebookDeleteVisible(true)}><Text style={{fontFamily:fonts.medium,fontSize:13,color:selectedNotebookIds.length?colors.coral:colors.muted}}>Sil</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>{setSelectionKind(null);setSelectedNotebookIds([])}}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.accent}}>Bitti</Text></Pressable>
+      </View>}
       <Modal visible={pdfProgress!==null} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={{flex:1,alignItems:'center',justifyContent:'center',padding:24,backgroundColor:colors.overlay}}>
           <View style={{width:'100%',maxWidth:380,gap:14,padding:22,borderRadius:18,backgroundColor:colors.surfaceRaised}}>
