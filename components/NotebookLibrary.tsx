@@ -7,7 +7,7 @@ import { BackupReminder } from '@/components/BackupReminder';
 import { EmptyState } from '@/components/EmptyState';
 import { FolderChips } from '@/components/FolderChips';
 import { NotebookCard } from '@/components/NotebookCard';
-import { SelectionActionBar } from '@/components/SelectionActionBar';
+import { NotebookContextMenu } from '@/components/NotebookContextMenu';
 import { NotexIcon, NotexWordmark } from '@/components/NotexBrand';
 import { libraryColors } from '@/components/libraryTheme';
 import { useNotebookStore } from '@/store/notebookStore';
@@ -48,6 +48,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
   const [working, setWorking] = useState(false);
   const [menu, setMenu] = useState(false);
   const [selected, setSelected] = useState<Notebook | null>(null);
+  const [contextPosition,setContextPosition]=useState({x:0,y:0});
   const [moveTarget, setMoveTarget] = useState<Notebook | null>(null);
 
   const columns = viewMode === 'grid' ? Math.max(2, Math.floor((width - 40 + 20) / 190)) : 1;
@@ -126,16 +127,6 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     }
   };
 
-  const selectionActions = [
-    { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || checked.length === 0, onPress: () => setConfirmDelete(true) },
-    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => { setMultiSelect(true); setChecked(data.map(notebook => notebook.id)); } },
-    { key: 'duplicate', label: 'Çoğalt', icon: Copy, disabled: working || checked.length === 0, onPress: async () => { setWorking(true); try { const failed: string[] = []; for (const id of checked) if (!(await duplicateNotebook(id))) failed.push(id); setChecked(failed); if (!failed.length) setMultiSelect(false); } finally { setWorking(false); } } },
-    { key: 'favorite', label: 'Favori', icon: Heart, disabled: working || checked.length === 0, onPress: async () => { setWorking(true); try { const failed: string[] = []; for (const id of checked) if (!(await toggleFavorite(id))) failed.push(id); setChecked(failed); if (!failed.length) setMultiSelect(false); } finally { setWorking(false); } } },
-    { key: 'clear', label: 'Temizle', icon: X, disabled: working || checked.length === 0, onPress: () => setChecked([]) },
-    ...(checked.length === 1 ? [{ key: 'more', label: 'Diğer', icon: MoreHorizontal, disabled: working, onPress: () => setSelected(data.find(notebook => notebook.id === checked[0]) ?? null) }] : []),
-    { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setChecked([]); setMultiSelect(false); } },
-  ];
-
   const listHeader = <View>
     <View style={styles.hero}>
       <Text style={styles.heroTitle}>{favorites ? 'Favoriler' : 'Defterler'}</Text>
@@ -170,13 +161,19 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={multiSelect?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setMultiSelect(v=>!v);setChecked([])}} style={styles.iconButton}><Text style={{color:colors.ink,fontFamily:fonts.medium,fontSize:14}}>{multiSelect?"Vazgeç":"Seç"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={multiSelect?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setMultiSelect(v=>!v);setChecked([])}} style={{paddingHorizontal:12,minHeight:40,justifyContent:'center',alignItems:'center'}}><Text style={{color:colors.ink,fontFamily:fonts.medium,fontSize:14}}>{multiSelect?"Vazgeç":"Seç"}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Defterlerde ara" onPress={() => router.navigate('/search')} style={styles.iconButton}><Search size={20} color={colors.ink} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={20} color={colors.ink} /></Pressable>
         </View>
       </View>
       <View style={styles.headerDivider} />
-      {multiSelect&&<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:20,minHeight:48,backgroundColor:colors.surface}}><Text style={{color:colors.ink,fontFamily:fonts.medium}}>{checked.length} defter seçildi</Text><Pressable accessibilityRole="button" accessibilityLabel="Tüm defterleri seç" onPress={()=>setChecked(data.map(notebook=>notebook.id))}><Text style={{color:colors.accent,fontFamily:fonts.medium}}>Tümünü seç</Text></Pressable></View>}
+      {multiSelect&&<View style={{flexDirection:'row',alignItems:'center',gap:18,paddingHorizontal:24,minHeight:42,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:colors.divider,backgroundColor:colors.background}}>
+        <Text style={{fontFamily:fonts.medium,fontSize:12,color:colors.muted,marginRight:'auto'}}>{checked.length} seçili</Text>
+        <Pressable accessibilityRole="button" onPress={()=>setChecked(data.map(n=>n.id))}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.ink}}>Tümünü seç</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>setChecked([])}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.muted}}>Temizle</Text></Pressable>
+        <Pressable disabled={working||checked.length===0} accessibilityRole="button" onPress={()=>setConfirmDelete(true)}><Text style={{fontFamily:fonts.medium,fontSize:13,color:checked.length?colors.coral:colors.muted}}>Sil</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>{setMultiSelect(false);setChecked([])}}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.accent}}>Bitti</Text></Pressable>
+      </View>}
       {!favorites && <View style={styles.filters}><FolderChips value={folder} onChange={setFolder} colorsOverride={colors} /></View>}
 
       <FlatList
@@ -189,7 +186,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         contentContainerStyle={data.length > 0 ? styles.listContent : styles.emptyContent}
         ListHeaderComponent={listHeader}
         renderItem={({ item }) => <View style={columns > 1 ? { width: cardWidth, marginBottom: 22 } : styles.listItem}>
-          <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => multiSelect ? toggleChecked(item.id) : setSelected(item)} onMenu={() => setSelected(item)} selected={checked.includes(item.id)} colorsOverride={colors} />
+          <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => multiSelect ? toggleChecked(item.id) : setSelected(item)} onMenu={(position) => {setContextPosition(position??{x:40,y:90});setSelected(item)}} selected={checked.includes(item.id)} colorsOverride={colors} />
         </View>}
         ListEmptyComponent={<EmptyState colorsOverride={colors} />}
       />
@@ -197,7 +194,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
       {!favorites && !multiSelect && <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => openEditor()} style={styles.fab}><CreateNotebookIcon/></Pressable>}
     </View>
 
-    <SelectionActionBar visible={multiSelect} selectedCount={checked.length} actions={selectionActions} />
+
     <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
       <View style={styles.modalBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={() => setConfirmDelete(false)} /><View style={styles.confirmCard}>
         <Text style={styles.modalTitle}>Defterleri sil</Text>
@@ -218,18 +215,15 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
       </View></View>
     </Modal>
 
-    <Modal visible={!!selected} transparent animationType="fade" onRequestClose={() => setSelected(null)}>
-      <View style={styles.modalBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={() => setSelected(null)} /><View style={styles.sheet}>
-        <Text numberOfLines={1} style={styles.modalTitle}>{selected?.title}</Text>
-        <Pressable accessibilityRole="button" style={styles.option} onPress={() => { const id = selected?.id; setSelected(null); setChecked([]); if (id) openEditor(id); }}><Text style={styles.optionText}>Defteri düzenle</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.option} onPress={() => { if (selected) void toggleFavorite(selected.id); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>{selected?.favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.option} onPress={() => { setMoveTarget(selected); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>Klasöre taşı</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.option} onPress={() => { if (selected) void duplicateNotebook(selected.id); setSelected(null); setChecked([]); }}><Text style={styles.optionText}>Çoğalt</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.option} onPress={() => { if (selected) { setConfirmDelete(true); setChecked([selected.id]); setSelected(null); } }}><Text style={styles.dangerText}>Sil</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.option} onPress={() => setSelected(null)}><Text style={styles.optionText}>Vazgeç</Text></Pressable>
-      </View></View>
-    </Modal>
-
+    <NotebookContextMenu visible={!!selected} x={contextPosition.x} y={contextPosition.y} title={selected?.title??'Defter'} onClose={()=>setSelected(null)} actions={[
+      {label:'Aç',onPress:()=>{if(selected)openNotebook(selected.id)}},
+      {label:'Düzenle',onPress:()=>{if(selected)openEditor(selected.id)}},
+      {label:selected?.favorite?'Favorilerden çıkar':'Favorilere ekle',onPress:()=>{if(selected)void toggleFavorite(selected.id)}},
+      {label:'Klasöre taşı',onPress:()=>{setMoveTarget(selected)}},
+      {label:'Çoğalt',onPress:()=>{if(selected)void duplicateNotebook(selected.id)}},
+      {label:'Seç',onPress:()=>{if(selected){setMultiSelect(true);setChecked([selected.id])}}},
+      {label:'Sil',danger:true,onPress:()=>{if(selected){setChecked([selected.id]);setConfirmDelete(true)}}}
+    ]}/>
     <Modal visible={!!moveTarget} transparent animationType="slide" onRequestClose={() => setMoveTarget(null)}>
       <View style={styles.modalBackdrop}><View style={styles.sheet}><Text style={styles.modalTitle}>Klasöre taşı</Text>
         {[{ id: null, name: 'Klasörsüz' }, ...folders].map(target => <Pressable key={target.id ?? 'none'} accessibilityRole="button" style={styles.option} onPress={() => { if (moveTarget) void moveNotebook(moveTarget.id, target.id); setMoveTarget(null); }}><Text style={styles.optionText}>{target.name}</Text></Pressable>)}

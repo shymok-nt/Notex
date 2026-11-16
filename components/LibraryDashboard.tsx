@@ -6,8 +6,8 @@ import {CreateNotebookIcon} from '@/components/CreateNotebookIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotebookCover } from '@/components/NotebookCover';
 import { NotebookSelectionMark } from '@/components/NotebookSelectionMark';
-import { SelectionActionBar } from '@/components/SelectionActionBar';
-import type { SelectionAction } from '@/components/SelectionActionBar';
+import { NotebookContextMenu } from '@/components/NotebookContextMenu';
+
 import { NotexIcon, NotexWordmark } from '@/components/NotexBrand';
 import { libraryColors } from '@/components/libraryTheme';
 import { useNotebookStore } from '@/store/notebookStore';
@@ -40,6 +40,7 @@ export function LibraryDashboard() {
   const [selectedNotebookIds, setSelectedNotebookIds] = useState<string[]>([]);
   const [working, setWorking] = useState(false);
   const [contextNotebookId,setContextNotebookId]=useState<string|null>(null);
+  const [contextPosition,setContextPosition]=useState({x:0,y:0});
   const [pdfProgress, setPdfProgress] = useState<{completed:number;total:number;label:string}|null>(null);
   const pdfImporting = useRef(false);
   const [confirmNotebookDeleteVisible, setConfirmNotebookDeleteVisible] = useState(false);
@@ -124,8 +125,8 @@ export function LibraryDashboard() {
     if (selectionKind === 'notebooks') toggleNotebook(id);
     else { setSelectionKind('notebooks'); setSelectedNotebookIds([id]); }
   };
-  const desktopNotebookContext = (id:string) => Platform.OS==='web'?{onContextMenu:(event:{preventDefault:()=>void;stopPropagation:()=>void})=>{
-    event.preventDefault();event.stopPropagation();setContextNotebookId(id);
+  const desktopNotebookContext = (id:string) => Platform.OS==='web'?{onContextMenu:(event:{preventDefault:()=>void;stopPropagation:()=>void;nativeEvent?:{pageX?:number;pageY?:number};pageX?:number;pageY?:number})=>{
+    event.preventDefault();event.stopPropagation();const e=event.nativeEvent??event;setContextPosition({x:e.pageX??0,y:e.pageY??0});setContextNotebookId(id);
   }}:{};
   const contextNotebook=notebooks.find(notebook=>notebook.id===contextNotebookId);
   const performNotebookDelete = async () => {
@@ -160,12 +161,6 @@ export function LibraryDashboard() {
   };
   const confirmNotebookDelete = () => setConfirmNotebookDeleteVisible(true);
 
-  const selectionActions: SelectionAction[] = [
-    { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || selectedNotebookIds.length === 0, onPress: confirmNotebookDelete },
-    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => setSelectedNotebookIds(notebooks.map(notebook => notebook.id)) },
-    { key: 'clear', label: 'Temizle', icon: X, disabled: working || selectedNotebookIds.length === 0, onPress: () => setSelectedNotebookIds([]) },
-    { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setSelectionKind(null); setSelectedNotebookIds([]); } },
-  ];
   const coverWidth = Math.min(120, Math.max(96, (width - 84) / 2.45));
 
   return <SafeAreaView style={styles.safe} edges={['top']}>
@@ -177,12 +172,18 @@ export function LibraryDashboard() {
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste g\u00f6r\u00fcn\u00fcm\u00fcne ge\u00e7' : '\u0130zgara g\u00f6r\u00fcn\u00fcm\u00fcne ge\u00e7'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={21} color={colors.ink}/> : <LayoutGrid size={20} color={colors.ink}/>}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={selectionKind?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setSelectionKind(selectionKind?null:"notebooks");setSelectedNotebookIds([])}} style={styles.iconButton}><Text style={{fontFamily:fonts.medium,color:colors.ink,fontSize:14}}>{selectionKind?"Vazgeç":"Seç"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={selectionKind?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setSelectionKind(selectionKind?null:"notebooks");setSelectedNotebookIds([])}} style={{paddingHorizontal:12,minHeight:40,justifyContent:'center',alignItems:'center'}}><Text style={{fontFamily:fonts.medium,color:colors.ink,fontSize:14}}>{selectionKind?"Vazgeç":"Seç"}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={21} color={colors.ink}/></Pressable>
         </View>
       </View>
 
-      {selectionKind==='notebooks'&&<View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:20,minHeight:48,backgroundColor:colors.surface}}><Text style={{color:colors.ink,fontFamily:fonts.medium}}>{selectedNotebookIds.length} seçili</Text><Pressable accessibilityRole="button" accessibilityLabel="Tümünü seç" onPress={()=>setSelectedNotebookIds(notebooks.map(notebook=>notebook.id))}><Text style={{color:colors.accent,fontFamily:fonts.medium}}>Tümünü seç</Text></Pressable></View>}
+      {selectionKind==='notebooks'&&<View style={{flexDirection:'row',alignItems:'center',gap:18,paddingHorizontal:24,minHeight:42,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:colors.divider,backgroundColor:colors.background}}>
+        <Text style={{fontFamily:fonts.medium,fontSize:12,color:colors.muted,marginRight:'auto'}}>{selectedNotebookIds.length} seçili</Text>
+        <Pressable accessibilityRole="button" onPress={()=>setSelectedNotebookIds(notebooks.map(n=>n.id))}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.ink}}>Tümünü seç</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>setSelectedNotebookIds([])}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.muted}}>Temizle</Text></Pressable>
+        <Pressable disabled={working||selectedNotebookIds.length===0} accessibilityRole="button" onPress={()=>setConfirmNotebookDeleteVisible(true)}><Text style={{fontFamily:fonts.medium,fontSize:13,color:selectedNotebookIds.length?colors.coral:colors.muted}}>Sil</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>{setSelectionKind(null);setSelectedNotebookIds([])}}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.accent}}>Bitti</Text></Pressable>
+      </View>}
       <Modal visible={pdfProgress!==null} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={{flex:1,alignItems:'center',justifyContent:'center',padding:24,backgroundColor:colors.overlay}}>
           <View style={{width:'100%',maxWidth:380,gap:14,padding:22,borderRadius:18,backgroundColor:colors.surfaceRaised}}>
@@ -239,21 +240,15 @@ export function LibraryDashboard() {
         </ScrollView>
 
       <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => router.push('/notebook-editor')} style={[styles.fab, selectionKind !== null && { display: 'none' }]}><CreateNotebookIcon/></Pressable>
-      <SelectionActionBar visible={selectionKind !== null} selectedCount={selectedNotebookIds.length} actions={selectionActions} />
-      <Modal visible={contextNotebookId!==null} transparent animationType="fade" onRequestClose={()=>setContextNotebookId(null)}>
-        <View style={styles.deleteBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={()=>setContextNotebookId(null)}/>
-          <View style={styles.deleteCard}>
-            <Text style={styles.deleteTitle} numberOfLines={1}>{contextNotebook?.title??'Defter'}</Text>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)openNotebook(id)}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Aç</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)router.push({pathname:'/notebook-editor',params:{id}})}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Düzenle</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)void toggleFavorite(id)}} style={styles.deleteButton}><Text style={styles.deleteCancel}>{contextNotebook?.favorite?'Favorilerden çıkar':'Favorilere ekle'}</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)void duplicateNotebook(id)}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Çoğalt</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id){setSelectionKind('notebooks');setSelectedNotebookIds([id])}}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Seç</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id){setSelectionKind('notebooks');setSelectedNotebookIds([id]);setConfirmNotebookDeleteVisible(true)}}} style={styles.deleteButton}><Text style={styles.deleteConfirm}>Sil</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>setContextNotebookId(null)} style={styles.deleteButton}><Text style={styles.deleteCancel}>Vazgeç</Text></Pressable>
-          </View>
-        </View>
-      </Modal>
+
+      <NotebookContextMenu visible={contextNotebookId!==null} x={contextPosition.x} y={contextPosition.y} title={contextNotebook?.title??'Defter'} onClose={()=>setContextNotebookId(null)} actions={[
+        {label:'Aç',onPress:()=>{if(contextNotebookId)openNotebook(contextNotebookId)}},
+        {label:'Düzenle',onPress:()=>{if(contextNotebookId)router.push({pathname:'/notebook-editor',params:{id:contextNotebookId}})}},
+        {label:contextNotebook?.favorite?'Favorilerden çıkar':'Favorilere ekle',onPress:()=>{if(contextNotebookId)void toggleFavorite(contextNotebookId)}},
+        {label:'Çoğalt',onPress:()=>{if(contextNotebookId)void duplicateNotebook(contextNotebookId)}},
+        {label:'Seç',onPress:()=>{if(contextNotebookId){setSelectionKind('notebooks');setSelectedNotebookIds([contextNotebookId])}}},
+        {label:'Sil',danger:true,onPress:()=>{if(contextNotebookId){setSelectionKind('notebooks');setSelectedNotebookIds([contextNotebookId]);setConfirmNotebookDeleteVisible(true)}}}
+      ]}/>
       <Modal visible={confirmNotebookDeleteVisible} transparent animationType="fade" onRequestClose={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}>
         <View style={styles.deleteBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}/>
