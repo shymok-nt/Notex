@@ -1,6 +1,6 @@
 import React,{memo,useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {View,PixelRatio,Platform,TextInput,BackHandler,Keyboard,Animated,Text,Modal,Pressable,type LayoutChangeEvent,type ViewStyle} from 'react-native';
-import {Canvas,Group,Path,Rect,Line,Circle,DashPathEffect,Image as SkiaImage,Skia,vec,Paragraph,TextAlign,TextDecoration,FontSlant} from '@shopify/react-native-skia';
+import {Canvas,Group,Path,Rect,Line,Circle,DashPathEffect,Image as SkiaImage,LinearGradient,Skia,vec,Paragraph,TextAlign,TextDecoration,FontSlant} from '@shopify/react-native-skia';
 import {Gesture,GestureDetector,PointerType} from 'react-native-gesture-handler';
 import {useSettingsStore} from '@/store/settingsStore';
 import {useDerivedValue,useSharedValue,runOnJS} from 'react-native-reanimated';
@@ -27,7 +27,7 @@ import type {ShapeMode,Element} from '@/features/canvas/types';
 import type {PageTemplate,PaperColor} from '@/types/notebook';
 export type Tool='pen'|'highlighter'|'eraser'|'hand'|'select'|'shape'|'text';
 export type Brush={color:string;width:number;opacity:number};
-type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onFinishEditingReady?:(finish:()=>void)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back';pageId:string;value?:number;color?:string;dx?:number;dy?:number;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}};
+type Props={pageId:string;content:PageContent;template:PageTemplate;paperColor:PaperColor;tool:Tool;brush:Brush;eraserSize:number;eraserMode?:'pixel'|'stroke';onChange:(next:PageContent)=>void;onAddImage?:(image:PageImage)=>void;onDrawingActive?:(active:boolean)=>void;onFinishEditingReady?:(finish:()=>void)=>void;onStrokeComplete?:(tool:'pen'|'highlighter',color:string)=>void;shapeKind?:ShapeMode;shapeFill?:boolean;onSelectionChange?:(ids:string[])=>void;onSelectionClipboardChange?:(hasItems:boolean)=>void;onSelectionActionComplete?:(version:number)=>void;selectionAction?:{kind:'sticker'|'delete'|'duplicate'|'move'|'scale'|'rotate'|'color|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back';pageId:string;value?:number;color?:string;dx?:number;dy?:number;textStyle?:Partial<Pick<TextElement,'fontSize'|'color'|'bold'|'italic'|'underline'|'align'>>;version:number};transformMode?:boolean;onImageSelectionChange?:(id:string|null)=>void;onImageLoadError?:(message:string)=>void;imageRequest?:{uri:string;width:number;height:number;version:number}|null;onImageRequestConsumed?:(version:number)=>void;imageAction?:{kind:'grow'|'shrink'|'delete'|'clear';version:number};textStyle?:{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}};
 const normalizeShapeSize=(kind:string,w:number,h:number):[number,number]=>{ 'worklet';
  if(kind==='triangle'){
   const side=Math.max(Math.abs(w),Math.abs(h)*2/Math.sqrt(3));
@@ -272,12 +272,38 @@ const TextLayer=memo(function TextLayer({element,fonts}:{element:TextElement;fon
   </React.Fragment>)}
  </Group>;
 });
+// Vector-only rendering: no external image, file path or raster decode.
+const stickyBody=Skia.Path.MakeFromSVGString('M24 26 Q24 20 30 20 H210 Q216 20 216 26 V168 L168 216 H30 Q24 216 24 210 Z')!;
+const stickyCurl=Skia.Path.MakeFromSVGString('M216 168 H168 Q168 176 168 216 Q210 210 216 168 Z')!;
+const stickyGloss=Skia.Path.MakeFromSVGString('M24 26 Q24 20 30 20 H210 Q216 20 216 26 V92 Q120 74 24 110 Z')!;
+const stickerShade=(hex:string,amount:number)=>{
+ const normalized=/^#[0-9a-fA-F]{6}$/.test(hex)?hex:'#FFE97A';
+ const n=parseInt(normalized.slice(1),16);
+ return '#'+[16,8,0].map(shift=>{const v=(n>>shift)&255;return Math.max(0,Math.min(255,Math.round(amount>=0?v+(255-v)*amount:v*(1+amount)))).toString(16).padStart(2,'0')}).join('');
+};
 const StrokeLayer=memo(function StrokeLayer({element}:{element:Element}){
  const path=useMemo(()=>cachedPath(element),[element]);
  if(element.type==='text')return null;
  if(element.type==='shape'){
   const {x,y,w,h,rotation}=element.params;
   const center=vec(x+w/2,y+h/2);
+  if(element.kind==='sticker'){
+   const color=element.stroke.color;
+   return <Group origin={center} transform={[{rotate:rotation}]}>
+    <Group transform={[{translateX:x},{translateY:y},{scaleX:w/240},{scaleY:h/240}]}>
+     <Group origin={vec(120,120)} transform={[{rotate:-4*Math.PI/180}]}>
+      <Path path={stickyBody}>
+       <LinearGradient start={vec(24,20)} end={vec(216,216)} colors={[stickerShade(color,0.36),color,stickerShade(color,-0.12)]}/>
+      </Path>
+      <Path path={stickyGloss} color="#FFFFFF" opacity={0.23}/>
+      <Path path={stickyCurl}>
+       <LinearGradient start={vec(168,168)} end={vec(216,216)} colors={[stickerShade(color,0.15),stickerShade(color,-0.2)]}/>
+      </Path>
+      <Rect x={92} y={8} width={56} height={20} color="#FFFFFF" opacity={0.45}/>
+     </Group>
+    </Group>
+   </Group>;
+  }
   return <Group origin={center} transform={[{rotate:rotation}]}>
    {element.fill&&<Path path={path} color={element.fill.color} opacity={element.fill.opacity} style="fill"/>}
    <Path path={path} color={element.stroke.color} opacity={element.stroke.opacity} style="stroke" strokeWidth={element.stroke.width}/>
@@ -458,6 +484,14 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  },[imageAction?.version]);
  useEffect(()=>{
   if(!selectionAction||selectionAction.pageId!==pageId)return;
+  if(selectionAction.kind==='sticker'){
+   const sticker=makeShape('sticker',Math.max(0,(PAGE_WIDTH-240)/2),Math.max(0,(pageHeight-240)/2),240,240,selectionAction.color??'#FFE97A',1,1,true);
+   sticker.z=content.elements.length;
+   onChange(withHeight([...content.elements,sticker]));
+   setSelectedIds([sticker.id]);onSelectionChange?.([sticker.id]);
+   onSelectionActionComplete?.(selectionAction.version);
+   return;
+  }
   if(selectionAction.kind==='selectAll'){
    const allIds=content.elements.filter(element=>(element as Element&{locked?:boolean}).locked!==true).map(element=>element.id);
    resetPaintedTransform();setHandoff(null);setSelectedIds(allIds);onSelectionChange?.(allIds);
