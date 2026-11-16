@@ -26,7 +26,7 @@ export function parseContent(raw:string):PageContent{
  const e=item as Record<string,unknown>;
  if(typeof e.id!=='string'||!Array.isArray(e.bbox)||e.bbox.length!==4||!e.bbox.every(n=>typeof n==='number'&&Number.isFinite(n)))return false;
  if(e.type==='stroke')return Array.isArray(e.points)&&e.points.length%3===0&&e.points.every(n=>typeof n==='number'&&Number.isFinite(n));
- if(e.type==='shape'){const p=e.params as Record<string,unknown>|undefined;return ['line','arrow','rect','ellipse','triangle','polygon'].includes(String(e.kind))&&!!p&&['x','y','w','h','rotation'].every(k=>typeof p[k]==='number'&&Number.isFinite(p[k]))&&!!e.stroke}
+ if(e.type==='shape'){const p=e.params as Record<string,unknown>|undefined;return ['line','arrow','rect','ellipse','triangle','polygon','sticker'].includes(String(e.kind))&&!!p&&['x','y','w','h','rotation'].every(k=>typeof p[k]==='number'&&Number.isFinite(p[k]))&&!!e.stroke}
  if(e.type==='text')return typeof e.text==='string'&&e.text.length<=100000&&typeof e.color==='string'&&typeof e.bold==='boolean'&&['left','center','right'].includes(String(e.align))&&(e.fontFamily===undefined||e.fontFamily==='Inter'||e.fontFamily==='SpaceGrotesk')&&(e.minHeight===undefined||typeof e.minHeight==='number'&&Number.isFinite(e.minHeight)&&e.minHeight>=0&&e.minHeight<=1000000)&&['x','y','w','fontSize'].every(k=>typeof e[k]==='number'&&Number.isFinite(e[k]))&&Number(e.w)>0&&Number(e.fontSize)>=16&&Number(e.fontSize)<=200&&Array.isArray(e.bbox)&&e.bbox.length===4&&e.bbox.every(n=>typeof n==='number'&&Number.isFinite(n));
  return false;
  });
