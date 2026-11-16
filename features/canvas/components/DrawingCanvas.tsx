@@ -485,7 +485,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
  useEffect(()=>{
   if(!selectionAction||selectionAction.pageId!==pageId)return;
   if(selectionAction.kind==='sticker'){
-   const sticker=makeShape('sticker',Math.max(0,(PAGE_WIDTH-240)/2),Math.max(0,(pageHeight-240)/2),240,240,selectionAction.color??'#FFE97A',1,1,true);
+   const sticker=makeShape('sticker',24,32,240,240,selectionAction.color??'#FFE97A',1,1,true);
    sticker.z=content.elements.length;
    onChange(withHeight([...content.elements,sticker]));
    setSelectedIds([sticker.id]);onSelectionChange?.([sticker.id]);
