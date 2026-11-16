@@ -94,7 +94,7 @@ export default function NoteCanvasScreen(){
   return()=>animation.stop();
  },[selectionMenuVisible,selectionMenuProgress]);
   const selectionActionVersion=useRef(0);
-  const action=(kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back',value?:number,color?:string,textStyle?:Partial<typeof defaultTextStyle>,dx?:number,dy?:number)=>setSelectionAction({kind,value,color,textStyle,dx,dy,version:++selectionActionVersion.current,pageId:selectedId??''});
+  const action=(kind:'sticker'|'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back',value?:number,color?:string,textStyle?:Partial<typeof defaultTextStyle>,dx?:number,dy?:number)=>setSelectionAction({kind,value,color,textStyle,dx,dy,version:++selectionActionVersion.current,pageId:selectedId??''});
  const [recent,setRecent]=useState<string[]>([]);
  const [presets,setPresets]=useState<Preset[]>(defaults);
  const [hexInput,setHexInput]=useState('#1B1B2F');
