@@ -46,7 +46,7 @@ export default function NoteCanvasScreen(){
  const notebookExists=useNotebookStore(s=>s.notebooks.some(n=>n.id===id));
  const pages=usePageStore(s=>s.pages),pageStoreNotebookId=usePageStore(s=>s.notebookId),load=usePageStore(s=>s.load),add=usePageStore(s=>s.add),remove=usePageStore(s=>s.remove),move=usePageStore(s=>s.move),changeTemplate=usePageStore(s=>s.updateTemplate),duplicateMany=usePageStore(s=>s.duplicateMany),removeMany=usePageStore(s=>s.removeMany),restoreMany=usePageStore(s=>s.restoreMany);
  const [readyNotebookId,setReadyNotebookId]=useState<string|null>(null);
- const [pdfPreparation,setPdfPreparation]=useState<{completed:number;total:number}|null>(null);
+ 
  const [pdfRenderError,setPdfRenderError]=useState<string|null>(null);
  const [pageLoadError,setPageLoadError]=useState<string|null>(null);
  const [selectedPdfError,setSelectedPdfError]=useState<string|null>(null);
@@ -57,7 +57,7 @@ export default function NoteCanvasScreen(){
   let active=true;let unsubscribe:(()=>void)|undefined;
   void import('@/utils/pdfRenderQueue.web').then(queue=>{
    if(!active)return;
-   const update=()=>{setPdfPreparation(queue.getPdfProgress(id));setPdfRenderError(queue.getPdfError(id));setSelectedPdfError(selectedId?queue.getPdfPageError(selectedId):null)};
+   const update=()=>{setPdfRenderError(queue.getPdfError(id));setSelectedPdfError(selectedId?queue.getPdfPageError(selectedId):null)};
    unsubscribe=queue.subscribePdfProgress(update);update();
    return queue.resumePdfNotebook(id);
   }).catch(error=>console.error('[Notex PDF] Kuyruk devam ettirilemedi',error));
@@ -362,7 +362,7 @@ export default function NoteCanvasScreen(){
  <Pressable accessibilityRole="button" accessibilityLabel="Defteri düzenle" onPress={()=>router.push({pathname:'/notebook-editor',params:{id}})}>
  <Text numberOfLines={1} style={{fontFamily:fonts.heading,fontSize:17,color:ink}}>{notebook?.title??'Defter'}</Text></Pressable>
  <View style={{flexDirection:'row',alignItems:'center',minWidth:0}}>
- <Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}>{`Sayfa ${pages.length?index+1:0} / ${pages.length}`}</Text>{pdfPreparation&&pdfPreparation.completed<pdfPreparation.total&&<Text style={{fontFamily:fonts.body,fontSize:11,color:muted,marginLeft:10}}>{`Sayfalar hazırlanıyor ${pdfPreparation.completed}/${pdfPreparation.total}`}</Text>}{pdfRenderError&&<Pressable onPress={()=>setPdfErrorDetails(true)} accessibilityRole="button"><Text style={{fontSize:11,color:colors.coral,marginLeft:8}}>PDF hatası · Ayrıntılar</Text></Pressable>}
+ <Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}>{`Sayfa ${pages.length?index+1:0} / ${pages.length}`}</Text>{pdfRenderError&&<Pressable onPress={()=>setPdfErrorDetails(true)} accessibilityRole="button"><Text style={{fontSize:11,color:colors.coral,marginLeft:8}}>PDF hatası · Ayrıntılar</Text></Pressable>}
  {saveStatus==='error'&&<Pressable accessibilityRole="button" accessibilityLabel="Kaydetmeyi tekrar dene" onPress={()=>{void controllerRef.current?.retry().catch(()=>{})}}><Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:colors.coral}}> · Kaydedilemedi, tekrar dene</Text></Pressable>}
  {saveStatus==='saving'&&<Text numberOfLines={1} style={{fontFamily:fonts.body,fontSize:12,color:muted}}> · Kaydediliyor…</Text>}
  </View></View></View>;
