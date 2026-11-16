@@ -2,7 +2,7 @@ name: Notex persistence checks
 on:
   push:
     branches:
-      - refactor/single-sqlite-page-persistence-20261114
+      - main
   pull_request:
     branches:
       - main
