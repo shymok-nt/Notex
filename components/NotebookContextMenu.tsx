@@ -17,7 +17,7 @@ export function NotebookContextMenu({visible,x,y,title,actions,onClose}:{visible
    <View style={{position:'absolute',left,top,width:menuWidth,padding:6,borderRadius:12,backgroundColor:colors.surfaceRaised,borderWidth:StyleSheet.hairlineWidth,borderColor:colors.border,shadowColor:'#000',shadowOffset:{width:0,height:7},shadowOpacity:0.16,shadowRadius:18,elevation:12}}>
     <Text numberOfLines={1} style={{fontFamily:fonts.semibold,fontSize:12,color:colors.muted,paddingHorizontal:10,paddingVertical:10}}>{title}</Text>
     <View style={{height:StyleSheet.hairlineWidth,backgroundColor:colors.divider,marginBottom:5}}/>
-    {actions.map((action,i)=><Pressable key={i} accessibilityRole="menuitem" onPress={()=>{onClose();action.onPress()}} style={({hovered})=>({minHeight:36,borderRadius:7,justifyContent:'center',paddingHorizontal:10,backgroundColor:hovered?colors.background:'transparent'})}>
+    {actions.map((action,i)=><Pressable key={i} accessibilityRole="menuitem" onPress={()=>{onClose();action.onPress()}} style={{minHeight:36,borderRadius:7,justifyContent:'center',paddingHorizontal:10}}>
      <Text style={{fontFamily:fonts.medium,fontSize:13,color:action.danger?colors.coral:colors.ink}}>{action.label}</Text>
     </Pressable>)}
    </View>
