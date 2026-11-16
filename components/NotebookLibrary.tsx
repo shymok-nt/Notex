@@ -172,7 +172,6 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         <Pressable accessibilityRole="button" onPress={()=>setChecked(data.map(n=>n.id))}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.ink}}>Tümünü seç</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={()=>setChecked([])}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.muted}}>Temizle</Text></Pressable>
         <Pressable disabled={working||checked.length===0} accessibilityRole="button" onPress={()=>setConfirmDelete(true)}><Text style={{fontFamily:fonts.medium,fontSize:13,color:checked.length?colors.coral:colors.muted}}>Sil</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={()=>{setMultiSelect(false);setChecked([])}}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.accent}}>Bitti</Text></Pressable>
       </View>}
       {!favorites && <View style={styles.filters}><FolderChips value={folder} onChange={setFolder} colorsOverride={colors} /></View>}
 
