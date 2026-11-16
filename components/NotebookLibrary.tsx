@@ -161,7 +161,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={multiSelect?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setMultiSelect(v=>!v);setChecked([])}} style={styles.iconButton}><Text style={{color:colors.ink,fontFamily:fonts.medium,fontSize:14}}>{multiSelect?"Vazgeç":"Seç"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={multiSelect?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setMultiSelect(v=>!v);setChecked([])}} style={{paddingHorizontal:12,minHeight:40,justifyContent:'center',alignItems:'center'}}><Text style={{color:colors.ink,fontFamily:fonts.medium,fontSize:14}}>{multiSelect?"Vazgeç":"Seç"}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Defterlerde ara" onPress={() => router.navigate('/search')} style={styles.iconButton}><Search size={20} color={colors.ink} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={20} color={colors.ink} /></Pressable>
         </View>
