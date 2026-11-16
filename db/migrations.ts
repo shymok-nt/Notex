@@ -40,7 +40,7 @@ export const migrations:Migration[]=[{
   }
  }
 }];
-export const latestMigrationVersion=4;
+export const latestMigrationVersion=5;
 migrations.push({
  version:2,
  run:async db=>{
@@ -75,5 +75,18 @@ migrations.push({version:4,run:async db=>{
   CREATE INDEX IF NOT EXISTS idx_card_reviews_date ON card_reviews(reviewed_at);
   CREATE TRIGGER IF NOT EXISTS clear_card_source_on_notebook_delete AFTER DELETE ON notebooks BEGIN UPDATE cards SET source_note_id=NULL WHERE source_note_id=OLD.id; END;
   CREATE TRIGGER IF NOT EXISTS clear_card_source_on_notebook_trash AFTER UPDATE OF deleted_at ON notebooks WHEN NEW.deleted_at IS NOT NULL BEGIN UPDATE cards SET source_note_id=NULL WHERE source_note_id=NEW.id; END;
+ `);
+}});
+
+// Preserve historical migrations for existing installations. Remove flashcard
+// storage only in a new version so SQLite user_version upgrades remain valid.
+migrations.push({version:5,run:async db=>{
+ await db.execAsync(`
+  DROP TRIGGER IF EXISTS clear_card_source_on_notebook_delete;
+  DROP TRIGGER IF EXISTS clear_card_source_on_notebook_trash;
+  DROP TABLE IF EXISTS card_reviews;
+  DROP TABLE IF EXISTS cards;
+  DROP TABLE IF EXISTS card_decks;
+  DELETE FROM settings WHERE key IN ('cardsNewDailyLimit','cardsEnabled');
  `);
 }});
