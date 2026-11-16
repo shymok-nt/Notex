@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import React,{useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Alert,Animated,AppState,BackHandler,Modal,Pressable,ScrollView,Text,TextInput,View,useWindowDimensions} from 'react-native';
-import {router,useLocalSearchParams,type Href} from 'expo-router';
+import {router,useLocalSearchParams} from 'expo-router';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {Circle,Square,Triangle,ArrowRight,WandSparkles,ArrowLeft,Undo2,Redo2,Ellipsis,Eye,Palette,ChevronLeft,ChevronRight,ChevronUp,ChevronDown,X,Move,RotateCw,Maximize2,Copy,Trash2,Minus,Plus} from 'lucide-react-native';
 import {useTheme} from '@/theme/ThemeProvider';
@@ -18,7 +18,7 @@ import {CanvasPageStrip} from './CanvasPageStrip';
 import {parseContent} from '@/features/canvas/engine/content';
 import {useCanvasPageContent} from '@/features/canvas/hooks/useCanvasPageContent';
 import {visibleSaveStatus} from '@/features/canvas/store/pagePersistence';
-import type {ShapeMode,TextElement} from '@/features/canvas/types';
+import type {ShapeMode} from '@/features/canvas/types';
 import {hasSelectionClipboard} from '@/features/canvas/engine/selectionClipboard';
 import type {Page} from '@/types/page';
 import type {PageTemplate} from '@/types/notebook';
@@ -80,8 +80,6 @@ export default function NoteCanvasScreen(){
  const editImage=(kind:'grow'|'shrink'|'delete'|'clear')=>setImageAction({kind,version:++imageActionVersion.current});
  const [shapeKind,setShapeKind]=useState<ShapeMode>('auto'),[shapeFill,setShapeFill]=useState(false),[ruler,setRuler]=useState(false);
  const [selectedText,setSelectedText]=useState(false);
- const cardsEnabled=true; // The Cards tab is currently always available.
- const [cardTextChoice,setCardTextChoice]=useState<string|null>(null);
  const [selectedElements,setSelectedElements]=useState<string[]>([]),[selectionAction,setSelectionAction]=useState<{kind:'delete'|'duplicate'|'move'|'scale'|'rotate'|'color'|'textStyle'|'copy'|'paste'|'clear'|'selectAll'|'cut'|'width'|'fontSize'|'front'|'back';pageId:string;value?:number;color?:string;dx?:number;dy?:number;textStyle?:Partial<{fontSize:number;color:string;bold:boolean;italic?:boolean;underline?:boolean;align:'left'|'center'|'right'}>;version:number}>();
   const [inkClipboardAvailable,setInkClipboardAvailable]=useState(hasSelectionClipboard());
  const selectionMenuVisible=tool==='select'&&(selectedElements.length>0||inkClipboardAvailable);
@@ -204,7 +202,6 @@ export default function NoteCanvasScreen(){
  };
  const pagesReady=readyNotebookId===id&&pageStoreNotebookId===id;const selected=pagesReady?pages.find(p=>p.id===selectedId):undefined;const index=selected?pages.findIndex(p=>p.id===selected.id):0;
  const pdfPending=selected?.contentLoaded!==false&&!!selected&&!!parseContent(selected.content).pdfSource&&!parseContent(selected.content).backgroundImage;
- const selectedCardText=selected?parseContent(selected.content).elements.filter((e):e is TextElement=>e.type==='text'&&selectedElements.includes(e.id)).map(e=>e.text).join('\n'):'';
  const loadingStartedAt=useRef(__DEV__?perfNow():0);
  const loadingRemovalLogged=useRef(false);
  useEffect(()=>{loadingRemovalLogged.current=false;if(__DEV__)loadingStartedAt.current=perfNow()},[id]);
@@ -291,7 +288,7 @@ export default function NoteCanvasScreen(){
  const ink=colors.ink,muted=colors.muted;const backdrop=scheme==='dark'?'#0B0B10':'#EEE9DF';
  const control=(name:string,Icon:typeof ArrowLeft,onPress:()=>void,disabled=false)=> <Pressable accessibilityRole="button" accessibilityLabel={name} accessibilityState={{disabled}} disabled={disabled} hitSlop={4} onPress={onPress} style={[hit,{opacity:disabled?0.35:1}]}><Icon size={22} color={ink}/></Pressable>;
  const selectionActionButton=(label:string,Icon:typeof Copy,onPress:()=>void,tone:'normal'|'danger'|'accent'='normal')=><Pressable key={label} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({pressed})=>({width:64,height:58,alignItems:'center',justifyContent:'center',gap:4,borderRadius:12,opacity:pressed?0.7:1,backgroundColor:tone==='danger'?colors.coral+'12':tone==='accent'?colors.accent+'12':'transparent'})}><Icon size={18} strokeWidth={1.8} color={tone==='danger'?colors.coral:tone==='accent'?colors.accent:colors.ink}/><Text numberOfLines={1} style={{fontSize:10.5,color:tone==='danger'?colors.coral:tone==='accent'?colors.accent:colors.ink}}>{label}</Text></Pressable>;
- const selectionActionCount=(selectedElements.length>0?4:0)+(cardsEnabled&&selectedCardText?1:0)+(inkClipboardAvailable?1:0);
+ const selectionActionCount=(selectedElements.length>0?4:0)+(inkClipboardAvailable?1:0);
  const selectionMenuWidth=Math.min(Math.max(0,width-24),selectionActionCount*64+16+Math.max(0,selectionActionCount-1)*3);
  const lassoStyleBar=tool==='select'&&selectedElements.length>0?<View style={{position:'absolute',top:tablet?12:56,right:12,zIndex:42,flexDirection:'row',flexWrap:'wrap',gap:6,padding:8,borderRadius:12,backgroundColor:colors.surfaceRaised,borderWidth:1,borderColor:colors.divider,maxWidth:310}}>
   {['#1B1B2F','#3347D9','#D94343','#25825B'].map(color=><Pressable key={color} accessibilityLabel={'Seçili öğelerin rengi '+color} onPress={()=>action('color',undefined,color)} style={{width:24,height:24,borderRadius:12,backgroundColor:color,borderWidth:1,borderColor:colors.divider}}/>)}
@@ -308,7 +305,6 @@ export default function NoteCanvasScreen(){
      {selectionActionButton('Çoğalt',Plus,()=>action('duplicate'))}
      {selectionActionButton('Sil',Trash2,()=>action('delete'),'danger')}
      {selectionActionButton('Kaldır',X,()=>action('clear'))}
-     {cardsEnabled&&selectedCardText!==''&&selectionActionButton('Karta çevir',Copy,()=>setCardTextChoice(selectedCardText),'accent')}
     </>}
     {inkClipboardAvailable&&selectionActionButton('Yapıştır',Move,()=>action('paste'),'accent')}
    </ScrollView>
@@ -377,7 +373,6 @@ export default function NoteCanvasScreen(){
 
  
  {selectionControls}{lassoStyleBar}
- <Modal visible={cardTextChoice!==null} transparent animationType="fade" onRequestClose={()=>setCardTextChoice(null)}><View style={{flex:1,backgroundColor:colors.overlay,alignItems:'center',justifyContent:'center',padding:20}}><View style={{backgroundColor:colors.surfaceRaised,borderRadius:18,padding:20,gap:12,maxWidth:440,width:'100%'}}><Text style={{color:ink,fontSize:20,fontWeight:'700'}}>Seçili yazıyı karta çevir</Text><Text numberOfLines={3} style={{color:muted}}>{cardTextChoice}</Text><Pressable accessibilityRole="button" accessibilityLabel="Ön yüze koy" onPress={()=>{const value=cardTextChoice??'';setCardTextChoice(null);router.push({pathname:'/(tabs)/cards',params:{front:value,sourceNoteId:id}} as unknown as Href)}} style={{padding:12,backgroundColor:colors.surface,borderRadius:10}}><Text style={{color:ink}}>Ön yüze koy</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Arka yüze koy" onPress={()=>{const value=cardTextChoice??'';setCardTextChoice(null);router.push({pathname:'/(tabs)/cards',params:{back:value,sourceNoteId:id}} as unknown as Href)}} style={{padding:12,backgroundColor:colors.surface,borderRadius:10}}><Text style={{color:ink}}>Arka yüze koy</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Vazgeç" onPress={()=>setCardTextChoice(null)}><Text style={{color:colors.accent}}>Vazgeç</Text></Pressable></View></View></Modal>
  {pendingDelete&&<View style={{position:'absolute',bottom:tablet?18:170,left:16,right:16,backgroundColor:colors.surfaceRaised,padding:12,borderRadius:12,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={{color:ink}}>{pendingDelete.length} sayfa silindi</Text><Pressable onPress={()=>void undoDelete()}><Text style={{color:colors.accent}}>Geri al</Text></Pressable></View>}
  {ruler&&<View pointerEvents="none" style={{position:'absolute',top:'45%',left:'15%',width:'70%',height:64,backgroundColor:colors.accent+'55',borderWidth:1,borderColor:colors.accent,borderRadius:6,justifyContent:'center',alignItems:'center'}}><Text style={{color:ink}}>0°   | | | | | | | | | | | |</Text></View>}
  {popover}

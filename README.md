@@ -15,7 +15,6 @@ npm run tauri:dev
 ```bash
 npm run typecheck
 node --test features/canvas/engine/__tests__/*.test.mjs
-node --test features/cards/__tests__/cards.test.mjs
 ```
 
 Gerçek kalem, silgi, sayfa geçişi ve yeniden açma akışlarını hedef platformda ayrıca test edin. Lasso seçiminde taşıma, art arda büyütme/küçültme, taşıma-sonrası-ölçekleme ve metin kutusu çift tıklama akışlarını da doğrulayın.
@@ -26,8 +25,7 @@ Gerçek kalem, silgi, sayfa geçişi ve yeniden açma akışlarını hedef platf
 - Skia sayfa editöründe kalem, vurgulayıcı, şekil, metin, görsel, lasso seçim, taşıma, köşeden büyütme/küçültme, silgi, undo/redo, uzayan sayfa ve PDF arka planı.
 - Windows/Tauri'de PDF içe aktarma: PDF kaynak dosyasını yerel saklama, sayfa metaverisini okuyup defteri hızlı açma, JPEG arka planları en fazla iki eşzamanlı iş ile arka planda oluşturma, seçili sayfaya öncelik verme, hata/yeniden deneme ve kayıp arka planı onarma.
 - Defter başlığı araması, tema ve kalem ayarları.
-- Ayarlardan açılan kart desteleri ve tekrar çalışma alanı.
-- `.notex` dışa ve içe aktarma. Biçim 2 kartları ve çalışma geçmişini taşır; biçim 1 de okunur.
+- `.notex` dışa ve içe aktarma. Biçim 1 ve 2 yedekleri okunur; eski biçim 2 arşivlerindeki kart verileri artık içe aktarılmaz.
 
 ## Kod haritası
 
@@ -35,7 +33,6 @@ Gerçek kalem, silgi, sayfa geçişi ve yeniden açma akışlarını hedef platf
 | --- | --- |
 | `app/` | Expo Router ekranları ve sekmeler |
 | `features/canvas/` | Çizim, vektör içerik ve kayıt kuyruğu |
-| `features/cards/` | Kart zamanlayıcısı ve aktarım |
 | `store/` | Zustand durumları |
 | `db/` | SQLite bağlantısı, migrasyonlar ve repository'ler |
 | `services/notexBackup.ts` | Yedekleme ve geri yükleme |
@@ -46,7 +43,7 @@ Gerçek kalem, silgi, sayfa geçişi ve yeniden açma akışlarını hedef platf
 
 Sayfa içeriği `PageContent v2` JSON olarak `pages.content` alanında saklanır. Düzenleme önce `usePageStore` durumuna yansır. `pagePersistence.ts` içindeki sayfa bazlı kuyruk 500 ms debounce uygular; sayfa geçişi bekleyen yazmayı tamamlar ve SQLite geri okumasıyla doğrular. Sayfa CRUD işlemleri repository transaction'ından sonra ortak store'a yansır.
 
-`db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 1 temel tabloları, sürüm 2 defter dönüştürme ayarlarını, sürüm 3 kart tablolarını, sürüm 4 bazı kurulumlarda eksik kalan kart tablolarını idempotent olarak tamamlar. Eski migrasyonları yeniden yazmayın.
+`db/migrations.ts` içindeki güncel şema sürümü **5**'tir. Sürüm 1–4 geçmiş kurulumların geçiş zincirini korur; sürüm 5 kart tablolarını, tetikleyicilerini ve ayarlarını kaldırır. Eski migrasyonları yeniden yazmayın.
 
 Ayrıntılı veri ve kayıt akışı için [NOTEX_DATA_ARCHITECTURE.md](./NOTEX_DATA_ARCHITECTURE.md), kod değişikliği kuralları için [AGENTS.md](./AGENTS.md) dosyasına bakın.
 

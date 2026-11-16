@@ -109,13 +109,11 @@ Test **çalıştırılmadıysa** çalıştırılmış gibi raporlama. GitHub Act
 
 **Öncelik:** Çalışan veri kaydı ve kullanıcı notlarının bütünlüğü > yeni özellik veya küçük performans kazanımı.
 
-## Kartlar özelliği
+## Kaldırılmış flashcard özelliği
 
-- Güncel `db/migrations.ts` şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretli olup kart tabloları eksik kalan kurulumları idempotent olarak onarır. Yeni şema değişikliğinde sürüm 5 veya üzerini kullan; sürüm 4'ü yeniden yazma.
-
-- Kartlar ayarlardan açılan, defter ve sayfa kayıt akışından bağımsız bir bölümdür. Kalıcı verisi SQLite `card_decks`, `cards`, `card_reviews` tablolarındadır; ikinci bir not deposu değildir.
-- Kaynak defter silinince kart korunur ve `source_note_id` boşaltılır. Kart cevabı ve tekrar kaydı tek transaction içinde yazılır.
-- `.notex` yedek biçimi 2, kartları ve çalışma geçmişini kapsar; biçim 1 yedekleri de açılmalıdır. Yeni migrasyon eklerken sürümü artır ve mevcut tabloları koru.
+- Flashcard arayüzü, store, repository, zamanlayıcı ve testleri kaldırılmıştır; yeniden eklemeyin.
+- SQLite şema sürümü **5**: geçmiş migrasyonlar 1–4, eski kurulumların yükseltilebilmesi için korunur. Migrasyon 5, `card_reviews`, `cards`, `card_decks` tablolarını ve ilgili tetikleyici/ayarları siler. Bu veri silme işlemi kullanıcı tarafından özellikle istendi; defter ve sayfa tablolarına dokunma.
+- Eski `.notex` biçim 2 yedekleri okunmaya devam eder ancak kart verileri içe aktarılmaz. Yeni yedekler kart verisi üretmez.
 
 ## 9. Güncel PDF defteri koruma kuralları (16 Kasım 2026)
 

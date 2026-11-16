@@ -1,16 +1,6 @@
 # Notex — Veri Mimarisi, Çizim ve Kalıcı Kayıt Rehberi
 
-> **16 Kasım 2026 (`main`, `f8b7eaf` sonrası) kaynak kodu kontrolü:** `db/migrations.ts` içindeki güncel şema sürümü **4**'tür. Sürüm 3 kart tablolarını ekler; sürüm 4, sürümü 3 olarak işaretlenmiş fakat tabloları eksik kalmış kurulumları idempotent olarak onarır. Aşağıdaki kart açıklamasında yalnız sürüm 3'ün anılması tarihsel uygulama sırasını ifade eder. `NoteCanvasScreen.tsx` içindeki `onHistory` artık boş callback'tir; eski render teşhisi için [TESHIS.md](./TESHIS.md) dosyasının güncel notuna bakın.
-
-## Kartlar eklentisi (15 Kasım 2026)
-
-İsteğe bağlı **Kartlar** sekmesi `settings.cardsEnabled` açıkken görünür. Deste, kart ve çalışma geçmişi ayrı SQLite tablolarında (`card_decks`, `cards`, `card_reviews`) saklanır; `db/migrations.ts` sürüm 3 bunları mevcut not şemasına ekler. Kartın `source_note_id` alanı kaynak defter kimliğidir; kaynak defter silinirse SQLite tetikleyicisi yalnızca bu bağlantıyı `NULL` yapar. Kart cevapları `cardRepository.rate` içinde tekrar parametreleri ve çalışma geçmişiyle aynı transaction içinde kalıcılaşır. Yerel takvim günü ve günlük yeni kart sınırı `features/cards/scheduler.ts` tarafından hesaplanır. `.notex` yedek biçimi 2 desteleri, kartları, tekrar kayıtlarını ve kart ayarlarını içerir; eski biçim 1 yedekleri kart listesi boş kabul edilerek okunur. Kart arayüzü `app/(tabs)/cards.tsx`, çalışma ekranı `app/cards-study.tsx`, nottan kart oluşturma eylemi `NoteCanvasScreen.tsx` içindedir. Doğrulama: `node --test features/cards/__tests__/cards.test.mjs`.
-
-> **Durum:** 14 Kasım 2026 · **Dayanak:** `main` dalındaki çalışan tek-SQLite kayıt sistemi (PR #12, merge `241a820`) ve bu belgenin yazıldığı tarihteki kaynak dosyalar.
->
-> **Saha doğrulaması:** Kullanıcı, Windows/Tauri uygulamasında önceki kaybolan/silindikten sonra geri gelen not sorununun düzeldiğini bildirdi. Bu, bütün platformlarda ve tüm uç durumlarda garanti anlamına gelmez.
->
-> **Kural:** Bu belge bir mimari rehberdir, çalıştırılabilir kodun yerine geçmez. Yeni bir görevden önce **ilgili dosyaların güncel içeriğini yeniden oku**. Önce `AGENTS.md` kurallarını kontrol et.
+> **16 Kasım 2026 (`main` sonrası flashcard kaldırma):** Güncel SQLite şema sürümü **5**'tir. Sürüm 1–4 tarihsel migrasyonlar korunur; sürüm 5 flashcard tablolarını ve ilgili ayarları kaldırır. `.notex` biçim 1/2 yedekleri okunur, ancak eski kart verileri geri yüklenmez. `NoteCanvasScreen.tsx` içindeki `onHistory` boş callback'tir.
 
 ## İçindekiler
 
@@ -493,3 +483,7 @@ PR #12 ile şu eski veya mükerrer kayıt yolu dosyaları kaldırıldı:
 `services/notexBackup.ts`, `.notex` biçim 2 arşivinde `pdfSource.file` referansını ve kaynak PDF dosyasını diğer sayfa varlıklarıyla birlikte taşır; geri yüklemede yollar yeniden eşlenmelidir. `notebookRepository` silme akışları PDF kaynak dosyalarını da hesaba katar. Önceden içe aktarılmış `backgroundImage` sayfalarının açılabilirliği korunmalıdır. Veritabanı şema sürümü hâlâ **4**; PDF tembel yükleme için yeni tablo/migrasyon eklenmemiştir.
 
 **Henüz kanıtlanmayanlar:** 200 sayfalık PDF'de uçtan uca süre/FPS, zaman aşımı ve iptalde kaynakların tamamının temizlenmesi, bozuk PDF'nin otomatik toparlanması, render/çizim eşzamanlılık stres testi, eski PNG yedekleri ve PDF kaynaklı `.notex` geri yüklemenin gerçek Windows/Tauri doğrulaması. Kod incelemesi, bu testlerin geçmiş olduğu anlamına gelmez.
+
+## Flashcard kaldırma geçişi (şema 5)
+
+Uygulamanın Kartlar sekmesi, kart çalışma sayfası, nottan karta dönüştürme eylemi, kart repository/store ve zamanlayıcı modülü kaldırıldı. Eski şema 3 ve 4 migrasyonları SQLite `user_version` geçişlerinin geriye uyumluluğu için dosyada kalır; **yeni kurulumlar dahil** şema 5 geçişi kart tablolarını, kart tetikleyicilerini ve kart ayarlarını siler. Bu işlem eski kart/çalışma geçmişini kalıcı olarak siler; defterler, sayfalar, görseller ve PDF kaynakları korunur. Yedek biçim numarası 2 olarak kaldı: eski biçim 2 arşivlerindeki kart alanları yok sayılır.

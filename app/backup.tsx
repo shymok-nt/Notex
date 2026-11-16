@@ -10,7 +10,6 @@ import { createBackup,inspectBackup,importBackup,webDownload } from '@/services/
 import {isTauriDesktop,pickDesktopBackup,saveDesktopBackup} from '@/utils/tauriFiles';
 import { settingsRepository } from '@/db/repositories/settingsRepository';
 import { useNotebookStore } from '@/store/notebookStore';
-import { useCardStore } from '@/store/cardStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -75,7 +74,7 @@ export default function BackupScreen(){
   const bytes=await readAndroidBytes(uri);
   const {manifest}=await inspectBackup(bytes);
   setBackupChoices([]);
-  setPending({bytes,summary:`${manifest.counts.notebooks} defter, ${manifest.counts.pages} sayfa, ${manifest.counts.files} resim, ${manifest.counts.cards??0} kart bulundu`});
+  setPending({bytes,summary:`${manifest.counts.notebooks} defter, ${manifest.counts.pages} sayfa, ${manifest.counts.files} resim`});
  });
  const pick=()=>void run(async()=>{
   let bytes:Uint8Array;
@@ -124,14 +123,14 @@ export default function BackupScreen(){
   }
   let manifest:Awaited<ReturnType<typeof inspectBackup>>['manifest'];
   try{({manifest}=await inspectBackup(bytes))}catch(e){console.error('Notex ZIP doğrulama hatası',e);throw new Error('Seçilen dosya geçerli bir Notex yedeği değil: '+(e instanceof Error?e.message:String(e)))}
-  setPending({bytes,summary:`${manifest.counts.notebooks} defter, ${manifest.counts.pages} sayfa, ${manifest.counts.files} resim, ${manifest.counts.cards??0} kart bulundu`});
+  setPending({bytes,summary:`${manifest.counts.notebooks} defter, ${manifest.counts.pages} sayfa, ${manifest.counts.files} resim`});
  });
  useEffect(()=>{
   if(open!=='1'||!isTauriDesktop()||openedFromShortcut.current)return;
   openedFromShortcut.current=true;
   pick();
  },[open]);
- const restore=()=>{if(!pending)return;const bytes=pending.bytes;setPending(null);void run(async()=>{await importBackup(bytes,progress);await refreshFolders();await refresh();await useCardStore.getState().load();await useSettingsStore.getState().hydrate();Alert.alert('Tamamlandı','Defterler ve kartlar mevcut verilere eklendi.')})};
+ const restore=()=>{if(!pending)return;const bytes=pending.bytes;setPending(null);void run(async()=>{await importBackup(bytes,progress);await refreshFolders();await refresh();await useSettingsStore.getState().hydrate();Alert.alert('Tamamlandı','Defterler mevcut verilere eklendi.')})};
  const button=(text:string,onPress:()=>void,disabled=false)=><Pressable accessibilityRole="button" disabled={disabled||busy} onPress={onPress} style={{backgroundColor:colors.surfaceRaised,borderRadius:14,padding:18,marginTop:12,opacity:(disabled||busy)?0.5:1}}><Text style={{color:colors.ink,fontSize:16,fontWeight:'600'}}>{text}</Text></Pressable>;
  return <SafeAreaView style={{flex:1,backgroundColor:colors.background}}><View style={{height:60,flexDirection:'row',alignItems:'center',paddingHorizontal:16,gap:8}}><Pressable accessibilityRole="button" accessibilityLabel="Geri dön" onPress={()=>router.back()} style={{width:44,height:44,justifyContent:'center'}}><ArrowLeft color={colors.ink}/></Pressable><Text style={{fontSize:22,fontWeight:'700',color:colors.ink}}>Yedekle ve geri yükle</Text></View><ScrollView contentContainerStyle={{padding:20}}>
   <Text style={{color:colors.muted}}>Defterler, sayfalar, çizimler ve resimler tek bir .notex dosyasına kaydedilir. Silinenler yedeğe dahil edilmez.</Text>
