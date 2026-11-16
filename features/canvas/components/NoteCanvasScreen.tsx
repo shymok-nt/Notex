@@ -208,9 +208,38 @@ export default function NoteCanvasScreen(){
  useEffect(()=>{if(!pagesReady||!__DEV__||loadingRemovalLogged.current)return;loadingRemovalLogged.current=true;console.log('[Notex perf] loading_overlay_removed',{duration_ms:Math.round((perfNow()-loadingStartedAt.current)*10)/10,page_ready:!!selected,page_count:pages.length})},[id,pagesReady,selected?.id,pages.length]);
  useEffect(()=>{if(readyNotebookId===id&&selectedId)void rememberNotebookPage(id,selectedId).catch(error=>console.error('[Notex PDF] Son sayfa kaydedilemedi',error))},[id,readyNotebookId,selectedId]);
  const select=async(pageId:string)=>{if(pageId===selected?.id)return;try{await controllerRef.current?.flush();}catch(error){Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Sayfayı değiştirmeden önce tekrar dene.');return}const current=usePageStore.getState();if(current.notebookId!==id||!current.pages.some(page=>page.id===pageId))return;setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
+ const pdfWheelTargetRef=useRef<View>(null);
+ const pdfWheelBusyRef=useRef(false);
+ const pdfWheelLastRef=useRef(0);
+ const pdfWheelDeltaRef=useRef(0);
+ useEffect(()=>{
+  if(Platform.OS!=='web'||!isPdfNotebook||!pagesReady||pages.length<2)return;
+  const element=pdfWheelTargetRef.current as unknown as HTMLElement|null;
+  if(!element?.addEventListener)return;
+  const onWheel=(event:WheelEvent)=>{
+   if(event.ctrlKey||event.metaKey||Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
+   event.preventDefault();
+   if(pdfWheelBusyRef.current)return;
+   const now=Date.now();
+   if(now-pdfWheelLastRef.current>180)pdfWheelDeltaRef.current=0;
+   pdfWheelLastRef.current=now;
+   const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?window.innerHeight:1);
+   pdfWheelDeltaRef.current+=delta;
+   if(Math.abs(pdfWheelDeltaRef.current)<40)return;
+   const direction=pdfWheelDeltaRef.current>0?1:-1;
+   pdfWheelDeltaRef.current=0;
+   const target=pages[index+direction];
+   if(!target)return;
+   pdfWheelBusyRef.current=true;
+   void select(target.id).finally(()=>{
+    window.setTimeout(()=>{pdfWheelBusyRef.current=false;pdfWheelDeltaRef.current=0},320);
+   });
+  };
+  element.addEventListener('wheel',onWheel,{passive:false});
+  return()=>element.removeEventListener('wheel',onWheel);
+ },[isPdfNotebook,pagesReady,pages,index,select]);
  const addingPageRef=useRef(false);
  const isPdfNotebook=notebook?.coverPresetId==='pdf-import'||(!!selected?.thumbnailPath&&!!parseContent(selected.content).backgroundImage);
- const navigatePdfPage=(direction:-1|1)=>{const target=pages[index+direction];if(!target||!pagesReady)return;void select(target.id)};
  const addPage=async()=>{if(isPdfNotebook||addingPageRef.current||!selected||!controllerRef.current)return;addingPageRef.current=true;const notebookId=usePageStore.getState().notebookId;try{await controllerRef.current.flush();if(usePageStore.getState().notebookId!==notebookId)return;const created=await add(selected.position);if(created&&usePageStore.getState().notebookId===notebookId)await select(created)}catch(error){Alert.alert('Sayfa eklenemedi',error instanceof Error?error.message:'Tekrar dene.')}finally{addingPageRef.current=false}};
  const askRemove=(pageId:string)=>{if(pages.length<=1){Alert.alert('Son sayfa','Defterin son sayfası silinemez.');return}Alert.alert('Sayfayı sil','Bu sayfa silinsin mi?',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:async()=>{await controllerRef.current?.flush();await remove(pageId);const next=usePageStore.getState().pages;if(pageId===selected?.id&&next.length)setSelectedId(next[Math.min(index,next.length-1)].id)}}])};
  const chooseTemplate=(pageId:string)=>{setTemplatePageId(pageId);};
@@ -364,9 +393,6 @@ export default function NoteCanvasScreen(){
    {selectedPdfError?<><Text style={{color:colors.coral}}>Bu sayfa hazırlanamadı</Text><Text selectable style={{color:colors.coral}}>{selectedPdfError}</Text><Pressable onPress={retryPdfPage}><Text style={{color:colors.accent}}>Tekrar dene</Text></Pressable></>:<><ActivityIndicator size="small" color={colors.accent}/><Text style={{color:ink}}>Sayfa hazırlanıyor…</Text></>}
   </View>}
  </View>
- {isPdfNotebook&&pagesReady&&pages.length>1&&<View style={{position:'absolute',right:16,top:'36%',gap:9,zIndex:12,alignItems:'center'}}>
-  {([{direction:-1 as const,Icon:ChevronUp,label:'Önceki PDF sayfası',disabled:index===0},{direction:1 as const,Icon:ChevronDown,label:'Sonraki PDF sayfası',disabled:index===pages.length-1}]).map(({direction,Icon,label,disabled})=><Pressable key={direction} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled}} disabled={disabled} onPress={()=>navigatePdfPage(direction)} style={{width:48,height:48,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:colors.surfaceRaised,borderWidth:1,borderColor:colors.divider,opacity:disabled?0.35:0.96,shadowColor:'#000',shadowOpacity:0.12,shadowRadius:8,elevation:4}}><Icon size={24} strokeWidth={2.2} color={colors.ink}/></Pressable>)}
- </View>}
  <View pointerEvents="none" style={{position:'absolute',bottom:tablet?22:110,right:24,backgroundColor:'#1B1B2FBB',borderRadius:20,paddingHorizontal:12,paddingVertical:7}}><Text style={{color:'#FFFFFF',fontSize:12}}>{index+1} / {pages.length}</Text></View>
  {focus&&<Pressable accessibilityRole="button" accessibilityLabel="Araç çubuklarını göster" onPress={()=>setFocus(false)} style={{position:'absolute',top:0,left:0,right:0,height:44,alignItems:'center',justifyContent:'center'}}><Eye color={colors.accent} size={20}/></Pressable>}
  {!tablet&&!focus&&<View style={{position:'absolute',bottom:28,left:12,right:12}}><CanvasToolbar tablet={false} tool={tool} colors={colors} onTool={chooseTool} onPages={()=>setSheet(true)} onImage={()=>void insertImage()} toolPanel={toolPanel} panelOpen={panel==='tool'} onClosePanel={()=>setPanel(null)}/></View>}
