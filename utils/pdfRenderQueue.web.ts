@@ -209,6 +209,7 @@ export async function resumePdfNotebook(notebookId:string){
   if(!content.pdfSource)continue;
   total++;
   if(content.backgroundImage){completed++;continue}
+  pendingDocumentRelease.delete(content.pdfSource.file);
   if(!jobs.has(row.id)&&!active.has(row.id)&&!failedJobs.has(row.id))jobs.set(row.id,{id:row.id,notebookId,source:content.pdfSource.file,index:content.pdfSource.pageIndex,position:row.position});
  }
  if(total){progress.set(notebookId,{completed,total});emit()}
