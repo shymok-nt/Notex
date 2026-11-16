@@ -182,7 +182,6 @@ export function LibraryDashboard() {
         <Pressable accessibilityRole="button" onPress={()=>setSelectedNotebookIds(notebooks.map(n=>n.id))}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.ink}}>Tümünü seç</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={()=>setSelectedNotebookIds([])}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.muted}}>Temizle</Text></Pressable>
         <Pressable disabled={working||selectedNotebookIds.length===0} accessibilityRole="button" onPress={()=>setConfirmNotebookDeleteVisible(true)}><Text style={{fontFamily:fonts.medium,fontSize:13,color:selectedNotebookIds.length?colors.coral:colors.muted}}>Sil</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={()=>{setSelectionKind(null);setSelectedNotebookIds([])}}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.accent}}>Bitti</Text></Pressable>
       </View>}
       <Modal visible={pdfProgress!==null} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={{flex:1,alignItems:'center',justifyContent:'center',padding:24,backgroundColor:colors.overlay}}>
