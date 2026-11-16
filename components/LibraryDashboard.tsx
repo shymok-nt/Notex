@@ -172,7 +172,7 @@ export function LibraryDashboard() {
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste g\u00f6r\u00fcn\u00fcm\u00fcne ge\u00e7' : '\u0130zgara g\u00f6r\u00fcn\u00fcm\u00fcne ge\u00e7'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={21} color={colors.ink}/> : <LayoutGrid size={20} color={colors.ink}/>}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={selectionKind?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setSelectionKind(selectionKind?null:"notebooks");setSelectedNotebookIds([])}} style={styles.iconButton}><Text style={{fontFamily:fonts.medium,color:colors.ink,fontSize:14}}>{selectionKind?"Vazgeç":"Seç"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={selectionKind?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setSelectionKind(selectionKind?null:"notebooks");setSelectedNotebookIds([])}} style={{paddingHorizontal:12,minHeight:40,justifyContent:'center',alignItems:'center'}}><Text style={{fontFamily:fonts.medium,color:colors.ink,fontSize:14}}>{selectionKind?"Vazgeç":"Seç"}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={21} color={colors.ink}/></Pressable>
         </View>
       </View>
