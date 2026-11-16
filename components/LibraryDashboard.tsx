@@ -6,8 +6,8 @@ import {CreateNotebookIcon} from '@/components/CreateNotebookIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotebookCover } from '@/components/NotebookCover';
 import { NotebookSelectionMark } from '@/components/NotebookSelectionMark';
-import { SelectionActionBar } from '@/components/SelectionActionBar';
-import type { SelectionAction } from '@/components/SelectionActionBar';
+import { NotebookContextMenu } from '@/components/NotebookContextMenu';
+
 import { NotexIcon, NotexWordmark } from '@/components/NotexBrand';
 import { libraryColors } from '@/components/libraryTheme';
 import { useNotebookStore } from '@/store/notebookStore';
@@ -40,6 +40,7 @@ export function LibraryDashboard() {
   const [selectedNotebookIds, setSelectedNotebookIds] = useState<string[]>([]);
   const [working, setWorking] = useState(false);
   const [contextNotebookId,setContextNotebookId]=useState<string|null>(null);
+  const [contextPosition,setContextPosition]=useState({x:0,y:0});
   const [pdfProgress, setPdfProgress] = useState<{completed:number;total:number;label:string}|null>(null);
   const pdfImporting = useRef(false);
   const [confirmNotebookDeleteVisible, setConfirmNotebookDeleteVisible] = useState(false);
@@ -124,8 +125,8 @@ export function LibraryDashboard() {
     if (selectionKind === 'notebooks') toggleNotebook(id);
     else { setSelectionKind('notebooks'); setSelectedNotebookIds([id]); }
   };
-  const desktopNotebookContext = (id:string) => Platform.OS==='web'?{onContextMenu:(event:{preventDefault:()=>void;stopPropagation:()=>void})=>{
-    event.preventDefault();event.stopPropagation();setContextNotebookId(id);
+  const desktopNotebookContext = (id:string) => Platform.OS==='web'?{onContextMenu:(event:{preventDefault:()=>void;stopPropagation:()=>void;nativeEvent?:{pageX?:number;pageY?:number};pageX?:number;pageY?:number})=>{
+    event.preventDefault();event.stopPropagation();const e=event.nativeEvent??event;setContextPosition({x:e.pageX??0,y:e.pageY??0});setContextNotebookId(id);
   }}:{};
   const contextNotebook=notebooks.find(notebook=>notebook.id===contextNotebookId);
   const performNotebookDelete = async () => {
@@ -160,12 +161,6 @@ export function LibraryDashboard() {
   };
   const confirmNotebookDelete = () => setConfirmNotebookDeleteVisible(true);
 
-  const selectionActions: SelectionAction[] = [
-    { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || selectedNotebookIds.length === 0, onPress: confirmNotebookDelete },
-    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => setSelectedNotebookIds(notebooks.map(notebook => notebook.id)) },
-    { key: 'clear', label: 'Temizle', icon: X, disabled: working || selectedNotebookIds.length === 0, onPress: () => setSelectedNotebookIds([]) },
-    { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setSelectionKind(null); setSelectedNotebookIds([]); } },
-  ];
   const coverWidth = Math.min(120, Math.max(96, (width - 84) / 2.45));
 
   return <SafeAreaView style={styles.safe} edges={['top']}>
@@ -239,21 +234,15 @@ export function LibraryDashboard() {
         </ScrollView>
 
       <Pressable accessibilityRole="button" accessibilityLabel="Yeni defter oluştur" onPress={() => router.push('/notebook-editor')} style={[styles.fab, selectionKind !== null && { display: 'none' }]}><CreateNotebookIcon/></Pressable>
-      <SelectionActionBar visible={selectionKind !== null} selectedCount={selectedNotebookIds.length} actions={selectionActions} />
-      <Modal visible={contextNotebookId!==null} transparent animationType="fade" onRequestClose={()=>setContextNotebookId(null)}>
-        <View style={styles.deleteBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={()=>setContextNotebookId(null)}/>
-          <View style={styles.deleteCard}>
-            <Text style={styles.deleteTitle} numberOfLines={1}>{contextNotebook?.title??'Defter'}</Text>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)openNotebook(id)}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Aç</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)router.push({pathname:'/notebook-editor',params:{id}})}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Düzenle</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)void toggleFavorite(id)}} style={styles.deleteButton}><Text style={styles.deleteCancel}>{contextNotebook?.favorite?'Favorilerden çıkar':'Favorilere ekle'}</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id)void duplicateNotebook(id)}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Çoğalt</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id){setSelectionKind('notebooks');setSelectedNotebookIds([id])}}} style={styles.deleteButton}><Text style={styles.deleteCancel}>Seç</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>{const id=contextNotebookId;setContextNotebookId(null);if(id){setSelectionKind('notebooks');setSelectedNotebookIds([id]);setConfirmNotebookDeleteVisible(true)}}} style={styles.deleteButton}><Text style={styles.deleteConfirm}>Sil</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={()=>setContextNotebookId(null)} style={styles.deleteButton}><Text style={styles.deleteCancel}>Vazgeç</Text></Pressable>
-          </View>
-        </View>
-      </Modal>
+
+      <NotebookContextMenu visible={contextNotebookId!==null} x={contextPosition.x} y={contextPosition.y} title={contextNotebook?.title??'Defter'} onClose={()=>setContextNotebookId(null)} actions={[
+        {label:'Aç',onPress:()=>{if(contextNotebookId)openNotebook(contextNotebookId)}},
+        {label:'Düzenle',onPress:()=>{if(contextNotebookId)router.push({pathname:'/notebook-editor',params:{id:contextNotebookId}})}},
+        {label:contextNotebook?.favorite?'Favorilerden çıkar':'Favorilere ekle',onPress:()=>{if(contextNotebookId)void toggleFavorite(contextNotebookId)}},
+        {label:'Çoğalt',onPress:()=>{if(contextNotebookId)void duplicateNotebook(contextNotebookId)}},
+        {label:'Seç',onPress:()=>{if(contextNotebookId){setSelectionKind('notebooks');setSelectedNotebookIds([contextNotebookId])}}},
+        {label:'Sil',danger:true,onPress:()=>{if(contextNotebookId){setSelectionKind('notebooks');setSelectedNotebookIds([contextNotebookId]);setConfirmNotebookDeleteVisible(true)}}}
+      ]}/>
       <Modal visible={confirmNotebookDeleteVisible} transparent animationType="fade" onRequestClose={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}>
         <View style={styles.deleteBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (!working) setConfirmNotebookDeleteVisible(false); }}/>
