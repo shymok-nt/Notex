@@ -11,6 +11,8 @@ type Progress={completed:number;total:number};
 const jobs=new Map<string,Job>();
 const cancelled=new Set<string>();
 const active=new Set<string>();
+const activeJobs=new Map<string,Job>();
+const pendingDocumentRelease=new Set<string>();
 const failedJobs=new Map<string,{job:Job;error:string}>();
 const progress=new Map<string,Progress>();
 const listeners=new Set<()=>void>();
@@ -37,8 +39,12 @@ export async function releasePdfNotebook(notebookId:string){
  const rows=await db.getAllAsync<{content:string}>('SELECT content FROM pages WHERE notebook_id=?',notebookId);
  for(const row of rows){try{const source=(JSON.parse(row.content) as {pdfSource?:{file:string}}).pdfSource?.file;if(source)sources.add(source)}catch{}}
  for(const source of sources){
+  if([...activeJobs.values()].some(job=>job.source===source)){
+   pendingDocumentRelease.add(source);
+   continue;
+  }
   const promise=documentCache.get(source);documentCache.delete(source);
-  if(promise)void promise.then(doc=>doc.destroy()).catch(()=>{});
+  if(promise)void promise.then(doc=>doc.destroy()).catch(error=>console.error('[Notex PDF] Belge kapatılamadı:',error));
  }
 }
 
@@ -144,10 +150,15 @@ function pump(){
  while(running<2&&jobs.size){
   const job=[...jobs.values()].sort((a,b)=>priority(a)-priority(b))[0];
   if(!job)break;
-  jobs.delete(job.id);active.add(job.id);running++;
+  jobs.delete(job.id);active.add(job.id);activeJobs.set(job.id,job);running++;
   void (async()=>{
    try{await process(job)}finally{
-    active.delete(job.id);running--;
+    active.delete(job.id);activeJobs.delete(job.id);running--;
+    if(pendingDocumentRelease.has(job.source)&&![...activeJobs.values()].some(item=>item.source===job.source)){
+     pendingDocumentRelease.delete(job.source);
+     const cached=documentCache.get(job.source);documentCache.delete(job.source);
+     if(cached)void cached.then(doc=>doc.destroy()).catch(error=>console.error('[Notex PDF] Belge kapatılamadı:',error));
+    }
     await yieldIdle();pump();
    }
   })();
@@ -198,6 +209,7 @@ export async function resumePdfNotebook(notebookId:string){
   if(!content.pdfSource)continue;
   total++;
   if(content.backgroundImage){completed++;continue}
+  pendingDocumentRelease.delete(content.pdfSource.file);
   if(!jobs.has(row.id)&&!active.has(row.id)&&!failedJobs.has(row.id))jobs.set(row.id,{id:row.id,notebookId,source:content.pdfSource.file,index:content.pdfSource.pageIndex,position:row.position});
  }
  if(total){progress.set(notebookId,{completed,total});emit()}

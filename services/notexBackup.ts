@@ -137,7 +137,12 @@ export async function importBackup(bytes:Uint8Array,progress:Progress){
     await tx.runAsync('INSERT INTO notebooks(id,title,folder_id,cover_type,cover_color,cover_image_path,cover_preset_id,show_title_on_cover,template,paper_color,favorite,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)',notebookId,n.title,n.folder_id?folderMap.get(n.folder_id)??null:null,n.cover_type,n.cover_color,n.cover_image_path?fileMap.get(n.cover_image_path)??null:null,n.cover_preset_id,n.show_title_on_cover,n.template,n.paper_color,n.favorite,n.created_at,n.updated_at);
    }
    for(const p of data.pages){
-     const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string}};
+     const parsed=JSON.parse(p.content) as {images?:{uri?:string}[];backgroundImage?:{uri?:string};pdfSource?:{file?:string}};
+     if(typeof parsed.pdfSource?.file==='string'){
+      const restoredSource=fileMap.get(parsed.pdfSource.file);
+      if(!restoredSource)throw new Error('PDF kaynak dosyası yedekten geri yüklenemedi: '+parsed.pdfSource.file);
+      parsed.pdfSource.file=restoredSource;
+     }
      for(const img of [...(parsed.images??[]),...(parsed.backgroundImage?[parsed.backgroundImage]:[])])if(typeof img.uri==='string'&&fileMap.has(img.uri)){
      const path=fileMap.get(img.uri)!;
      if(isTauriDesktop())img.uri=path;
