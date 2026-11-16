@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Pressable,Text,View,StyleSheet } from 'react-native';
+import { Pressable,Text,View,StyleSheet,Platform } from 'react-native';
 import { MoreHorizontal } from 'lucide-react-native';
 import { NotebookCover } from '@/components/NotebookCover';
 import { NotebookSelectionMark } from '@/components/NotebookSelectionMark';
@@ -14,7 +14,7 @@ export function NotebookCard({notebook,width,viewMode,onOpen,onOptions,onMenu,hi
  const coverWidth=viewMode==='list'?48:width;
  const query=highlight?.trim()??'';const match=query?notebook.title.toLocaleLowerCase('tr-TR').indexOf(query.toLocaleLowerCase('tr-TR')):-1;
  const label=match<0?notebook.title:<>{notebook.title.slice(0,match)}<Text style={{backgroundColor:colors.highlight,color:'#1B1B2F'}}>{notebook.title.slice(match,match+query.length)}</Text>{notebook.title.slice(match+query.length)}</>;
- return <View style={{position:'relative',minWidth:0}}><Pressable accessibilityRole="button" accessibilityLabel={`${notebook.title} defterini aç`} onPress={()=>{if(longPressed.current){longPressed.current=false;return;}onOpen()}} onPressIn={()=>{longPressed.current=false}} onLongPress={()=>{longPressed.current=true;onOptions()}} delayLongPress={380} style={viewMode==='list'?styles.list:styles.grid}>
+ return <View style={{position:'relative',minWidth:0}}><Pressable accessibilityRole="button" accessibilityLabel={`${notebook.title} defterini aç`} onPress={()=>{if(longPressed.current){longPressed.current=false;return;}onOpen()}} onPressIn={()=>{longPressed.current=false}} onLongPress={Platform.OS==='web'?undefined:()=>{longPressed.current=true;onOptions()}} delayLongPress={380} {...(Platform.OS==='web'?{onContextMenu:(event:{preventDefault:()=>void;stopPropagation:()=>void})=>{event.preventDefault();event.stopPropagation();onMenu?.()??onOptions()}}:{}) as any} style={viewMode==='list'?styles.list:styles.grid}>
  <View style={{width:coverWidth,height:coverWidth*4/3}}><NotebookCover notebook={notebook} width={coverWidth} showTitle={viewMode==='grid'&&notebook.coverType==='preset'&&notebook.showTitleOnCover} colorsOverride={colors}/>{selected&&<NotebookSelectionMark/>}</View><View style={viewMode==='list'?styles.listText:styles.gridText}><Text numberOfLines={1} style={styles.title}>{label}</Text><Text style={styles.meta}>{dateLabel(notebook.updatedAt)} · {notebook.pageCount} sayfa</Text></View>
   </Pressable>
  {!selected&&<Pressable accessibilityRole="button" accessibilityLabel={`${notebook.title} seçenekleri`} onPress={onMenu??onOptions} style={styles.more}><MoreHorizontal size={20} color={colors.ink}/></Pressable>}</View>
