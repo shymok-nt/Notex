@@ -2,10 +2,10 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import React,{useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,Alert,Animated,AppState,BackHandler,Modal,Pressable,ScrollView,Text,TextInput,View,useWindowDimensions} from 'react-native';
+import {ActivityIndicator,Alert,Animated,AppState,BackHandler,Modal,Pressable,ScrollView,Text,TextInput,View,useWindowDimensions,Platform} from 'react-native';
 import {router,useLocalSearchParams} from 'expo-router';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
-import {Circle,Square,Triangle,ArrowRight,WandSparkles,ArrowLeft,Undo2,Redo2,Ellipsis,Eye,Palette,ChevronLeft,ChevronRight,ChevronUp,ChevronDown,X,Move,RotateCw,Maximize2,Copy,Trash2,Minus,Plus} from 'lucide-react-native';
+import {Circle,Square,Triangle,ArrowRight,WandSparkles,ArrowLeft,Undo2,Redo2,Ellipsis,Eye,Palette,ChevronLeft,ChevronRight,X,Move,RotateCw,Maximize2,Copy,Trash2,Minus,Plus} from 'lucide-react-native';
 import {useTheme} from '@/theme/ThemeProvider';
 import {fonts} from '@/theme/fonts';
 import {useNotebookStore} from '@/store/notebookStore';
@@ -352,7 +352,7 @@ export default function NoteCanvasScreen(){
  </View>}
  <View style={{flex:1,flexDirection:'row'}}>
   {tablet&&!focus&&<View style={{width:148,flexGrow:0,flexShrink:0,flexBasis:148,minHeight:0,backgroundColor:colors.background,borderRightWidth:1,borderRightColor:colors.divider}}>{selectionBar}<CanvasPageStrip tablet {...pageStripProps}/></View>}
- <View onTouchStart={()=>{if(panel!==null)setPanel(null)}} style={{flex:1,marginHorizontal:0,marginTop:0,marginBottom:0,borderRadius:0,overflow:'hidden'}}>
+ <View ref={pdfWheelTargetRef} onTouchStart={()=>{if(panel!==null)setPanel(null)}} style={{flex:1,marginHorizontal:0,marginTop:0,marginBottom:0,borderRadius:0,overflow:'hidden'}}>
   {selected&&selected.contentLoaded!==false?<CanvasPage key={selected.id} page={selected} tool={tool} brush={brush} eraserSize={eraserSize} eraserMode={eraserMode} onController={setController} onHistory={()=>{}} onDrawStart={()=>setPanel(null)} onStrokeComplete={recordStroke} shapeKind={shapeKind} shapeFill={shapeFill} textStyle={textStyle} onSelectionChange={setSelectedElements} onSelectionClipboardChange={setInkClipboardAvailable} onSelectionActionComplete={version=>setSelectionAction(current=>current?.version===version?undefined:current)} onTextSelectionChange={setSelectedText} selectionAction={selectionAction} imageRequest={imageRequest} onImageRequestConsumed={version=>setImageRequest(current=>current?.version===version?null:current)} imageAction={imageAction} onImageSelectionChange={setSelectedImageId} onImageLoadError={message=>{
   if(message.startsWith('PDF_BACKGROUND:')){
    console.error('[Notex PDF] Arka plan görseli okunamadı:',selected.id,message);
