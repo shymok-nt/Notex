@@ -170,11 +170,13 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
           <Pressable accessibilityRole="button" accessibilityLabel={viewMode === 'grid' ? 'Liste görünümüne geç' : 'Izgara görünümüne geç'} onPress={() => void setViewMode(viewMode === 'grid' ? 'list' : 'grid')} style={styles.iconButton}>
             {viewMode === 'grid' ? <List size={20} color={colors.ink} /> : <LayoutGrid size={20} color={colors.ink} />}
           </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={multiSelect?"Seçimi iptal et":"Defterleri seç"} onPress={()=>{setMultiSelect(v=>!v);setChecked([])}} style={styles.iconButton}><Text style={{color:colors.ink,fontFamily:fonts.medium,fontSize:14}}>{multiSelect?"Vazgeç":"Seç"}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Defterlerde ara" onPress={() => router.navigate('/search')} style={styles.iconButton}><Search size={20} color={colors.ink} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Ayarlar" onPress={() => router.push('/settings')} style={styles.iconButton}><Settings2 size={20} color={colors.ink} /></Pressable>
         </View>
       </View>
       <View style={styles.headerDivider} />
+      {multiSelect&&<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:20,minHeight:48,backgroundColor:colors.surface}}><Text style={{color:colors.ink,fontFamily:fonts.medium}}>{checked.length} defter seçildi</Text><Pressable accessibilityRole="button" accessibilityLabel="Tüm defterleri seç" onPress={()=>setChecked(data.map(notebook=>notebook.id))}><Text style={{color:colors.accent,fontFamily:fonts.medium}}>Tümünü seç</Text></Pressable></View>}
       {!favorites && <View style={styles.filters}><FolderChips value={folder} onChange={setFolder} colorsOverride={colors} /></View>}
 
       <FlatList
@@ -187,7 +189,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         contentContainerStyle={data.length > 0 ? styles.listContent : styles.emptyContent}
         ListHeaderComponent={listHeader}
         renderItem={({ item }) => <View style={columns > 1 ? { width: cardWidth, marginBottom: 22 } : styles.listItem}>
-          <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => multiSelect ? toggleChecked(item.id) : beginSelection(item.id)} onMenu={() => setSelected(item)} selected={checked.includes(item.id)} colorsOverride={colors} />
+          <NotebookCard notebook={item} width={cardWidth} viewMode={viewMode} onOpen={() => openNotebook(item.id)} onOptions={() => multiSelect ? toggleChecked(item.id) : setSelected(item)} onMenu={() => setSelected(item)} selected={checked.includes(item.id)} colorsOverride={colors} />
         </View>}
         ListEmptyComponent={<EmptyState colorsOverride={colors} />}
       />
