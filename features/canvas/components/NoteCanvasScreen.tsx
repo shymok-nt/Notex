@@ -208,6 +208,7 @@ export default function NoteCanvasScreen(){
  useEffect(()=>{if(!pagesReady||!__DEV__||loadingRemovalLogged.current)return;loadingRemovalLogged.current=true;console.log('[Notex perf] loading_overlay_removed',{duration_ms:Math.round((perfNow()-loadingStartedAt.current)*10)/10,page_ready:!!selected,page_count:pages.length})},[id,pagesReady,selected?.id,pages.length]);
  useEffect(()=>{if(readyNotebookId===id&&selectedId)void rememberNotebookPage(id,selectedId).catch(error=>console.error('[Notex PDF] Son sayfa kaydedilemedi',error))},[id,readyNotebookId,selectedId]);
  const select=async(pageId:string)=>{if(pageId===selected?.id)return;try{await controllerRef.current?.flush();}catch(error){Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Sayfayı değiştirmeden önce tekrar dene.');return}const current=usePageStore.getState();if(current.notebookId!==id||!current.pages.some(page=>page.id===pageId))return;setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
+ const isPdfNotebook=notebook?.coverPresetId==='pdf-import'||(!!selected?.thumbnailPath&&!!parseContent(selected.content).backgroundImage);
  const pdfWheelTargetRef=useRef<View>(null);
  const pdfWheelBusyRef=useRef(false);
  const pdfWheelLastRef=useRef(0);
@@ -239,7 +240,6 @@ export default function NoteCanvasScreen(){
   return()=>element.removeEventListener('wheel',onWheel);
  },[isPdfNotebook,pagesReady,pages,index,select]);
  const addingPageRef=useRef(false);
- const isPdfNotebook=notebook?.coverPresetId==='pdf-import'||(!!selected?.thumbnailPath&&!!parseContent(selected.content).backgroundImage);
  const addPage=async()=>{if(isPdfNotebook||addingPageRef.current||!selected||!controllerRef.current)return;addingPageRef.current=true;const notebookId=usePageStore.getState().notebookId;try{await controllerRef.current.flush();if(usePageStore.getState().notebookId!==notebookId)return;const created=await add(selected.position);if(created&&usePageStore.getState().notebookId===notebookId)await select(created)}catch(error){Alert.alert('Sayfa eklenemedi',error instanceof Error?error.message:'Tekrar dene.')}finally{addingPageRef.current=false}};
  const askRemove=(pageId:string)=>{if(pages.length<=1){Alert.alert('Son sayfa','Defterin son sayfası silinemez.');return}Alert.alert('Sayfayı sil','Bu sayfa silinsin mi?',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:async()=>{await controllerRef.current?.flush();await remove(pageId);const next=usePageStore.getState().pages;if(pageId===selected?.id&&next.length)setSelectedId(next[Math.min(index,next.length-1)].id)}}])};
  const chooseTemplate=(pageId:string)=>{setTemplatePageId(pageId);};
