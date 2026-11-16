@@ -416,7 +416,7 @@ export default function NoteCanvasScreen(){
  </View>
  <View pointerEvents="none" style={{position:'absolute',bottom:tablet?22:110,right:24,backgroundColor:'#1B1B2FBB',borderRadius:20,paddingHorizontal:12,paddingVertical:7}}><Text style={{color:'#FFFFFF',fontSize:12}}>{index+1} / {pages.length}</Text></View>
  {focus&&<Pressable accessibilityRole="button" accessibilityLabel="Araç çubuklarını göster" onPress={()=>setFocus(false)} style={{position:'absolute',top:0,left:0,right:0,height:44,alignItems:'center',justifyContent:'center'}}><Eye color={colors.accent} size={20}/></Pressable>}
- {!tablet&&!focus&&<View style={{position:'absolute',bottom:28,left:12,right:12}}><CanvasToolbar tablet={false} tool={tool} colors={colors} onTool={chooseTool} onPages={()=>setSheet(true)} onImage={()=>void insertImage()} toolPanel={toolPanel} panelOpen={panel==='tool'} onClosePanel={()=>setPanel(null)}/></View>}
+ {!tablet&&!focus&&<View style={{position:'absolute',bottom:28,left:12,right:12}}><CanvasToolbar tablet={false} tool={tool} colors={colors} onTool={chooseTool} onPages={()=>setSheet(true)} onImage={()=>void insertImage()} onSticker={()=>setPanel(p=>p==='sticker'?null:'sticker')} stickerActive={panel==='sticker'} toolPanel={toolPanel} panelOpen={panel==='tool'} onClosePanel={()=>setPanel(null)}/></View>}
 
  
  {stickerPanel}{selectionControls}{lassoStyleBar}
