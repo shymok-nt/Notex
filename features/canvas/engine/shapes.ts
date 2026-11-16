@@ -23,6 +23,8 @@ export function shapePath(s:ShapeElement):SkPath{
    const a=Math.atan2(h,w),r=Math.max(14,s.stroke.width*4);
    svg+=` M ${num(x+w-r*Math.cos(a-0.5))} ${num(y+h-r*Math.sin(a-0.5))} L ${num(x+w)} ${num(y+h)} L ${num(x+w-r*Math.cos(a+0.5))} ${num(y+h-r*Math.sin(a+0.5))}`;
   }
+ }else if(s.kind==='sticker'){
+  svg=`M ${num(left+6)} ${num(top+2)} H ${num(right-6)} Q ${num(right)} ${num(top+2)} ${num(right)} ${num(top+8)} V ${num(bottom-48)} L ${num(right-48)} ${num(bottom)} H ${num(left+6)} Q ${num(left)} ${num(bottom)} ${num(left)} ${num(bottom-6)} V ${num(top+8)} Q ${num(left)} ${num(top+2)} ${num(left+6)} ${num(top+2)} Z`;
  }else if(s.kind==='rect'){
   svg=`M ${num(left)} ${num(top)} L ${num(right)} ${num(top)} L ${num(right)} ${num(bottom)} L ${num(left)} ${num(bottom)} Z`;
  }else if(s.kind==='ellipse'){
