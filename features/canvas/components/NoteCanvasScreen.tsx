@@ -209,7 +209,7 @@ export default function NoteCanvasScreen(){
  useEffect(()=>{if(readyNotebookId===id&&selectedId)void rememberNotebookPage(id,selectedId).catch(error=>console.error('[Notex PDF] Son sayfa kaydedilemedi',error))},[id,readyNotebookId,selectedId]);
  const select=async(pageId:string)=>{if(pageId===selected?.id)return;try{await controllerRef.current?.flush();}catch(error){Alert.alert('Sayfa kaydedilemedi',error instanceof Error?error.message:'Sayfayı değiştirmeden önce tekrar dene.');return}const current=usePageStore.getState();if(current.notebookId!==id||!current.pages.some(page=>page.id===pageId))return;setImageRequest(null);setSelectedImageId(null);setSelectedId(pageId);setController(null);setPanel(null);setSheet(false)};
  const isPdfNotebook=notebook?.coverPresetId==='pdf-import'||(!!selected?.thumbnailPath&&!!parseContent(selected.content).backgroundImage);
- const pdfWheelTargetRef=useRef<View>(null);
+ const pdfWheelTargetRef=useRef<React.ElementRef<typeof View>>(null);
  const pdfWheelBusyRef=useRef(false);
  const pdfWheelLastRef=useRef(0);
  const pdfWheelDeltaRef=useRef(0);
