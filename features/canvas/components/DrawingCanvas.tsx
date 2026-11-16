@@ -346,8 +346,8 @@ const PageImageLayer=memo(function PageImageLayer({item,onLoadError}:{item:impor
  useEffect(()=>{if(renderedImage)logImageDebug('skia_canvas_layer_ready',{elementId:item.id,x:item.x,y:item.y,width:item.width,height:item.height})},[renderedImage,item.id,item.x,item.y,item.width,item.height]);
  return renderedImage?<SkiaImage image={renderedImage} x={item.x} y={item.y} width={item.width} height={item.height} fit="contain"/>:null;
 });
-const Completed=memo(function Completed({content,hiddenIds,fonts,kind='all'}:{content:PageContent;hiddenIds?:string[];fonts:CanvasFontManager|null;kind?:'all'|'ink'|'text'}){
- const elements=useMemo(()=>content.elements.filter(element=>!hiddenIds?.includes(element.id)&&(kind==='all'||(kind==='text'?element.type==='text':element.type!=='text'))),[content.elements,hiddenIds,kind]);
+const Completed=memo(function Completed({content,hiddenIds,fonts,kind='all'}:{content:PageContent;hiddenIds?:string[];fonts:CanvasFontManager|null;kind?:'all'|'ink'|'text'|'sticker'}){
+ const elements=useMemo(()=>content.elements.filter(element=>!hiddenIds?.includes(element.id)&&(kind==='all'||(kind==='text'?element.type==='text':kind==='sticker'?element.type==='shape'&&element.kind==='sticker':element.type!=='text'&&!(element.type==='shape'&&element.kind==='sticker')))),[content.elements,hiddenIds,kind]);
  useEffect(()=>{
   if(!__DEV__||!pathBuildMetrics.count)return;
   console.log('[Notex perf] stroke_paths',{count:pathBuildMetrics.count,total_ms:Math.round(pathBuildMetrics.totalMs*10)/10,max_ms:Math.round(pathBuildMetrics.maxMs*10)/10});
@@ -1510,7 +1510,7 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
 
  <Group layer={true}>
   <Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:tool==='select'?[...selectedIds,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts} kind={tool==='eraser'?'ink':'all'}/>
-  {handoffNeedsReleaseRender&&<Group>{handoff!.elements.filter(element=>tool!=='eraser'||element.type!=='text').map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}</Group>}
+  {handoffNeedsReleaseRender&&<Group>{handoff!.elements.filter(element=>tool!=='eraser'||(element.type!=='text'&&!(element.type==='shape'&&element.kind==='sticker'))).map(element=>element.type==='text'?<TextLayer key={element.id} element={element} fonts={textFonts}/>:<StrokeLayer key={element.id} element={element}/>)}</Group>}
    {/* Clear only inside the isolated ink layer. Keep both live and handoff
        previews visible until pixelErase commits, preventing delayed erasure. */}
    {tool==='eraser'&&<>
@@ -1518,6 +1518,11 @@ export function DrawingCanvas({pageId,content,template,paperColor,tool,brush,era
     <Path path={draft} blendMode="clear" color="black" style="stroke" strokeWidth={eraserWidth} strokeCap="round" strokeJoin="round"/>
    </>}
  </Group>
+  {/* Stickers are selectable vector objects, not ink. Keep them outside the
+      isolated clear-blend eraser layer, so the preview cannot erase them
+      temporarily and then make them jump back when switching tools. */}
+  {tool==='eraser'&&<Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts} kind="sticker"/>}
+  {tool==='eraser'&&handoffNeedsReleaseRender&&handoff!.elements.filter(element=>element.type==='shape'&&element.kind==='sticker').map(element=><StrokeLayer key={element.id} element={element}/>)}
   {/* Text elements are not pixel-erasable. Paint them outside the clear-blend
       ink layer so resizing or dragging the eraser cannot erase their glyphs. */}
   {tool==='eraser'&&<Completed content={content} hiddenIds={editing?[editing.id,...(handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):[])]:handoffNeedsReleaseRender?handoff!.elements.map(element=>element.id):undefined} fonts={textFonts} kind="text"/>}
