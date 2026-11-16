@@ -77,7 +77,7 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     return () => subscription.remove();
   }, [confirmDelete, menu, selected, moveTarget, multiSelect]);
 
-  useFocusEffect(useCallback(() => () => {
+  useFocusEffect(useCallback(() => {
     setChecked([]);
     setMultiSelect(false);
   }, []));
