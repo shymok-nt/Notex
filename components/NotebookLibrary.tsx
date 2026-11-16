@@ -127,16 +127,6 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
     }
   };
 
-  const selectionActions = [
-    { key: 'delete', label: 'Sil', icon: Trash2, danger: true, disabled: working || checked.length === 0, onPress: () => setConfirmDelete(true) },
-    { key: 'all', label: 'Tümünü seç', icon: List, disabled: working, onPress: () => { setMultiSelect(true); setChecked(data.map(notebook => notebook.id)); } },
-    { key: 'duplicate', label: 'Çoğalt', icon: Copy, disabled: working || checked.length === 0, onPress: async () => { setWorking(true); try { const failed: string[] = []; for (const id of checked) if (!(await duplicateNotebook(id))) failed.push(id); setChecked(failed); if (!failed.length) setMultiSelect(false); } finally { setWorking(false); } } },
-    { key: 'favorite', label: 'Favori', icon: Heart, disabled: working || checked.length === 0, onPress: async () => { setWorking(true); try { const failed: string[] = []; for (const id of checked) if (!(await toggleFavorite(id))) failed.push(id); setChecked(failed); if (!failed.length) setMultiSelect(false); } finally { setWorking(false); } } },
-    { key: 'clear', label: 'Temizle', icon: X, disabled: working || checked.length === 0, onPress: () => setChecked([]) },
-    ...(checked.length === 1 ? [{ key: 'more', label: 'Diğer', icon: MoreHorizontal, disabled: working, onPress: () => setSelected(data.find(notebook => notebook.id === checked[0]) ?? null) }] : []),
-    { key: 'exit', label: 'Çıkış', icon: X, disabled: working, onPress: () => { setChecked([]); setMultiSelect(false); } },
-  ];
-
   const listHeader = <View>
     <View style={styles.hero}>
       <Text style={styles.heroTitle}>{favorites ? 'Favoriler' : 'Defterler'}</Text>
@@ -177,7 +167,13 @@ export function NotebookLibrary({ favorites = false }: { favorites?: boolean }) 
         </View>
       </View>
       <View style={styles.headerDivider} />
-      {multiSelect&&<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:20,minHeight:48,backgroundColor:colors.surface}}><Text style={{color:colors.ink,fontFamily:fonts.medium}}>{checked.length} defter seçildi</Text><Pressable accessibilityRole="button" accessibilityLabel="Tüm defterleri seç" onPress={()=>setChecked(data.map(notebook=>notebook.id))}><Text style={{color:colors.accent,fontFamily:fonts.medium}}>Tümünü seç</Text></Pressable></View>}
+      {multiSelect&&<View style={{flexDirection:'row',alignItems:'center',gap:18,paddingHorizontal:24,minHeight:42,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:colors.divider,backgroundColor:colors.background}}>
+        <Text style={{fontFamily:fonts.medium,fontSize:12,color:colors.muted,marginRight:'auto'}}>{checked.length} seçili</Text>
+        <Pressable accessibilityRole="button" onPress={()=>setChecked(data.map(n=>n.id))}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.ink}}>Tümünü seç</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>setChecked([])}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.muted}}>Temizle</Text></Pressable>
+        <Pressable disabled={working||checked.length===0} accessibilityRole="button" onPress={()=>setConfirmDelete(true)}><Text style={{fontFamily:fonts.medium,fontSize:13,color:checked.length?colors.coral:colors.muted}}>Sil</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={()=>{setMultiSelect(false);setChecked([])}}><Text style={{fontFamily:fonts.medium,fontSize:13,color:colors.accent}}>Bitti</Text></Pressable>
+      </View>}
       {!favorites && <View style={styles.filters}><FolderChips value={folder} onChange={setFolder} colorsOverride={colors} /></View>}
 
       <FlatList
