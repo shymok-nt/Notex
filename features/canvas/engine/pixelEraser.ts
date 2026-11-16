@@ -49,7 +49,7 @@ export function pixelErase(elements:Element[],path:P[],radius:number,wholeStroke
  const result:Element[]=[];
  for(const e of elements){
   // Text is edited and deleted through the text/selection tools.
-  if(e.type==='text'){result.push(e);continue}
+  if(e.type==='text'||(e.type==='shape'&&e.kind==='sticker')){result.push(e);continue}
   if(!overlaps(e.bbox,eraserBox)){result.push(e);continue}
   let source:StrokeElement;
   if(e.type==='shape'){
